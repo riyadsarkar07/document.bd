@@ -1,0 +1,36 @@
+{
+  "name": "bd-document-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BD Government Document Studio — IP Trademark Certificate & National ID card design and export platform",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "verify:render": "tsx scripts/verify-render.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "jspdf": "^2.5.1",
+    "lucide-react": "^0.427.0",
+    "next": "14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.0.5",
+    "@types/node": "^20.14.15",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.5",
+    "postcss": "^8.4.41",
+    "tailwindcss": "^3.4.10",
+    "tsx": "^4.23.12",
+    "typescript": "^5.5.4"
+  }
+}

@@ -1,0 +1,1712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BD Gov Portal — IP Trademark & NID Server</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   UNIFIED DESIGN TOKENS
+═══════════════════════════════════════════════════════════════════ */
+:root {
+  --bg:           #0c0f14;
+  --surface:      #141820;
+  --surface2:     #1c2230;
+  --surface3:     #232d40;
+  --border:       #2a3650;
+  --accent:       #c9a84c;
+  --accent2:      #e8c96a;
+  --accent-dim:   rgba(201,168,76,.15);
+  --blue-ink:     #1e40af;
+  --text:         #e8ecf3;
+  --text-muted:   #7a8ba8;
+  --text-dim:     #4a5a70;
+  --danger:       #e05252;
+  --danger-dim:   rgba(224,82,82,.12);
+  --success:      #4caf7d;
+  --info:         #4a9eff;
+  --info-dim:     rgba(74,158,255,.12);
+  --green:        #22c55e;
+  --green-dim:    rgba(34,197,94,.12);
+  --radius:       10px;
+  --radius-lg:    16px;
+  --shadow:       0 4px 24px rgba(0,0,0,.5);
+  --shadow-lg:    0 8px 48px rgba(0,0,0,.7);
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body:    'DM Sans', system-ui, sans-serif;
+  --font-mono:    'DM Mono', monospace;
+  --panel-w:      440px;
+  --transition:   .2s cubic-bezier(.4,0,.2,1);
+  --mode-accent:  #c9a84c;
+  --mode-accent2: #e8c96a;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+input, textarea, select, button { font: inherit; }
+button { cursor: pointer; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: var(--surface); }
+::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 9999; opacity: .4;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LOGIN SCREEN
+═══════════════════════════════════════════════════════════════════ */
+#loginScreen {
+  min-height: 100vh; display: flex;
+  align-items: center; justify-content: center;
+  background: var(--bg); padding: 24px;
+}
+.login-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 48px 40px;
+  width: 100%; max-width: 440px; box-shadow: var(--shadow-lg);
+}
+.login-emblem { display: flex; flex-direction: column; align-items: center; margin-bottom: 32px; }
+.login-icon   { font-size: 44px; margin-bottom: 12px; }
+.login-title  { font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--accent2); text-align: center; }
+.login-subtitle { font-size: 12.5px; color: var(--text-muted); text-align: center; margin-top: 6px; }
+.form-group   { margin-bottom: 18px; }
+.form-label   { display: block; font-size: 11.5px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 7px; }
+.form-input   { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; color: var(--text); outline: none; }
+.form-input:focus { border-color: var(--accent); }
+.btn-primary  { width: 100%; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #0c0f14; font-weight: 700; padding: 14px 24px; border: none; border-radius: var(--radius); margin-top: 8px; }
+.login-error  { background: rgba(224,82,82,.12); border: 1px solid rgba(224,82,82,.3); border-radius: var(--radius); padding: 10px 14px; font-size: 13px; color: var(--danger); margin-bottom: 16px; display: none; }
+.login-error.visible { display: block; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   APP SHELL
+═══════════════════════════════════════════════════════════════════ */
+#appScreen { display: none; height: 100vh; flex-direction: column; }
+
+.top-nav {
+  height: 56px; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  justify-content: space-between; padding: 0 24px; flex-shrink: 0;
+}
+.nav-brand        { display: flex; align-items: center; gap: 10px; }
+.nav-brand-text   { font-family: var(--font-display); font-size: 17px; color: var(--accent2); font-weight: 600; }
+.nav-meta         { font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono); }
+.nav-right        { display: flex; align-items: center; gap: 12px; }
+.user-badge       { font-size: 12px; color: var(--text-muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; }
+.btn-signout      { background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: var(--radius); padding: 6px 14px; font-size: 12.5px; transition: all var(--transition); }
+.btn-signout:hover { border-color: var(--danger); color: var(--danger); }
+
+.global-mode-bar {
+  background: var(--surface);
+  border-bottom: 2px solid var(--border);
+  padding: 0 24px;
+  display: flex; align-items: center; gap: 0;
+  flex-shrink: 0; height: 46px;
+  position: relative;
+}
+.global-mode-bar::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent) 0%, rgba(201,168,76,0) 60%);
+  pointer-events: none;
+}
+.global-tab {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 22px; height: 100%;
+  font-size: 13px; font-weight: 600;
+  color: var(--text-muted);
+  border: none; background: transparent;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: all var(--transition);
+  cursor: pointer; white-space: nowrap;
+}
+.global-tab:hover { color: var(--text); background: rgba(255,255,255,.03); }
+.global-tab.active-tm {
+  color: var(--accent2);
+  border-bottom-color: var(--accent);
+  background: rgba(201,168,76,.05);
+}
+.global-tab.active-nid {
+  color: #93c5fd;
+  border-bottom-color: var(--info);
+  background: var(--info-dim);
+}
+.global-tab-icon   { font-size: 16px; }
+.global-tab-sep    { width: 1px; height: 22px; background: var(--border); margin: 0 4px; align-self: center; }
+.global-mode-meta  {
+  margin-left: auto;
+  font-size: 11px; font-family: var(--font-mono); color: var(--text-dim);
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 10px; display: flex; align-items: center; gap: 6px;
+}
+.global-mode-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--success); flex-shrink: 0; animation: pulse 2.5s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+
+.mode-bar {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 24px; display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+}
+.mode-label     { font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600; }
+.mode-tabs      { display: flex; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px; gap: 2px; }
+.mode-tab       { background: transparent; border: none; color: var(--text-muted); padding: 6px 18px; border-radius: 7px; font-size: 13px; font-weight: 500; transition: all var(--transition); }
+.mode-tab.active        { background: var(--accent); color: #0c0f14; font-weight: 700; box-shadow: 0 2px 8px rgba(201,168,76,.3); }
+.mode-tab.history-tab.active { background: #1e40af; color: #fff; box-shadow: 0 2px 8px rgba(30,64,175,.35); }
+.mode-indicator { font-size: 11.5px; font-family: var(--font-mono); color: var(--text-muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; }
+
+.portal-workspace { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+.portal-workspace.active { display: flex; }
+
+#tm-editorView   { display: flex; flex: 1; overflow: hidden; }
+#tm-historyView  { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+#nid-mainLayout  { display: flex; flex: 1; overflow: hidden; }
+
+.panel {
+  width: var(--panel-w); flex-shrink: 0;
+  background: var(--surface); border-right: 1px solid var(--border);
+  overflow-y: auto; display: flex; flex-direction: column;
+}
+.panel-section { border-bottom: 1px solid var(--border); }
+.panel-section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; cursor: pointer; user-select: none;
+}
+.panel-section-header:hover { background: var(--surface2); }
+.panel-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); display: flex; align-items: center; gap: 7px; }
+.panel-chevron { color: var(--text-dim); font-size: 11px; transition: transform var(--transition); }
+.panel-section-header.collapsed .panel-chevron { transform: rotate(-90deg); }
+.panel-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.panel-body.hidden { display: none; }
+
+.panel-section.logo-text-config {
+  border: 1px solid rgba(201,168,76,.35); border-radius: var(--radius);
+  margin: 10px 12px; overflow: hidden; background: rgba(201,168,76,.03);
+}
+.panel-section.logo-text-config .panel-section-header { background: rgba(201,168,76,.07); border-bottom: 1px solid rgba(201,168,76,.2); }
+.panel-section.logo-text-config .panel-section-title  { color: var(--accent2); }
+.logo-text-preview-bar {
+  background: var(--surface3); border: 1px dashed var(--border); border-radius: 7px;
+  padding: 8px 12px; font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 8px;
+}
+.logo-text-preview-bar span { color: var(--accent2); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+
+.panel-section.photo-section {
+  border: 1px solid rgba(74,158,255,.3); border-radius: var(--radius);
+  margin: 10px 12px; overflow: hidden; background: rgba(74,158,255,.03);
+}
+.panel-section.photo-section .panel-section-header { background: rgba(74,158,255,.07); border-bottom: 1px solid rgba(74,158,255,.18); }
+.panel-section.photo-section .panel-section-title  { color: var(--info); }
+
+.field-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.field-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px; display: block; }
+.field-input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; color: var(--text); font-size: 13px; outline: none; transition: border-color var(--transition); }
+.field-input:focus  { border-color: var(--accent); }
+textarea.field-input { resize: vertical; min-height: 64px; }
+
+.field-group {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.field-group-label {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  color: var(--accent2); letter-spacing: .05em;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px;
+}
+.fg-badge { font-size: 9px; padding: 1px 5px; border-radius: 4px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.fg-badge.kalpurush { background: rgba(201,168,76,.2); color: var(--accent2); border: 1px solid rgba(201,168,76,.3); }
+.fg-badge.arial     { background: rgba(74,158,255,.15); color: var(--info);    border: 1px solid rgba(74,158,255,.3); }
+.fg-badge.red       { background: rgba(224,82,82,.15); color: var(--danger);  border: 1px solid rgba(224,82,82,.3); }
+
+.slider-group { display: flex; flex-direction: column; gap: 3px; }
+.slider-triplet { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.slider-2col    { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.slider-header  { display: flex; align-items: center; justify-content: space-between; }
+.slider-name    { font-size: 10.5px; color: var(--text-muted); }
+.slider-name.mono { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+.slider-custom-badge {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  color: var(--accent2); background: var(--surface3); border: 1px solid var(--border);
+  border-radius: 5px; padding: 2px 5px; width: 54px; text-align: center;
+  outline: none; transition: all var(--transition);
+}
+.slider-custom-badge:focus { border-color: var(--accent); background: var(--surface2); }
+input[type="range"] {
+  -webkit-appearance: none; width: 100%; height: 4px;
+  border-radius: 2px; background: var(--surface3); outline: none; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--accent); box-shadow: 0 0 4px rgba(201,168,76,.35);
+}
+
+.photo-upload-zone {
+  background: var(--surface3); border: 2px dashed var(--border); border-radius: var(--radius);
+  padding: 16px; text-align: center; cursor: pointer; transition: all var(--transition);
+}
+.photo-upload-zone:hover { border-color: var(--info); background: rgba(74,158,255,.06); }
+.photo-upload-zone input[type="file"] { display: none; }
+.photo-upload-icon  { font-size: 26px; margin-bottom: 6px; }
+.photo-upload-text  { font-size: 12px; color: var(--text-muted); }
+.photo-upload-sub   { font-size: 10.5px; color: var(--text-dim); margin-top: 3px; font-family: var(--font-mono); }
+#nid-photoPreviewThumb {
+  width: 56px; height: 72px; object-fit: cover;
+  border: 2px solid var(--accent); border-radius: 6px;
+  display: none; margin: 0 auto 8px;
+}
+
+.actions-row { display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+.btn-action  {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 11px 16px; border-radius: var(--radius);
+  font-size: 13px; font-weight: 600; border: none; transition: all var(--transition);
+}
+.btn-render  { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #0c0f14; box-shadow: 0 3px 12px rgba(201,168,76,.25); }
+.btn-render:hover { box-shadow: 0 4px 20px rgba(201,168,76,.45); transform: translateY(-1px); }
+.btn-render:active { transform: translateY(0); }
+.btn-jpg   { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-jpg:hover { border-color: var(--success); color: var(--success); background: rgba(76,175,125,.06); }
+.btn-pdf   { background: rgba(30,64,175,.2); color: #93b4ff; border: 1px solid rgba(30,64,175,.4); }
+.btn-logo  { background: var(--surface2); color: var(--text-muted); border: 1px dashed var(--border); font-size: 12.5px; }
+.btn-reset { background: var(--surface2); color: var(--text-muted); border: 1px dashed var(--border); font-size: 12px; }
+.btn-reset:hover { border-color: var(--danger); color: var(--danger); }
+
+.status-bar {
+  padding: 10px 16px; font-size: 11px; font-family: var(--font-mono);
+  color: var(--text-dim); border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px; margin-top: auto;
+}
+.status-dot   { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+.spinner      { width: 16px; height: 16px; border: 2px solid rgba(201,168,76,.3); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: none; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.viewport {
+  flex: 1; overflow: auto; background: var(--bg);
+  display: flex; align-items: flex-start; justify-content: center; padding: 32px 24px;
+}
+.canvas-wrapper    { box-shadow: 0 12px 64px rgba(0,0,0,.85); border-radius: 4px; overflow: hidden; max-width: 100%; }
+.canvas-placeholder {
+  background: var(--surface); border: 2px dashed var(--border); border-radius: var(--radius);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; color: var(--text-dim); min-height: 380px; min-width: 480px; padding: 48px;
+}
+#tm-certCanvas { display: block; max-width: 100%; height: auto; }
+#nid-nidCanvas { display: block; max-width: 100%; height: auto; }
+
+.history-header {
+  padding: 20px 32px 0; flex-shrink: 0;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+}
+.history-title { font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--accent2); display: flex; align-items: center; gap: 10px; }
+.history-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 4px; font-family: var(--font-mono); }
+.btn-back {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--radius); padding: 9px 18px; font-size: 13px; font-weight: 600;
+  white-space: nowrap; transition: all var(--transition); flex-shrink: 0;
+}
+.btn-back:hover { border-color: var(--accent); color: var(--accent2); }
+.history-stats { display: flex; gap: 12px; padding: 16px 32px; flex-shrink: 0; }
+.stat-chip {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 8px 16px; font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);
+  display: flex; align-items: center; gap: 8px;
+}
+.stat-chip strong { color: var(--text); font-size: 14px; }
+.history-table-wrap { flex: 1; overflow-y: auto; padding: 0 32px 32px; }
+.archive-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.archive-table thead th {
+  padding: 10px 14px; text-align: left; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid var(--border);
+  background: var(--surface); position: sticky; top: 0; z-index: 2; letter-spacing: .04em;
+}
+.archive-table tbody tr { border-bottom: 1px solid var(--border); transition: background var(--transition); }
+.archive-table tbody tr:hover { background: rgba(201,168,76,.04); }
+.archive-table tbody td { padding: 12px 14px; vertical-align: middle; }
+.td-index     { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); width: 36px; }
+.td-tm        { font-family: var(--font-mono); font-size: 12px; color: var(--accent2); font-weight: 600; }
+.td-company   { font-weight: 500; color: var(--text); max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.td-owner     { color: var(--text-muted); font-size: 12.5px; }
+.td-type      { font-size: 11px; color: var(--text-dim); font-style: italic; }
+.td-timestamp { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.td-actions   { white-space: nowrap; }
+.td-live-link { white-space: nowrap; }
+.vault-ops    { display: flex; gap: 6px; }
+.btn-vault    { display: flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 7px; font-size: 11.5px; font-weight: 600; border: none; transition: all var(--transition); cursor: pointer; }
+.btn-vault-view { background: var(--info-dim); color: var(--info); border: 1px solid rgba(74,158,255,.25); }
+.btn-vault-view:hover { background: rgba(74,158,255,.25); border-color: var(--info); }
+.btn-vault-dl   { background: rgba(76,175,125,.1); color: var(--success); border: 1px solid rgba(76,175,125,.25); }
+.btn-vault-dl:hover { background: rgba(76,175,125,.22); border-color: var(--success); }
+.btn-vault-del  { background: rgba(224,82,82,.12); color: var(--danger); border: 1px solid rgba(224,82,82,.25); }
+.btn-vault-del:hover { background: rgba(224,82,82,.22); border-color: var(--danger); }
+.live-link-badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px;
+  border-radius: 7px; font-size: 11.5px; font-weight: 600; font-family: var(--font-mono);
+  color: #a78bfa; background: rgba(167,139,250,.08); border: 1px solid rgba(167,139,250,.28);
+  text-decoration: none; transition: all var(--transition); letter-spacing: .01em;
+}
+.live-link-badge:hover { background: rgba(167,139,250,.18); border-color: rgba(167,139,250,.6); color: #c4b5fd; }
+.live-link-badge .link-dot { width: 5px; height: 5px; border-radius: 50%; background: #a78bfa; flex-shrink: 0; box-shadow: 0 0 4px rgba(167,139,250,.7); }
+.live-link-none { font-size: 11px; color: var(--text-dim); font-style: italic; font-family: var(--font-mono); }
+.history-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 80px 32px; color: var(--text-dim); font-size: 13px; }
+.history-empty-icon { font-size: 40px; opacity: .4; }
+
+#previewModal {
+  display: none; position: fixed; inset: 0; z-index: 20000;
+  background: rgba(0,0,0,.85); align-items: center; justify-content: center;
+  padding: 24px; animation: fadeIn .15s ease;
+}
+#previewModal.open { display: flex; }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+.modal-panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column;
+  max-width: 820px; width: 100%; max-height: 92vh; overflow: hidden;
+  animation: slideUp .2s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes slideUp { from { transform: translateY(24px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.modal-title  { font-family: var(--font-display); font-size: 16px; color: var(--accent2); font-weight: 600; }
+.modal-meta   { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
+.modal-close  { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); width: 32px; height: 32px; border-radius: 8px; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: all var(--transition); cursor: pointer; }
+.modal-close:hover { border-color: var(--danger); color: var(--danger); }
+.modal-body   { flex: 1; overflow-y: auto; padding: 20px; display: flex; align-items: flex-start; justify-content: center; }
+#previewCanvasWrap { box-shadow: 0 8px 40px rgba(0,0,0,.7); border-radius: 4px; overflow: hidden; max-width: 100%; }
+#previewCanvas { display: block; max-width: 100%; height: auto; }
+.modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.modal-footer-label { font-size: 11px; font-family: var(--font-mono); color: var(--text-dim); }
+.btn-modal-dl { display: flex; align-items: center; gap: 7px; background: rgba(76,175,125,.1); color: var(--success); border: 1px solid rgba(76,175,125,.3); border-radius: var(--radius); padding: 8px 18px; font-size: 13px; font-weight: 600; transition: all var(--transition); }
+.btn-modal-dl:hover { background: rgba(76,175,125,.22); border-color: var(--success); }
+
+#confirmModal { display: none; position: fixed; inset: 0; z-index: 21000; background: rgba(0,0,0,.75); align-items: center; justify-content: center; padding: 24px; }
+#confirmModal.open { display: flex; }
+.confirm-panel { background: var(--surface); border: 1px solid rgba(224,82,82,.35); border-radius: var(--radius-lg); padding: 28px 28px 22px; max-width: 380px; width: 100%; box-shadow: var(--shadow-lg); animation: slideUp .18s cubic-bezier(.34,1.56,.64,1); }
+.confirm-icon  { font-size: 28px; margin-bottom: 12px; }
+.confirm-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.confirm-body  { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; line-height: 1.55; }
+.confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.btn-confirm-cancel { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); border-radius: var(--radius); padding: 9px 18px; font-size: 13px; font-weight: 600; transition: all var(--transition); }
+.btn-confirm-cancel:hover { border-color: var(--text-muted); color: var(--text); }
+.btn-confirm-delete { background: rgba(224,82,82,.12); border: 1px solid rgba(224,82,82,.4); color: var(--danger); border-radius: var(--radius); padding: 9px 18px; font-size: 13px; font-weight: 700; transition: all var(--transition); }
+.btn-confirm-delete:hover { background: rgba(224,82,82,.22); border-color: var(--danger); }
+
+#toast {
+  position: fixed; bottom: 28px; right: 28px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 18px;
+  font-size: 13px; color: var(--text); box-shadow: var(--shadow-lg);
+  z-index: 30000; transform: translateY(80px); opacity: 0;
+  transition: transform .3s cubic-bezier(.34,1.56,.64,1), opacity .3s ease;
+  display: flex; align-items: center; gap: 10px; max-width: 360px;
+}
+#toast.show { transform: translateY(0); opacity: 1; }
+#toast.success { border-color: rgba(76,175,125,.5); }
+#toast.error   { border-color: rgba(224,82,82,.5); }
+#toast.info    { border-color: rgba(74,158,255,.4); }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════ LOGIN SCREEN ════════════════════ -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-emblem">
+      <div class="login-icon">🏛️</div>
+      <div class="login-title">BD Government Portal</div>
+      <div class="login-subtitle">IP Trademark Registry · National ID Server</div>
+    </div>
+    <div id="loginError" class="login-error"></div>
+    <div class="form-group">
+      <label class="form-label" for="emailInput">Email Address</label>
+      <input type="email" id="emailInput" class="form-input" placeholder="admin@example.com" />
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="passwordInput">Password</label>
+      <input type="password" id="passwordInput" class="form-input" placeholder="••••••••••" />
+    </div>
+    <button class="btn-primary" id="signInBtn" onclick="executeSignIn()">Sign In to Portal</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════ APP SCREEN ══════════════════════ -->
+<div id="appScreen">
+
+  <!-- TOP NAV -->
+  <div class="top-nav">
+    <div class="nav-brand">
+      <span>🇧🇩</span>
+      <span class="nav-brand-text">BD Government Portal</span>
+    </div>
+    <div class="nav-meta" id="navClock">--</div>
+    <div class="nav-right">
+      <div class="user-badge" id="userBadge">—</div>
+      <button class="btn-signout" onclick="executeSignOut()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- GLOBAL MODE SWITCHER -->
+  <div class="global-mode-bar">
+    <button class="global-tab active-tm" id="gTabTM" onclick="switchPortal('tm')">
+      <span class="global-tab-icon">🏛️</span>
+      Trademark Portal
+    </button>
+    <div class="global-tab-sep"></div>
+    <button class="global-tab" id="gTabNID" onclick="switchPortal('nid')">
+      <span class="global-tab-icon">🪪</span>
+      BD NID Server
+    </button>
+    <div class="global-mode-meta">
+      <span class="global-mode-dot"></span>
+      <span id="globalModeLabel">IP Trademark Portal — Active</span>
+    </div>
+  </div>
+
+  <!-- ════════════ TM PORTAL WORKSPACE ════════════ -->
+  <div id="portal-tm" class="portal-workspace active">
+
+    <div class="mode-bar">
+      <span class="mode-label">View</span>
+      <div class="nav-right" style="gap:8px;">
+        <div class="mode-tabs">
+          <button class="mode-tab active"       id="tm-modeTabEditor"  onclick="tmSwitchView('editor')">TM Version 1</button>
+          <button class="mode-tab history-tab"  id="tm-modeTabHistory" onclick="tmSwitchView('history')">Download History</button>
+        </div>
+        <div class="mode-indicator" id="tm-modeIndicator">Editor — TM Version 1</div>
+      </div>
+    </div>
+
+    <!-- TM EDITOR VIEW -->
+    <div id="tm-editorView">
+      <div class="panel" id="tm-controlPanel">
+
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>📋</span> Certificate Data</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div><label class="field-label">Trademark No.</label><input type="text" class="field-input" id="tm-trademarkNo" value="245788" /></div>
+            <div class="field-row">
+              <div><label class="field-label">Reg. Date</label><input type="text" class="field-input" id="tm-regDate" value="08/04/2024" /></div>
+              <div><label class="field-label">Application Date</label><input type="text" class="field-input" id="tm-appDate" value="08/12/2015" /></div>
+            </div>
+            <div><label class="field-label">Company Name</label><input type="text" class="field-input" id="tm-companyName" value="The Territorial News (TTN)" /></div>
+            <div><label class="field-label">Owner Name</label><input type="text" class="field-input" id="tm-ownerName" value="Riyad Sarkar" /></div>
+            <div><label class="field-label">Address</label><textarea class="field-input" id="tm-address" rows="2">Nuran House, 2nd Floor, Thana Road, Badarmokam Mosque Area, Teknaf, Cox's Bazar-4760, Bangladesh.</textarea></div>
+            <div><label class="field-label">Company Type</label><input type="text" class="field-input" id="tm-compType" value="A Bangladeshi Media/News Company" /></div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>📝</span> Text Segments</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div><label class="field-label">Opening Text (Segment 1)</label><textarea class="field-input" id="tm-openingText" rows="2">Certified that the Trademark of which a representation is annexed hereto has been registered in the name of</textarea></div>
+            <div><label class="field-label">Middle Text Arial (Segment 3)</label><input type="text" class="field-input" id="tm-middleTextArial" value="in class 41 under No." /></div>
+            <div><label class="field-label">Goods Description (Italic — Segment 4)</label><textarea class="field-input" id="tm-goodsDesc" rows="3">in respect of online news publishing; digital journalism; media broadcasting; news reporting; photography; video production; social media news services and all other media services included in class-41.</textarea></div>
+          </div>
+        </div>
+
+        <div class="panel-section logo-text-config">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>🅰️</span> Logo Text Configuration</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="logo-text-preview-bar"><span>📦</span> White box + black border rendered at specified coordinates when no image uploaded</div>
+            <div><label class="field-label">Logo Text Input</label><input type="text" class="field-input" id="tm-logoText" value="" oninput="tmScheduleRender()" /></div>
+            <div class="slider-group">
+              <div class="slider-header"><span class="slider-name">Logo Text Font Size</span><input type="text" class="slider-custom-badge" id="tm-badge_logoTextSize" value="59" oninput="syncInputToSlider('tm-sl_logoTextSize',this.value)" /></div>
+              <input type="range" id="tm-sl_logoTextSize" min="10" max="150" value="59" oninput="syncSliderToInput('tm-badge_logoTextSize',this.value);tmScheduleRender()" />
+            </div>
+            <div class="field-row">
+              <div class="slider-group">
+                <div class="slider-header"><span class="slider-name">Logo Text X</span><input type="text" class="slider-custom-badge" id="tm-badge_logoTextX" value="1200" oninput="syncInputToSlider('tm-sl_logoTextX',this.value)" /></div>
+                <input type="range" id="tm-sl_logoTextX" min="50" max="2500" value="1200" oninput="syncSliderToInput('tm-badge_logoTextX',this.value);tmScheduleRender()" />
+              </div>
+              <div class="slider-group">
+                <div class="slider-header"><span class="slider-name">Logo Text Y</span><input type="text" class="slider-custom-badge" id="tm-badge_logoTextY" value="2188" oninput="syncInputToSlider('tm-sl_logoTextY',this.value)" /></div>
+                <input type="range" id="tm-sl_logoTextY" min="50" max="5000" value="2188" oninput="syncSliderToInput('tm-badge_logoTextY',this.value);tmScheduleRender()" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>🔏</span> Footer &amp; Seal</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div><label class="field-label">Sealed Statement Phrase</label><textarea class="field-input" id="tm-sealedTextPhrase" rows="2">Sealed at my direction this .....day of......Month........</textarea></div>
+            <div><label class="field-label">Sealed Date (Blue Ink)</label><input type="text" class="field-input" id="tm-sealedDate" value="10 JUL 2024" /></div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>🔤</span> Font Scales</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="slider-group"><div class="slider-header"><span class="slider-name">Arial Regular Font Size</span><input type="text" class="slider-custom-badge" id="tm-badge_arialSize" value="50" oninput="syncInputToSlider('tm-sl_arialSize',this.value)" /></div><input type="range" id="tm-sl_arialSize" min="20" max="100" value="50" oninput="syncSliderToInput('tm-badge_arialSize',this.value);tmScheduleRender()" /></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-name">Italic Description Font Size</span><input type="text" class="slider-custom-badge" id="tm-badge_corsivSize" value="62" oninput="syncInputToSlider('tm-sl_corsivSize',this.value)" /></div><input type="range" id="tm-sl_corsivSize" min="20" max="100" value="62" oninput="syncSliderToInput('tm-badge_corsivSize',this.value);tmScheduleRender()" /></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-name">Sealed Phrase Font Size</span><input type="text" class="slider-custom-badge" id="tm-badge_sealSize" value="40" oninput="syncInputToSlider('tm-sl_sealSize',this.value)" /></div><input type="range" id="tm-sl_sealSize" min="20" max="100" value="40" oninput="syncSliderToInput('tm-badge_sealSize',this.value);tmScheduleRender()" /></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-name">Blue Date Font Size</span><input type="text" class="slider-custom-badge" id="tm-badge_blueDateSize" value="40" oninput="syncInputToSlider('tm-sl_blueDateSize',this.value)" /></div><input type="range" id="tm-sl_blueDateSize" min="10" max="100" value="40" oninput="syncSliderToInput('tm-badge_blueDateSize',this.value);tmScheduleRender()" /></div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>📍</span> Header Positions</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="field-row">
+              <div class="slider-group"><div class="slider-header"><span class="slider-name">TM No. X</span><input type="text" class="slider-custom-badge" id="tm-badge_tmX" value="277" oninput="syncInputToSlider('tm-sl_tmX',this.value)" /></div><input type="range" id="tm-sl_tmX" min="50" max="1500" value="277" oninput="syncSliderToInput('tm-badge_tmX',this.value);tmScheduleRender()" /></div>
+              <div class="slider-group"><div class="slider-header"><span class="slider-name">TM No. Y</span><input type="text" class="slider-custom-badge" id="tm-badge_tmY" value="987" oninput="syncInputToSlider('tm-sl_tmY',this.value)" /></div><input type="range" id="tm-sl_tmY" min="200" max="3000" value="987" oninput="syncSliderToInput('tm-badge_tmY',this.value);tmScheduleRender()" /></div>
+            </div>
+            <div class="field-row">
+              <div class="slider-group"><div class="slider-header"><span class="slider-name">Date X</span><input type="text" class="slider-custom-badge" id="tm-badge_dateX" value="1833" oninput="syncInputToSlider('tm-sl_dateX',this.value)" /></div><input type="range" id="tm-sl_dateX" min="500" max="3000" value="1833" oninput="syncSliderToInput('tm-badge_dateX',this.value);tmScheduleRender()" /></div>
+              <div class="slider-group"><div class="slider-header"><span class="slider-name">Date Y</span><input type="text" class="slider-custom-badge" id="tm-badge_dateY" value="987" oninput="syncInputToSlider('tm-sl_dateY',this.value)" /></div><input type="range" id="tm-sl_dateY" min="200" max="3000" value="987" oninput="syncSliderToInput('tm-badge_dateY',this.value);tmScheduleRender()" /></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>📐</span> Paragraph &amp; Logo</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="slider-group"><div class="slider-header"><span class="slider-name">Main Paragraph Start Y</span><input type="text" class="slider-custom-badge" id="tm-badge_paraY" value="1078" oninput="syncInputToSlider('tm-sl_paraY',this.value)" /></div><input type="range" id="tm-sl_paraY" min="200" max="2500" value="1078" oninput="syncSliderToInput('tm-badge_paraY',this.value);tmScheduleRender()" /></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-name">Logo Y-Position</span><input type="text" class="slider-custom-badge" id="tm-badge_logoY" value="1814" oninput="syncInputToSlider('tm-sl_logoY',this.value)" /></div><input type="range" id="tm-sl_logoY" min="450" max="5000" value="1814" oninput="syncSliderToInput('tm-badge_logoY',this.value);tmScheduleRender()" /></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-name">Logo Size</span><input type="text" class="slider-custom-badge" id="tm-badge_logoSize" value="433" oninput="syncInputToSlider('tm-sl_logoSize',this.value)" /></div><input type="range" id="tm-sl_logoSize" min="50" max="1000" value="433" oninput="syncSliderToInput('tm-badge_logoSize',this.value);tmScheduleRender()" /></div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>🎯</span> Sealed Row Anchors</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="field-row">
+              <div class="slider-group"><div class="slider-header"><span class="slider-name">Sealed Phrase X</span><input type="text" class="slider-custom-badge" id="tm-badge_sealX" value="302" oninput="syncInputToSlider('tm-sl_sealX',this.value)" /></div><input type="range" id="tm-sl_sealX" min="50" max="1500" value="302" oninput="syncSliderToInput('tm-badge_sealX',this.value);tmScheduleRender()" /></div>
+              <div class="slider-group"><div class="slider-header"><span class="slider-name">Sealed Phrase Y</span><input type="text" class="slider-custom-badge" id="tm-badge_sealY" value="2908" oninput="syncInputToSlider('tm-sl_sealY',this.value)" /></div><input type="range" id="tm-sl_sealY" min="600" max="5000" value="2908" oninput="syncSliderToInput('tm-badge_sealY',this.value);tmScheduleRender()" /></div>
+            </div>
+            <div class="field-row">
+              <div class="slider-group"><div class="slider-header"><span class="slider-name">Blue Date X</span><input type="text" class="slider-custom-badge" id="tm-badge_blueX" value="783" oninput="syncInputToSlider('tm-sl_blueX',this.value)" /></div><input type="range" id="tm-sl_blueX" min="100" max="2000" value="783" oninput="syncSliderToInput('tm-badge_blueX',this.value);tmScheduleRender()" /></div>
+              <div class="slider-group"><div class="slider-header"><span class="slider-name">Blue Date Y</span><input type="text" class="slider-custom-badge" id="tm-badge_blueY" value="2857" oninput="syncInputToSlider('tm-sl_blueY',this.value)" /></div><input type="range" id="tm-sl_blueY" min="600" max="5000" value="2857" oninput="syncSliderToInput('tm-badge_blueY',this.value);tmScheduleRender()" /></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>✍️</span> Signature Overlay</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="slider-group"><div class="slider-header"><span class="slider-name">Signature X</span><input type="text" class="slider-custom-badge" id="tm-badge_signX" value="1271" oninput="syncInputToSlider('tm-sl_signX',this.value)" /></div><input type="range" id="tm-sl_signX" min="50" max="3000" value="1271" oninput="syncSliderToInput('tm-badge_signX',this.value);tmScheduleRender()" /></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-name">Signature Y</span><input type="text" class="slider-custom-badge" id="tm-badge_signY" value="1717" oninput="syncInputToSlider('tm-sl_signY',this.value)" /></div><input type="range" id="tm-sl_signY" min="500" max="5000" value="1717" oninput="syncSliderToInput('tm-sl_signY',this.value);tmScheduleRender()" /></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-name">Signature Size</span><input type="text" class="slider-custom-badge" id="tm-badge_signSize" value="322" oninput="syncInputToSlider('tm-sl_signSize',this.value)" /></div><input type="range" id="tm-sl_signSize" min="50" max="1500" value="322" oninput="syncSliderToInput('tm-sl_signSize',this.value);tmScheduleRender()" /></div>
+          </div>
+        </div>
+
+        <div class="actions-row">
+          <label class="btn-action btn-logo" style="cursor:pointer;">
+            🖼️ Upload Logo / Seal Image
+            <input type="file" id="tm-logoUploader" accept="image/*" style="display:none" onchange="tmHandleLogoUpload(this)" />
+          </label>
+          <button class="btn-action btn-render" onclick="tmRenderCertificate()">
+            <span>⚡</span> Render Certificate
+            <div class="spinner" id="tm-renderSpinner"></div>
+          </button>
+          <button class="btn-action btn-jpg" onclick="tmDownloadJPG()"><span>🖼️</span> Download JPG</button>
+          <button class="btn-action btn-pdf" onclick="tmDownloadPDF()"><span>📄</span> Download A4 PDF (Portrait)</button>
+        </div>
+        <div class="status-bar"><div class="status-dot"></div><span id="tm-statusText">System Ready</span></div>
+      </div>
+
+      <div class="viewport">
+        <div id="tm-canvasWrapper" class="canvas-wrapper" style="display:none;"><canvas id="tm-certCanvas"></canvas></div>
+        <div class="canvas-placeholder" id="tm-canvasPlaceholder"><div style="font-size:40px;opacity:.3;">📜</div><div>Fill in details, then click <strong>Render Certificate</strong></div><div style="font-size:11px;font-family:var(--font-mono);color:var(--text-dim);">Background: cert-bangladesh.png</div></div>
+      </div>
+    </div>
+
+    <!-- TM HISTORY VIEW -->
+    <div id="tm-historyView">
+      <div class="history-header">
+        <div>
+          <div class="history-title">🗄️ Cloud Archive — Backup Manager</div>
+          <div class="history-subtitle" id="tm-historySubtitle">Loading vault records…</div>
+        </div>
+        <button class="btn-back" onclick="tmSwitchView('editor')">← Back to Editor</button>
+      </div>
+      <div class="history-stats">
+        <div class="stat-chip">Total Records <strong id="tm-statTotal">0</strong></div>
+        <div class="stat-chip">Last Synced <strong id="tm-statLastSync">—</strong></div>
+      </div>
+      <div class="history-table-wrap" id="tm-historyTableWrap"></div>
+    </div>
+
+  </div><!-- /portal-tm -->
+
+  <!-- ════════════ NID PORTAL WORKSPACE ════════════ -->
+  <div id="portal-nid" class="portal-workspace">
+
+    <div class="mode-bar">
+      <span class="mode-label">Engine</span>
+      <div class="mode-tabs" style="pointer-events:none;">
+        <div class="mode-tab active" style="cursor:default;">NID Card v1.0</div>
+      </div>
+      <div class="mode-indicator" id="nid-modeIndicator">Canvas Editor — Absolute Positioning Mode</div>
+      <div style="margin-left:auto;" id="nid-fontStatus">
+        <div class="mode-indicator" style="color:var(--text-dim);">⌛ Loading fonts…</div>
+      </div>
+    </div>
+
+    <div id="nid-mainLayout">
+      <div class="panel" id="nid-controlPanel">
+
+        <!-- ══ নাম Bangla ══ -->
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>🔤</span> নাম — Bangla Name</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="field-group">
+              <div class="field-group-label">নাম <span class="fg-badge kalpurush">Kalpurush Bold</span> <span class="fg-badge" style="background:rgba(0,0,0,.3);color:#aaa;border:1px solid #333;">Black</span></div>
+              <div><label class="field-label">Bangla Name</label><input type="text" class="field-input" id="nid-nameBangla" value="মোঃ রিয়াদ সরকার" oninput="nidScheduleRender()" /></div>
+              <div class="slider-triplet">
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Size</span><input type="text" class="slider-custom-badge" id="nid-badge_nameBanglaSize" value="144" oninput="syncInputToSlider('nid-sl_nameBanglaSize',this.value)" /></div><input type="range" id="nid-sl_nameBanglaSize" min="8" max="300" value="144" oninput="syncSliderToInput('nid-badge_nameBanglaSize',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">X</span><input type="text" class="slider-custom-badge" id="nid-badge_nameBanglaX" value="1380" oninput="syncInputToSlider('nid-sl_nameBanglaX',this.value)" /></div><input type="range" id="nid-sl_nameBanglaX" min="0" max="2200" value="1380" oninput="syncSliderToInput('nid-badge_nameBanglaX',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Y</span><input type="text" class="slider-custom-badge" id="nid-badge_nameBanglaY" value="928" oninput="syncInputToSlider('nid-sl_nameBanglaY',this.value)" /></div><input type="range" id="nid-sl_nameBanglaY" min="0" max="2200" value="928" oninput="syncSliderToInput('nid-badge_nameBanglaY',this.value);nidScheduleRender()" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Name English ══ -->
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>🔡</span> Name — English</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="field-group">
+              <div class="field-group-label">Name <span class="fg-badge arial">Arial Regular</span> <span class="fg-badge" style="background:rgba(0,0,0,.3);color:#aaa;border:1px solid #333;">Black</span></div>
+              <div><label class="field-label">English Name</label><input type="text" class="field-input" id="nid-nameEnglish" value="Md. Riyad Sarkar" oninput="nidScheduleRender()" /></div>
+              <div class="slider-triplet">
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Size</span><input type="text" class="slider-custom-badge" id="nid-badge_nameEnglishSize" value="113" oninput="syncInputToSlider('nid-sl_nameEnglishSize',this.value)" /></div><input type="range" id="nid-sl_nameEnglishSize" min="8" max="300" value="113" oninput="syncSliderToInput('nid-badge_nameEnglishSize',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">X</span><input type="text" class="slider-custom-badge" id="nid-badge_nameEnglishX" value="1380" oninput="syncInputToSlider('nid-sl_nameEnglishX',this.value)" /></div><input type="range" id="nid-sl_nameEnglishX" min="0" max="2200" value="1380" oninput="syncSliderToInput('nid-badge_nameEnglishX',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Y</span><input type="text" class="slider-custom-badge" id="nid-badge_nameEnglishY" value="1130" oninput="syncInputToSlider('nid-sl_nameEnglishY',this.value)" /></div><input type="range" id="nid-sl_nameEnglishY" min="0" max="2200" value="1130" oninput="syncSliderToInput('nid-badge_nameEnglishY',this.value);nidScheduleRender()" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ পিতা ══ -->
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>👤</span> পিতা — Father</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="field-group">
+              <div class="field-group-label">পিতা <span class="fg-badge kalpurush">Kalpurush Regular</span> <span class="fg-badge" style="background:rgba(0,0,0,.3);color:#aaa;border:1px solid #333;">Black</span></div>
+              <div><label class="field-label">Father's Name (Bangla)</label><input type="text" class="field-input" id="nid-pitaName" value="মোঃ আব্দুল করিম" oninput="nidScheduleRender()" /></div>
+              <div class="slider-triplet">
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Size</span><input type="text" class="slider-custom-badge" id="nid-badge_pitaSize" value="115" oninput="syncInputToSlider('nid-sl_pitaSize',this.value)" /></div><input type="range" id="nid-sl_pitaSize" min="8" max="300" value="115" oninput="syncSliderToInput('nid-badge_pitaSize',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">X</span><input type="text" class="slider-custom-badge" id="nid-badge_pitaX" value="1397" oninput="syncInputToSlider('nid-sl_pitaX',this.value)" /></div><input type="range" id="nid-sl_pitaX" min="0" max="2200" value="1397" oninput="syncSliderToInput('nid-badge_pitaX',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Y</span><input type="text" class="slider-custom-badge" id="nid-badge_pitaY" value="1350" oninput="syncInputToSlider('nid-sl_pitaY',this.value)" /></div><input type="range" id="nid-sl_pitaY" min="0" max="2200" value="1350" oninput="syncSliderToInput('nid-badge_pitaY',this.value);nidScheduleRender()" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ মাতা ══ -->
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>👤</span> মাতা — Mother</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="field-group">
+              <div class="field-group-label">মাতা <span class="fg-badge kalpurush">Kalpurush Regular</span> <span class="fg-badge" style="background:rgba(0,0,0,.3);color:#aaa;border:1px solid #333;">Black</span></div>
+              <div><label class="field-label">Mother's Name (Bangla)</label><input type="text" class="field-input" id="nid-mataName" value="মোছাঃ রাহেলা বেগম" oninput="nidScheduleRender()" /></div>
+              <div class="slider-triplet">
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Size</span><input type="text" class="slider-custom-badge" id="nid-badge_mataSize" value="110" oninput="syncInputToSlider('nid-sl_mataSize',this.value)" /></div><input type="range" id="nid-sl_mataSize" min="8" max="300" value="110" oninput="syncSliderToInput('nid-badge_mataSize',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">X</span><input type="text" class="slider-custom-badge" id="nid-badge_mataX" value="1397" oninput="syncInputToSlider('nid-sl_mataX',this.value)" /></div><input type="range" id="nid-sl_mataX" min="0" max="2200" value="1397" oninput="syncSliderToInput('nid-badge_mataX',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Y</span><input type="text" class="slider-custom-badge" id="nid-badge_mataY" value="1557" oninput="syncInputToSlider('nid-sl_mataY',this.value)" /></div><input type="range" id="nid-sl_mataY" min="0" max="2200" value="1557" oninput="syncSliderToInput('nid-badge_mataY',this.value);nidScheduleRender()" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ DOB ══ -->
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>📅</span> Date of Birth</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="field-group">
+              <div class="field-group-label">DOB <span class="fg-badge arial">Arial Regular</span> <span class="fg-badge red">Red</span></div>
+              <div><label class="field-label">Date of Birth</label><input type="text" class="field-input" id="nid-dob" value="01 Jan 1990" oninput="nidScheduleRender()" /></div>
+              <div class="slider-triplet">
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Size</span><input type="text" class="slider-custom-badge" id="nid-badge_dobSize" value="105" oninput="syncInputToSlider('nid-sl_dobSize',this.value)" /></div><input type="range" id="nid-sl_dobSize" min="8" max="300" value="105" oninput="syncSliderToInput('nid-badge_dobSize',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">X</span><input type="text" class="slider-custom-badge" id="nid-badge_dobX" value="1741" oninput="syncInputToSlider('nid-sl_dobX',this.value)" /></div><input type="range" id="nid-sl_dobX" min="0" max="2200" value="1741" oninput="syncSliderToInput('nid-badge_dobX',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Y</span><input type="text" class="slider-custom-badge" id="nid-badge_dobY" value="1793" oninput="syncInputToSlider('nid-sl_dobY',this.value)" /></div><input type="range" id="nid-sl_dobY" min="0" max="2200" value="1793" oninput="syncSliderToInput('nid-badge_dobY',this.value);nidScheduleRender()" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ ID NO ══ -->
+        <div class="panel-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>🪪</span> ID Number</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <div class="field-group">
+              <div class="field-group-label">ID NO <span class="fg-badge arial">Arial Bold</span> <span class="fg-badge red">Red</span></div>
+              <div><label class="field-label">National ID Number</label><input type="text" class="field-input" id="nid-idNo" value="1234567890123" oninput="nidScheduleRender()" /></div>
+              <div class="slider-triplet">
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Size</span><input type="text" class="slider-custom-badge" id="nid-badge_idNoSize" value="130" oninput="syncInputToSlider('nid-sl_idNoSize',this.value)" /></div><input type="range" id="nid-sl_idNoSize" min="8" max="300" value="130" oninput="syncSliderToInput('nid-badge_idNoSize',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">X</span><input type="text" class="slider-custom-badge" id="nid-badge_idNoX" value="1511" oninput="syncInputToSlider('nid-sl_idNoX',this.value)" /></div><input type="range" id="nid-sl_idNoX" min="0" max="2200" value="1511" oninput="syncSliderToInput('nid-badge_idNoX',this.value);nidScheduleRender()" /></div>
+                <div class="slider-group"><div class="slider-header"><span class="slider-name mono">Y</span><input type="text" class="slider-custom-badge" id="nid-badge_idNoY" value="2012" oninput="syncInputToSlider('nid-sl_idNoY',this.value)" /></div><input type="range" id="nid-sl_idNoY" min="0" max="2200" value="2012" oninput="syncSliderToInput('nid-badge_idNoY',this.value);nidScheduleRender()" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Profile Photo ══ -->
+        <div class="panel-section photo-section">
+          <div class="panel-section-header" onclick="toggleSection(this)">
+            <div class="panel-section-title"><span>🖼️</span> Profile Photo</div>
+            <div class="panel-chevron">▾</div>
+          </div>
+          <div class="panel-body">
+            <label class="photo-upload-zone">
+              <img id="nid-photoPreviewThumb" alt="Preview" />
+              <div class="photo-upload-icon" id="nid-photoUploadIcon">📷</div>
+              <div class="photo-upload-text" id="nid-photoUploadText">Click to upload profile photo</div>
+              <div class="photo-upload-sub">JPG, PNG — positioned on card</div>
+              <input type="file" id="nid-photoUploader" accept="image/*" onchange="nidHandlePhotoUpload(this)" />
+            </label>
+            <div class="slider-2col">
+              <div class="slider-group"><div class="slider-header"><span class="slider-name">Photo X</span><input type="text" class="slider-custom-badge" id="nid-badge_photoX" value="200" oninput="syncInputToSlider('nid-sl_photoX',this.value)" /></div><input type="range" id="nid-sl_photoX" min="0" max="2200" value="200" oninput="syncSliderToInput('nid-badge_photoX',this.value);nidScheduleRender()" /></div>
+              <div class="slider-group"><div class="slider-header"><span class="slider-name">Photo Y</span><input type="text" class="slider-custom-badge" id="nid-badge_photoY" value="900" oninput="syncInputToSlider('nid-sl_photoY',this.value)" /></div><input type="range" id="nid-sl_photoY" min="0" max="2200" value="900" oninput="syncSliderToInput('nid-badge_photoY',this.value);nidScheduleRender()" /></div>
+             <div class="slider-group"><div class="slider-header"><span class="slider-name">Width</span><input type="text" class="slider-custom-badge" id="nid-badge_photoW" value="400" oninput="syncInputToSlider('nid-sl_photoW',this.value)" /></div><input type="range" id="nid-sl_photoW" min="20" max="1000" value="400" oninput="syncSliderToInput('nid-badge_photoW',this.value);nidScheduleRender()" /></div>
+             <div class="slider-group"><div class="slider-header"><span class="slider-name">Height</span><input type="text" class="slider-custom-badge" id="nid-badge_photoH" value="400" oninput="syncInputToSlider('nid-sl_photoH',this.value)" /></div><input type="range" id="nid-sl_photoH" min="20" max="1000" value="400" oninput="syncSliderToInput('nid-badge_photoH',this.value);nidScheduleRender()" /></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- NID Actions -->
+        <div class="actions-row">
+          <button class="btn-action btn-render" onclick="nidRenderCard()"><span>⚡</span> Render NID Card<div class="spinner" id="nid-renderSpinner"></div></button>
+          <button class="btn-action btn-jpg"    onclick="nidDownloadJPG()"><span>🖼️</span> Download JPG</button>
+          <button class="btn-action btn-reset"  onclick="nidResetDefaults()">↩ Reset to Defaults</button>
+        </div>
+        <div class="status-bar"><div class="status-dot"></div><span id="nid-statusText">System Ready</span></div>
+      </div>
+
+      <div class="viewport">
+        <div id="nid-canvasWrapper" class="canvas-wrapper" style="display:none;"><canvas id="nid-nidCanvas"></canvas></div>
+        <div class="canvas-placeholder" id="nid-canvasPlaceholder"><div style="font-size:40px;opacity:.3;">🪪</div><div>Fill in the fields, then click <strong>Render NID Card</strong></div><div style="font-size:11px;font-family:var(--font-mono);color:var(--text-dim);">Background: nid-bg.png · Fonts: kalpurush.ttf + arial.ttf</div></div>
+      </div>
+    </div>
+  </div><!-- /portal-nid -->
+
+</div><!-- /appScreen -->
+
+<!-- PREVIEW MODAL -->
+<div id="previewModal">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <div><div class="modal-title" id="modalTitle">Certificate Preview</div><div class="modal-meta" id="modalMeta">—</div></div>
+      <button class="modal-close" onclick="closePreviewModal()">✕</button>
+    </div>
+    <div class="modal-body"><div id="previewCanvasWrap"><canvas id="previewCanvas"></canvas></div></div>
+    <div class="modal-footer"><div class="modal-footer-label" id="modalFooterLabel">—</div><button class="btn-modal-dl" id="modalDlBtn">⬇ Download JPG</button></div>
+  </div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div id="confirmModal">
+  <div class="confirm-panel">
+    <div class="confirm-icon">⚠️</div>
+    <div class="confirm-title">Permanently Delete This Record?</div>
+    <div class="confirm-body" id="confirmBodyText">This action cannot be undone.</div>
+    <div class="confirm-actions">
+      <button class="btn-confirm-cancel" onclick="closeConfirmModal()">Cancel</button>
+      <button class="btn-confirm-delete" id="confirmDeleteBtn">Delete Permanently</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"><span id="toast-icon">✅</span><span id="toast-msg">Done.</span></div>
+
+<script>
+'use strict';
+/* ═══════════════════════════════════════════════════════════════════════
+   SUPABASE
+═══════════════════════════════════════════════════════════════════════ */
+const SUPABASE_URL      = 'https://jlxccewipidsnjdzirtf.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_ozaVEDyu9IqtKRU1r_b3HA_PPlVPJyQ';
+const { createClient }  = supabase;
+const sb                = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GLOBAL STATE
+═══════════════════════════════════════════════════════════════════════ */
+let activePortal = 'tm';
+let currentUser  = null;
+let appInitialized = false;
+
+const TM = {
+  logoImage:     null,
+  certImage:     null,
+  signImage:     null,
+  renderTimer:   null,
+  currentView:   'editor',
+  archiveEntries: []
+};
+
+const NID = {
+  profilePhoto:  null,
+  bgImage:       null,
+  renderTimer:   null,
+  fontsLoaded:   { kalpurush: false, arial: false }
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TM DEFAULTS
+═══════════════════════════════════════════════════════════════════════ */
+const TM_DEFAULTS = {
+  trademarkNo:'245788', regDate:'08/04/2024', appDate:'08/12/2015',
+  companyName:'The Territorial News (TTN)', ownerName:'Riyad Sarkar',
+  address:"Nuran House, 2nd Floor, Thana Road, Badarmokam Mosque Area, Teknaf, Cox's Bazar-4760, Bangladesh.",
+  compType:'A Bangladeshi Media/News Company',
+  openingText:'Certified that the Trademark of which a representation is annexed hereto has been registered in the name of',
+  middleTextArial:'in class 41 under No.',
+  goodsDesc:'in respect of online news publishing; digital journalism; media broadcasting; news reporting; photography; video production; social media news services and all other media services included in class-41.',
+  sealedTextPhrase:'Sealed at my direction this .....day of......Month........',
+  sealedDate:'10 JUL 2024', logoText:'', 
+  arialSize:50, corsivSize:62, sealSize:40, blueDateSize:40,
+  tmX:277, tmY:987, dateX:1833, dateY:987, paraY:1078,
+  logoY:1814, logoSize:433, sealX:302, sealY:2908, blueX:783, blueY:2857,
+  logoTextSize:59, logoTextX:1200, logoTextY:2188,
+  signX: 1271, signY: 1717, signSize: 322
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   NID DEFAULTS
+═══════════════════════════════════════════════════════════════════════ */
+const NID_CARD_DEFAULTS = {
+  nameBanglaSize: 144,  nameBanglaX: 1380,  nameBanglaY: 928,
+  nameEnglishSize:113,  nameEnglishX:1380,  nameEnglishY:1130,
+  pitaSize:       115,  pitaX:       1397,  pitaY:       1350,
+  mataSize:       110,  mataX:       1397,  mataY:       1557,
+  dobSize:        105,  dobX:        1741,  dobY:        1793,
+  idNoSize:       130,  idNoX:       1511,  idNoY:       2012,
+  photoX:         200,  photoY:      900,   photoW:      400,  photoH: 400,
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════════════════════════════════ */
+(async function init() {
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) { currentUser = session.user; revealApp(); }
+  sb.auth.onAuthStateChange((evt, sess) => {
+    if (evt === 'SIGNED_IN' && sess) { currentUser = sess.user; revealApp(); }
+    else if (evt === 'SIGNED_OUT')   { showLogin(); }
+  });
+
+  try {
+    const fa = new FontFace('Arial Regular', 'url(arial-regular.ttf)');
+    const fc = new FontFace('Monotype Corsiva Bold Italic', 'url(monotype-corsiva-bold-italic.otf)');
+    await Promise.all([fa.load(), fc.load()]);
+    document.fonts.add(fa); document.fonts.add(fc);
+  } catch(e) { console.warn('TM fonts: system fallback.'); }
+
+  await nidLoadFonts();
+  await document.fonts.ready;
+  wireInputListeners();
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GLOBAL PORTAL SWITCH
+═══════════════════════════════════════════════════════════════════════ */
+function switchPortal(portal) {
+  activePortal = portal;
+  const isTM  = portal === 'tm';
+  const isNID = portal === 'nid';
+
+  document.getElementById('portal-tm').classList.toggle('active',  isTM);
+  document.getElementById('portal-nid').classList.toggle('active', isNID);
+
+  const gTabTM  = document.getElementById('gTabTM');
+  const gTabNID = document.getElementById('gTabNID');
+  gTabTM.classList.remove('active-tm','active-nid');
+  gTabNID.classList.remove('active-tm','active-nid');
+  if (isTM)  gTabTM.classList.add('active-tm');
+  if (isNID) gTabNID.classList.add('active-nid');
+
+  document.getElementById('globalModeLabel').textContent = isTM
+    ? 'IP Trademark Portal — Active'
+    : 'BD NID Server — Active';
+
+  if (isTM  && currentUser) tmRenderCertificate();
+  if (isNID && currentUser) nidRenderCard();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   AUTH
+═══════════════════════════════════════════════════════════════════════ */
+async function executeSignIn() {
+  const email = document.getElementById('emailInput').value.trim();
+  const pass  = document.getElementById('passwordInput').value;
+  const btn   = document.getElementById('signInBtn');
+  document.getElementById('loginError').classList.remove('visible');
+  if (!email || !pass) { showLoginError('Please fill in both fields.'); return; }
+  btn.disabled = true;
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+  btn.disabled = false;
+  if (error) { showLoginError(error.message); return; }
+  currentUser = data.user;
+  revealApp();
+}
+function executeSignOut() { sb.auth.signOut(); showLogin(); }
+function showLoginError(msg) { const el = document.getElementById('loginError'); el.textContent = msg; el.classList.add('visible'); }
+
+function revealApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display   = 'flex';
+  if (currentUser) document.getElementById('userBadge').textContent = currentUser.email;
+  
+  if (!appInitialized) {
+    tmApplyDefaults();
+    tmRenderCertificate();
+    tmLoadArchiveFromSupabase();
+    appInitialized = true;
+  }
+}
+function showLogin() {
+  appInitialized = false;
+  document.getElementById('appScreen').style.display   = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+}
+function updateClock() {
+  const el = document.getElementById('navClock');
+  if (el) el.textContent = new Date().toLocaleString('en-BD', { timeZone: 'Asia/Dhaka' }) + ' BDT';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SHARED SLIDER SYNC
+═══════════════════════════════════════════════════════════════════════ */
+function syncSliderToInput(badgeId, val) { const el = document.getElementById(badgeId); if (el) el.value = val; }
+function syncInputToSlider(sliderId, val) {
+  const sl = document.getElementById(sliderId);
+  if (sl && !isNaN(val) && val !== '') {
+    const p = parseFloat(val);
+    if (p >= parseFloat(sl.min) && p <= parseFloat(sl.max)) { sl.value = p; }
+  }
+}
+function toggleSection(hdr) { hdr.classList.toggle('collapsed'); hdr.nextElementSibling.classList.toggle('hidden'); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INPUT LISTENER WIRING
+═══════════════════════════════════════════════════════════════════════ */
+function wireInputListeners() {
+  const tmTextIds = ['tm-trademarkNo','tm-regDate','tm-appDate','tm-companyName','tm-ownerName','tm-address','tm-compType','tm-openingText','tm-middleTextArial','tm-goodsDesc','tm-sealedTextPhrase','tm-sealedDate','tm-logoText'];
+  tmTextIds.forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', tmScheduleRender); });
+
+  const tmSliders = [
+    'tm-sl_arialSize','tm-sl_corsivSize','tm-sl_sealSize','tm-sl_blueDateSize','tm-sl_tmX','tm-sl_tmY',
+    'tm-sl_dateX','tm-sl_dateY','tm-sl_paraY','tm-sl_logoY','tm-sl_logoSize','tm-sl_sealX','tm-sl_sealY',
+    'tm-sl_blueX','tm-sl_blueY','tm-sl_logoTextSize','tm-sl_logoTextX','tm-sl_logoTextY',
+    'tm-sl_signX','tm-sl_signY','tm-sl_signSize'
+  ];
+  tmSliders.forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', tmScheduleRender); });
+
+  const nidTextIds = ['nid-nameBangla','nid-nameEnglish','nid-pitaName','nid-mataName','nid-dob','nid-idNo'];
+  nidTextIds.forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', nidScheduleRender); });
+
+  const nidSliders = [
+    'nid-sl_nameBanglaSize','nid-sl_nameBanglaX','nid-sl_nameBanglaY',
+    'nid-sl_nameEnglishSize','nid-sl_nameEnglishX','nid-sl_nameEnglishY',
+    'nid-sl_pitaSize','nid-sl_pitaX','nid-sl_pitaY',
+    'nid-sl_mataSize','nid-sl_mataX','nid-sl_mataY',
+    'nid-sl_dobSize','nid-sl_dobX','nid-sl_dobY',
+    'nid-sl_idNoSize','nid-sl_idNoX','nid-sl_idNoY',
+    'nid-sl_photoX','nid-sl_photoY','nid-sl_photoW','nid-sl_photoH'
+  ];
+  nidSliders.forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', nidScheduleRender); });
+
+  document.getElementById('previewModal').addEventListener('click', e => { if (e.target === e.currentTarget) closePreviewModal(); });
+  document.getElementById('confirmModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeConfirmModal(); });
+
+  const nidBadgeToSlider = {
+    'nid-badge_nameBanglaSize': 'nid-sl_nameBanglaSize',
+    'nid-badge_nameBanglaX':    'nid-sl_nameBanglaX',
+    'nid-badge_nameBanglaY':    'nid-sl_nameBanglaY',
+    'nid-badge_nameEnglishSize':'nid-sl_nameEnglishSize',
+    'nid-badge_nameEnglishX':   'nid-sl_nameEnglishX',
+    'nid-badge_nameEnglishY':   'nid-sl_nameEnglishY',
+    'nid-badge_pitaSize':       'nid-sl_pitaSize',
+    'nid-badge_pitaX':          'nid-sl_pitaX',
+    'nid-badge_pitaY':          'nid-sl_pitaY',
+    'nid-badge_mataSize':       'nid-sl_mataSize',
+    'nid-badge_mataX':          'nid-sl_mataX',
+    'nid-badge_mataY':          'nid-sl_mataY',
+    'nid-badge_dobSize':        'nid-sl_dobSize',
+    'nid-badge_dobX':           'nid-sl_dobX',
+    'nid-badge_dobY':           'nid-sl_dobY',
+    'nid-badge_idNoSize':       'nid-sl_idNoSize',
+    'nid-badge_idNoX':          'nid-sl_idNoX',
+    'nid-badge_idNoY':          'nid-sl_idNoY',
+    'nid-badge_photoX':         'nid-sl_photoX',
+    'nid-badge_photoY':         'nid-sl_photoY',
+    'nid-badge_photoW':         'nid-sl_photoW',
+    'nid-badge_photoH':         'nid-sl_photoH',
+  };
+
+  Object.entries(nidBadgeToSlider).forEach(([badgeId, sliderId]) => {
+    const badge  = document.getElementById(badgeId);
+    const slider = document.getElementById(sliderId);
+    if (!badge || !slider) return;
+
+    const commitValue = () => {
+      const raw = badge.value.trim();
+      const val = parseFloat(raw);
+      if (isNaN(val)) return;
+      const min     = parseFloat(slider.min);
+      const max     = parseFloat(slider.max);
+      const clamped = Math.min(Math.max(val, min), max);
+      slider.value  = clamped;
+      badge.value   = clamped;
+      nidScheduleRender();
+    };
+
+    badge.addEventListener('blur',    commitValue);
+    badge.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitValue();
+        badge.blur();
+      }
+    });
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TM PORTAL
+═══════════════════════════════════════════════════════════════════════ */
+
+function tmFV(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function tmSV(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
+
+function tmApplyDefaults() {
+  const textMap = { 'tm-trademarkNo':'trademarkNo','tm-regDate':'regDate','tm-appDate':'appDate','tm-companyName':'companyName','tm-ownerName':'ownerName','tm-address':'address','tm-compType':'compType','tm-openingText':'openingText','tm-middleTextArial':'middleTextArial','tm-goodsDesc':'goodsDesc','tm-sealedTextPhrase':'sealedTextPhrase','tm-sealedDate':'sealedDate','tm-logoText':'logoText' };
+  Object.entries(textMap).forEach(([domId, key]) => { const el = document.getElementById(domId); if (el && TM_DEFAULTS[key] !== undefined) el.value = TM_DEFAULTS[key]; });
+  
+  const slMap = [
+    ['tm-sl_arialSize','tm-badge_arialSize','arialSize'],['tm-sl_corsivSize','tm-badge_corsivSize','corsivSize'],
+    ['tm-sl_sealSize','tm-badge_sealSize','sealSize'],['tm-sl_blueDateSize','tm-badge_blueDateSize','blueDateSize'],
+    ['tm-sl_tmX','tm-badge_tmX','tmX'],['tm-sl_tmY','tm-badge_tmY','tmY'],['tm-sl_dateX','tm-badge_dateX','dateX'],
+    ['tm-sl_dateY','tm-badge_dateY','dateY'],['tm-sl_paraY','tm-badge_paraY','paraY'],['tm-sl_logoY','tm-badge_logoY','logoY'],
+    ['tm-sl_logoSize','tm-badge_logoSize','logoSize'],['tm-sl_sealX','tm-badge_sealX','sealX'],
+    ['tm-sl_sealY','tm-badge_sealY','sealY'],['tm-sl_blueX','tm-badge_blueX','blueX'],['tm-sl_blueY','tm-badge_blueY','blueY'],
+    ['tm-sl_logoTextSize','tm-badge_logoTextSize','logoTextSize'],['tm-sl_logoTextX','tm-badge_logoTextX','logoTextX'],
+    ['tm-sl_logoTextY','tm-badge_logoTextY','logoTextY'],
+    ['tm-sl_signX','tm-badge_signX','signX'],['tm-sl_signY','tm-badge_signY','signY'],['tm-sl_signSize','tm-badge_signSize','signSize']
+  ];
+  
+  slMap.forEach(([slId, bdId, key]) => {
+    const sl = document.getElementById(slId); const bd = document.getElementById(bdId); const v = TM_DEFAULTS[key];
+    if (sl) sl.value = v; if (bd) bd.value = v;
+  });
+}
+
+function tmSwitchView(view) {
+  TM.currentView = view;
+  const isEditor  = view === 'editor';
+  const isHistory = view === 'history';
+  document.getElementById('tm-editorView').style.display  = isEditor  ? 'flex' : 'none';
+  document.getElementById('tm-historyView').style.display = isHistory ? 'flex' : 'none';
+  document.getElementById('tm-modeTabEditor').classList.toggle('active',  isEditor);
+  document.getElementById('tm-modeTabHistory').classList.toggle('active', isHistory);
+  document.getElementById('tm-modeIndicator').textContent = isEditor ? 'Editor — TM Version 1' : 'Cloud Archive — Download History';
+  if (isHistory) tmRenderHistoryTable();
+}
+
+function tmHandleLogoUpload(input) {
+  if (!input.files || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => { const img = new Image(); img.onload = () => { TM.logoImage = img; showToast('success','🛡️ Logo asset registered.'); tmRenderCertificate(); }; img.src = e.target.result; };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function tmLoadSign() {
+  return new Promise(resolve => {
+    if (TM.signImage && TM.signImage.complete && TM.signImage.naturalWidth>0) { resolve(TM.signImage); return; }
+    const img = new Image(); img.crossOrigin='Anonymous';
+    img.onload=()=>{ TM.signImage=img; resolve(img); }; img.onerror=()=>resolve(null);
+    img.src='sign remove.png'; 
+  });
+}
+
+function tmCaptureSnapshot() {
+  return {
+    trademarkNo:      tmFV('tm-trademarkNo'),
+    regDate:          tmFV('tm-regDate'),     appDate:         tmFV('tm-appDate'),
+    companyName:      tmFV('tm-companyName'), ownerName:       tmFV('tm-ownerName'),
+    address:          tmFV('tm-address'),     compType:        tmFV('tm-compType'),
+    openingText:      tmFV('tm-openingText'), middleTextArial: tmFV('tm-middleTextArial'),
+    goodsDesc:        tmFV('tm-goodsDesc'),   sealedTextPhrase:tmFV('tm-sealedTextPhrase'),
+    sealedDate:       tmFV('tm-sealedDate'),  logoText:        tmFV('tm-logoText'),
+    arialSize:        tmSV('tm-sl_arialSize'),   corsivSize:    tmSV('tm-sl_corsivSize'),
+    sealSize:         tmSV('tm-sl_sealSize'),     blueDateSize:  tmSV('tm-sl_blueDateSize'),
+    tmX:              tmSV('tm-sl_tmX'),          tmY:           tmSV('tm-sl_tmY'),
+    dateX:            tmSV('tm-sl_dateX'),         dateY:         tmSV('tm-sl_dateY'),
+    paraY:            tmSV('tm-sl_paraY'),          logoY:        tmSV('tm-sl_logoY'),
+    logoSize:         tmSV('tm-sl_logoSize'),       sealX:        tmSV('tm-sl_sealX'),
+    sealY:            tmSV('tm-sl_sealY'),           blueX:        tmSV('tm-sl_blueX'),
+    blueY:            tmSV('tm-sl_blueY'),
+    logoTextSize:     tmSV('tm-sl_logoTextSize'),  logoTextX:    tmSV('tm-sl_logoTextX'),
+    logoTextY:        tmSV('tm-sl_logoTextY'),
+    signX:            tmSV('tm-sl_signX'),        signY:         tmSV('tm-sl_signY'),
+    signSize:         tmSV('tm-sl_signSize'),
+    logoDataUrl:      TM.logoImage && TM.logoImage.complete ? TM.logoImage.src : null,
+  };
+}
+
+async function tmRenderToCanvas(canvas, snap, bgImg, customLogoImg, signImg) {
+  const ctx = canvas.getContext('2d');
+  
+  const W   = bgImg ? bgImg.naturalWidth  : 1200;
+  const H   = bgImg ? bgImg.naturalHeight : 1650;
+  canvas.width = W; canvas.height = H;
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  if (bgImg) { ctx.drawImage(bgImg, 0, 0, W, H); } else { ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,W,H); }
+
+  const { arialSize, corsivSize, sealSize, blueDateSize, tmX, tmY, dateX, dateY, paraY, logoY, logoSize, sealX, sealY, blueX, blueY, logoTextSize, logoTextX, logoTextY } = snap;
+
+  const cleanTm   = (snap.trademarkNo||'').replace(/^Trademark\s*No\.\s*/i,'').trim();
+  const cleanDate = (snap.regDate||'').replace(/^Date:\s*/i,'').trim();
+  ctx.save(); ctx.fillStyle='#000'; ctx.font=`bold ${arialSize}px 'Arial Regular',sans-serif`;
+  ctx.fillText(`Trademark No. ${cleanTm}`, tmX, tmY);
+  ctx.fillText(`Date: ${cleanDate}`, dateX, dateY); ctx.restore();
+
+  const italicSeg = `${snap.companyName}, Proprietor, ${snap.ownerName}, ${snap.address} ${snap.compType},`;
+  const normalSeg = `${snap.middleTextArial} ${cleanTm} as of the date ${snap.appDate}.`;
+  const masterTokens = [];
+  const tk = (txt, sty) => { if (!txt) return; txt.split(/\s+/).filter(Boolean).forEach(w => masterTokens.push({word:w,type:sty})); };
+  tk(snap.openingText,'normal'); tk(italicSeg,'italic'); tk(normalSeg,'normal'); tk(snap.goodsDesc,'italic');
+  const fontMap = { normal:`bold ${arialSize}px 'Arial Regular',sans-serif`, italic:`italic bold ${corsivSize}px 'Monotype Corsiva Bold Italic',cursive,serif` };
+  const linePad = { normal: arialSize+14, italic: corsivSize+14 };
+  const leftBound = W*0.12, maxWidth = W*0.82;
+  const lines = []; let cur = [];
+  for (let i=0;i<masterTokens.length;i++) {
+    const tok=masterTokens[i]; ctx.font=fontMap[tok.type];
+    let lineW=0; cur.forEach((it,ix)=>{ ctx.font=fontMap[it.type]; lineW+=ctx.measureText(it.word).width; if(ix<cur.length-1)lineW+=ctx.measureText(' ').width; });
+    if(cur.length>0){ctx.font=fontMap[cur[cur.length-1].type];lineW+=ctx.measureText(' ').width;}
+    ctx.font=fontMap[tok.type]; lineW+=ctx.measureText(tok.word).width;
+    if(lineW>maxWidth&&cur.length>0){lines.push(cur);cur=[tok];}else{cur.push(tok);}
+  }
+  if(cur.length>0)lines.push(cur);
+  let curY=paraY;
+  for(let r=0;r<lines.length;r++){
+    const lt=lines[r],isLast=r===lines.length-1;
+    let rawW=0; lt.forEach(t=>{ctx.font=fontMap[t.type];rawW+=ctx.measureText(t.word).width;});
+    let maxPad=38; lt.forEach(t=>{if(linePad[t.type]>maxPad)maxPad=linePad[t.type];}); curY+=maxPad;
+    let rx=leftBound;
+    if(isLast||lt.length<=1){lt.forEach(tok=>{ctx.font=fontMap[tok.type];ctx.fillStyle='#000';ctx.fillText(tok.word,rx,curY);rx+=ctx.measureText(tok.word).width+ctx.measureText(' ').width;});}
+    else{const gaps=lt.length-1,just=(maxWidth-rawW)/gaps;lt.forEach(tok=>{ctx.font=fontMap[tok.type];ctx.fillStyle='#000';ctx.fillText(tok.word,rx,curY);rx+=ctx.measureText(tok.word).width+just;});}
+  }
+
+  if (customLogoImg && customLogoImg.complete) {
+    ctx.save(); 
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const pad=16,bxW=logoSize+pad*2,bxH=logoSize+pad*2,bxX=(W-bxW)/2;
+    ctx.fillStyle='#fff';ctx.fillRect(bxX,logoY,bxW,bxH);ctx.strokeStyle='#000';ctx.lineWidth=2;ctx.strokeRect(bxX,logoY,bxW,bxH);
+    ctx.drawImage(customLogoImg,bxX+pad,logoY+pad,logoSize,logoSize); 
+    ctx.restore();
+  }
+
+  if (snap.logoText) {
+    ctx.save(); ctx.font=`bold ${logoTextSize}px 'Arial Regular',sans-serif`;
+    const tw=ctx.measureText(snap.logoText).width,px=24,py=20;
+    const bxW=tw+px*2,bxH=logoTextSize+py*2,bxX=logoTextX-bxW/2,bxY=logoTextY-bxH/2;
+    ctx.fillStyle='#fff'; ctx.fillRect(bxX,bxY,bxW,bxH);
+    ctx.strokeStyle='#000'; ctx.lineWidth=2; ctx.strokeRect(bxX,bxY,bxW,bxH);
+    ctx.fillStyle='#000'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(snap.logoText,logoTextX,logoTextY+logoTextSize*0.05); ctx.restore();
+  }
+
+  if (snap.sealedTextPhrase) { ctx.save(); ctx.font=`bold ${sealSize}px 'Arial Regular',sans-serif`; ctx.fillStyle='#000'; ctx.textBaseline='alphabetic'; ctx.textAlign='left'; ctx.fillText(snap.sealedTextPhrase,sealX,sealY); ctx.restore(); }
+  if (snap.sealedDate) { ctx.save(); ctx.font=`bold ${blueDateSize}px 'Arial Regular',sans-serif`; ctx.fillStyle='#1e40af'; ctx.textBaseline='alphabetic'; ctx.textAlign='left'; ctx.fillText(snap.sealedDate,blueX,blueY); ctx.restore(); }
+
+  // Signature overlay rendered last (always on top of logos/pictures)
+  if (signImg && signImg.complete) {
+    ctx.save(); 
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const ratio = signImg.naturalHeight / signImg.naturalWidth;
+    const sWidth = snap.signSize;
+    const sHeight = snap.signSize * ratio;
+    ctx.drawImage(signImg, snap.signX, snap.signY, sWidth, sHeight); 
+    ctx.restore();
+  }
+}
+
+function tmScheduleRender() { clearTimeout(TM.renderTimer); TM.renderTimer = setTimeout(tmRenderCertificate, 55); }
+
+async function tmRenderCertificate() {
+  if (document.getElementById('appScreen').style.display==='none') return;
+  tmShowSpinner(true); tmSetStatus('Processing layout…');
+  const bgImg = await tmLoadBG();
+  const signImg = await tmLoadSign();
+  const canvas = document.getElementById('tm-certCanvas');
+  document.getElementById('tm-canvasWrapper').style.display    = 'block';
+  document.getElementById('tm-canvasPlaceholder').style.display = 'none';
+  const snap = tmCaptureSnapshot();
+  await tmRenderToCanvas(canvas, snap, bgImg, TM.logoImage, signImg);
+  tmShowSpinner(false); tmSetStatus('Rendering engine synchronized.');
+}
+
+function tmLoadBG() {
+  return new Promise(resolve => {
+    if (TM.certImage && TM.certImage.complete && TM.certImage.naturalWidth>0) { resolve(TM.certImage); return; }
+    const img = new Image(); img.crossOrigin='Anonymous';
+    img.onload=()=>{ TM.certImage=img; resolve(img); }; img.onerror=()=>resolve(null);
+    img.src='cert-bangladesh.png';
+  });
+}
+
+async function tmDownloadJPG() {
+  const snap = tmCaptureSnapshot();
+  const ts   = formatTimestamp(new Date());
+  const entry = { ...snap, timestamp:ts, id:`${Date.now()}_${Math.random().toString(36).slice(2)}` };
+  const canvas = document.getElementById('tm-certCanvas');
+  const link   = document.createElement('a');
+  link.download = `Certificate-TM-${snap.trademarkNo||'export'}.jpg`;
+  link.href = canvas.toDataURL('image/jpeg',0.96); link.click();
+  await tmCommitEntry(entry);
+}
+
+async function tmDownloadPDF() {
+  const snap = tmCaptureSnapshot();
+  const ts   = formatTimestamp(new Date());
+  const entry = { ...snap, timestamp:ts, id:`${Date.now()}_${Math.random().toString(36).slice(2)}` };
+  const canvas = document.getElementById('tm-certCanvas');
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation:'portrait', unit:'px', format:'a4' });
+  const pW=pdf.internal.pageSize.getWidth(), pH=pdf.internal.pageSize.getHeight();
+  const cr=canvas.width/canvas.height, pr=pW/pH;
+  let rW=pW,rH=pH,xO=0,yO=0;
+  if(cr>pr){rH=pW/cr;yO=(pH-rH)/2;}else{rW=pH*cr;xO=(pW-rW)/2;}
+  pdf.addImage(canvas.toDataURL('image/jpeg',1.0),'JPEG',xO,yO,rW,rH);
+  pdf.save(`Certificate-TM-${snap.trademarkNo||'export'}.pdf`);
+  await tmCommitEntry(entry);
+}
+
+async function tmCommitEntry(entry) {
+  tmSetStatus('Saving to Cloud Vault…');
+  const fallbackNumericId = Math.floor(Date.now() / 1000); 
+
+  // [FIXED] Strictly using columns that exist in the database table schema
+  const payload = {
+    registration_no: fallbackNumericId, 
+    trademark_no: entry.trademarkNo || 'N/A', 
+    reg_date: entry.regDate || '',
+    name: entry.companyName || '', 
+    owner_name: entry.ownerName || '', 
+    address: entry.address || '',
+    company_type: entry.compType || '', 
+    app_date: entry.appDate || '', 
+    details: entry.goodsDesc || '',
+    sealed_date: entry.sealedDate || '', 
+    synced_at: new Date().toISOString()
+  };
+  
+  const { error } = await sb.from('certificates').insert([payload]);
+  if (error) { tmSetStatus('Sync error.'); showToast('error',`Vault error: ${error.message}`); return; }
+  showToast('success','🔒 Record secured in Cloud Vault.');
+  await tmLoadArchiveFromSupabase();
+}
+
+async function tmLoadArchiveFromSupabase() {
+  const { data, error } = await sb.from('certificates').select('*').order('synced_at',{ascending:false});
+  if (error) { showToast('error',`Fetch error: ${error.message}`); return; }
+  
+  TM.archiveEntries = (data||[]).map(row => ({
+    id:row.id||'', trademarkNo:row.trademark_no||'',
+    regDate:row.reg_date||'', appDate:row.app_date||'', companyName:row.name||'',
+    ownerName:row.owner_name||'', address:row.address||'', compType:row.company_type||'',
+    openingText:TM_DEFAULTS.openingText, middleTextArial:TM_DEFAULTS.middleTextArial,
+    goodsDesc:row.details||'', sealedTextPhrase:TM_DEFAULTS.sealedTextPhrase,
+    sealedDate:row.sealed_date||'', logoText:row.name||'', 
+    arialSize:TM_DEFAULTS.arialSize, corsivSize:TM_DEFAULTS.corsivSize, sealSize:TM_DEFAULTS.sealSize,
+    blueDateSize:TM_DEFAULTS.blueDateSize, tmX:TM_DEFAULTS.tmX, tmY:TM_DEFAULTS.tmY,
+    dateX:TM_DEFAULTS.dateX, dateY:TM_DEFAULTS.dateY, paraY:TM_DEFAULTS.paraY,
+    logoY:TM_DEFAULTS.logoY, logoSize:TM_DEFAULTS.logoSize, sealX:TM_DEFAULTS.sealX,
+    sealY:TM_DEFAULTS.sealY, blueX:TM_DEFAULTS.blueX, blueY:TM_DEFAULTS.blueY,
+    logoTextSize:TM_DEFAULTS.logoTextSize, logoTextX:TM_DEFAULTS.logoTextX, logoTextY:TM_DEFAULTS.logoTextY,
+    signX:TM_DEFAULTS.signX, signY:TM_DEFAULTS.signY, signSize:TM_DEFAULTS.signSize,
+    logoDataUrl:null, 
+    timestamp:row.synced_at?formatTimestamp(new Date(row.synced_at)):'—'
+  }));
+  
+  tmSetStatus(`Vault synchronized ✓ — ${TM.archiveEntries.length} record(s).`);
+  if (TM.currentView === 'history') tmRenderHistoryTable();
+}
+
+function tmRenderHistoryTable() {
+  const wrap = document.getElementById('tm-historyTableWrap');
+  document.getElementById('tm-statTotal').textContent    = TM.archiveEntries.length;
+  document.getElementById('tm-statLastSync').textContent = TM.archiveEntries.length ? TM.archiveEntries[0].timestamp : '—';
+  document.getElementById('tm-historySubtitle').textContent = TM.archiveEntries.length
+    ? `${TM.archiveEntries.length} certificate record(s) in vault`
+    : 'No records yet.';
+  if (!TM.archiveEntries.length) { wrap.innerHTML=`<div class="history-empty"><div class="history-empty-icon">🗄️</div><div>No download records yet.</div></div>`; return; }
+  const rows = TM.archiveEntries.map((e,i) => {
+    const tmNum    = (e.trademarkNo||'').replace(/^Trademark\s*No\.\s*/i,'').trim();
+    const verifyUrl= tmNum ? `https://dpdt-govbd-trademek-database.vercel.app/verify?reg_no=${encodeURIComponent(tmNum)}` : null;
+    const liveCell = verifyUrl
+      ? `<a class="live-link-badge" href="${verifyUrl}" target="_blank" rel="noopener noreferrer"><span class="link-dot"></span>🔗 View Live</a>`
+      : `<span class="live-link-none">No TM No.</span>`;
+    return `<tr>
+      <td class="td-index">#${i+1}</td>
+      <td class="td-tm">${escHtml(e.trademarkNo)}</td>
+      <td class="td-company" title="${escHtml(e.companyName)}">${escHtml(e.companyName)}</td>
+      <td class="td-owner">${escHtml(e.ownerName)}</td>
+      <td class="td-type">${escHtml(e.compType)}</td>
+      <td class="td-timestamp">${escHtml(e.timestamp)}</td>
+      <td class="td-live-link">${liveCell}</td>
+      <td class="td-actions"><div class="vault-ops"><button class="btn-vault btn-vault-view" onclick="tmVaultView(${i})">👁 View</button><button class="btn-vault btn-vault-dl" onclick="tmVaultDownload(${i})">⬇ DL</button><button class="btn-vault btn-vault-del" onclick="tmVaultDeletePrompt(${i})">🗑 Del</button></div></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML=`<table class="archive-table"><thead><tr><th>#</th><th>TM No.</th><th>Company</th><th>Owner</th><th>Type</th><th>Archived</th><th>Live Link</th><th>Operations</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function escHtml(s) { if(!s)return'—'; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+async function tmVaultView(idx) {
+  const e = TM.archiveEntries[idx]; if (!e) return;
+  document.getElementById('modalTitle').textContent      = `TM No. ${e.trademarkNo}`;
+  document.getElementById('modalMeta').textContent       = `${e.companyName} · ${e.ownerName} · ${e.timestamp}`;
+  document.getElementById('modalFooterLabel').textContent = `Archived: ${e.timestamp}`;
+  document.getElementById('previewModal').classList.add('open');
+  const bg     = await tmLoadBG();
+  const logoImg= await tmResolveLogoImg(e.logoDataUrl);
+  const signImg= await tmLoadSign();
+  const canvas  = document.getElementById('previewCanvas');
+  await tmRenderToCanvas(canvas, e, bg, logoImg, signImg);
+  document.getElementById('modalDlBtn').onclick = () => tmVaultDlEntry(e);
+}
+function closePreviewModal() { document.getElementById('previewModal').classList.remove('open'); }
+
+async function tmVaultDownload(idx) { await tmVaultDlEntry(TM.archiveEntries[idx]); }
+async function tmVaultDlEntry(e) {
+  showToast('success','⏳ Preparing download…');
+  const oc   = document.createElement('canvas');
+  const bg   = await tmLoadBG();
+  const logo = await tmResolveLogoImg(e.logoDataUrl);
+  const signImg= await tmLoadSign();
+  await tmRenderToCanvas(oc, e, bg, logo, signImg);
+  const link = document.createElement('a'); link.download=`Archive-TM-${e.trademarkNo||'cert'}.jpg`; link.href=oc.toDataURL('image/jpeg',0.96); link.click();
+  showToast('success',`📥 Downloaded: TM No. ${e.trademarkNo}`);
+}
+
+function tmResolveLogoImg(dataUrl) {
+  return new Promise(res => {
+    if (!dataUrl) { res(null); return; }
+    if (TM.logoImage && TM.logoImage.src===dataUrl) { res(TM.logoImage); return; }
+    const img=new Image(); img.onload=()=>res(img); img.onerror=()=>res(null); img.src=dataUrl;
+  });
+}
+
+let tmPendingDelIdx = null;
+function tmVaultDeletePrompt(idx) {
+  const e = TM.archiveEntries[idx]; if (!e) return;
+  tmPendingDelIdx = idx;
+  document.getElementById('confirmBodyText').textContent = `This will permanently delete TM No. "${e.trademarkNo}" (${e.companyName}).`;
+  document.getElementById('confirmModal').classList.add('open');
+  document.getElementById('confirmDeleteBtn').onclick = confirmDelete;
+}
+function closeConfirmModal() { document.getElementById('confirmModal').classList.remove('open'); tmPendingDelIdx=null; }
+async function confirmDelete() {
+  if (tmPendingDelIdx===null) return;
+  const e = TM.archiveEntries[tmPendingDelIdx]; 
+  const recordId = e.id;
+  closeConfirmModal();
+  
+  const { error } = await sb.from('certificates').delete().eq('id', recordId);
+  if (error) { showToast('error',`Delete error: ${error.message}`); return; }
+  showToast('success',`🗑 Record deleted from vault.`);
+  await tmLoadArchiveFromSupabase();
+}
+
+function tmSetStatus(msg) { const el=document.getElementById('tm-statusText'); if(el)el.textContent=msg; }
+function tmShowSpinner(on) { document.getElementById('tm-renderSpinner').style.display=on?'block':'none'; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   NID PORTAL
+═══════════════════════════════════════════════════════════════════════ */
+
+function nidFV(id) { return (document.getElementById(id)?.value||'').trim(); }
+function nidSV(id) { return parseFloat(document.getElementById(id)?.value)||0; }
+
+async function nidLoadFonts() {
+  nidSetStatus('Loading Kalpurush & Arial fonts…');
+  const statusEl = document.getElementById('nid-fontStatus');
+  const faces = [
+    { name:'Kalpurush',      url:'kalpurush.ttf', key:'kalpurush' },
+    { name:'Kalpurush Bold', url:'kalpurush.ttf', key:'kalpurush', weight:'bold' },
+    { name:'Arial Regular',  url:'arial.ttf',     key:'arial' },
+    { name:'Arial Bold',     url:'arial.ttf',     key:'arial',     weight:'bold' },
+  ];
+  let loaded = 0;
+  for (const f of faces) {
+    try {
+      const ff = new FontFace(f.name, `url(${f.url})`, f.weight ? {weight:f.weight} : {});
+      await ff.load(); document.fonts.add(ff);
+      NID.fontsLoaded[f.key] = true; loaded++;
+    } catch(e) { console.warn(`NID font "${f.name}" not found — fallback.`); }
+  }
+  if (loaded === 0) {
+    statusEl.innerHTML = `<div class="mode-indicator" style="color:var(--danger);border-color:rgba(224,82,82,.35);">⚠ System Fonts</div>`;
+  } else {
+    statusEl.innerHTML = `<div class="mode-indicator" style="color:var(--success);border-color:rgba(76,175,125,.35);">✓ Fonts Loaded</div>`;
+  }
+  nidSetStatus('Fonts ready.');
+}
+
+function nidHandlePhotoUpload(input) {
+  if (!input.files || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img=new Image(); img.onload=()=>{
+      NID.profilePhoto=img;
+      const th=document.getElementById('nid-photoPreviewThumb');
+      th.src=img.src; th.style.display='block';
+      document.getElementById('nid-photoUploadIcon').style.display='none';
+      document.getElementById('nid-photoUploadText').textContent=input.files[0].name;
+      showToast('success','📷 Profile photo loaded.'); nidScheduleRender();
+    }; img.src=e.target.result;
+  }; reader.readAsDataURL(input.files[0]);
+}
+
+function nidLoadBG() {
+  return new Promise(res => {
+    if (NID.bgImage && NID.bgImage.complete && NID.bgImage.naturalWidth>0) { res(NID.bgImage); return; }
+    const img=new Image(); img.crossOrigin='Anonymous';
+    img.onload=()=>{ NID.bgImage=img; res(img); }; img.onerror=()=>res(null);
+    img.src='nid-bg.png';
+  });
+}
+
+function nidScheduleRender() { clearTimeout(NID.renderTimer); NID.renderTimer=setTimeout(nidRenderCard, 60); }
+
+async function nidRenderCard() {
+  nidShowSpinner(true); nidSetStatus('Compositing NID card…');
+  const bg     = await nidLoadBG();
+  const canvas = document.getElementById('nid-nidCanvas');
+  const ctx    = canvas.getContext('2d');
+  
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const W = bg ? bg.naturalWidth  : 856;
+  const H = bg ? bg.naturalHeight : 540;
+  canvas.width=W; canvas.height=H; ctx.textBaseline='alphabetic';
+
+  if (bg) { ctx.drawImage(bg,0,0,W,H); }
+  else {
+    ctx.fillStyle='#f5f5f5'; ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle='#ccc'; ctx.lineWidth=2; ctx.strokeRect(1,1,W-2,H-2);
+    ctx.save(); ctx.font='italic 14px sans-serif'; ctx.fillStyle='#aaa';
+    ctx.textAlign='center'; ctx.fillText('[ nid-bg.png not found ]',W/2,24); ctx.restore();
+  }
+
+  if (NID.profilePhoto && NID.profilePhoto.complete) {
+    ctx.save(); ctx.drawImage(NID.profilePhoto, nidSV('nid-sl_photoX'), nidSV('nid-sl_photoY'), nidSV('nid-sl_photoW'), nidSV('nid-sl_photoH')); ctx.restore();
+  }
+
+  ctx.save(); ctx.textBaseline='alphabetic';
+
+  /* Field 1 — Bangla Name (Bold) */
+  const nameBanglaText = nidFV('nid-nameBangla');
+  if (nameBanglaText) {
+    ctx.font=`bold ${nidSV('nid-sl_nameBanglaSize')}px 'Kalpurush Bold','Kalpurush',serif`;
+    ctx.fillStyle='#000000'; ctx.textAlign='left';
+    ctx.fillText(nameBanglaText, nidSV('nid-sl_nameBanglaX'), nidSV('nid-sl_nameBanglaY'));
+  }
+
+  /* Field 2 — English Name */
+  const nameEnglishText = nidFV('nid-nameEnglish');
+  if (nameEnglishText) {
+    ctx.font=`${nidSV('nid-sl_nameEnglishSize')}px 'Arial Regular',Arial,sans-serif`;
+    ctx.fillStyle='#000000'; ctx.textAlign='left';
+    ctx.fillText(nameEnglishText, nidSV('nid-sl_nameEnglishX'), nidSV('nid-sl_nameEnglishY'));
+  }
+
+  /* Field 3 — Father Name */
+  const pitaText = nidFV('nid-pitaName');
+  if (pitaText) {
+    ctx.font=`${nidSV('nid-sl_pitaSize')}px 'Kalpurush',serif`;
+    ctx.fillStyle='#000000'; ctx.textAlign='left';
+    ctx.fillText(pitaText, nidSV('nid-sl_pitaX'), nidSV('nid-sl_pitaY'));
+  }
+
+  /* Field 4 — Mother Name */
+  const mataText = nidFV('nid-mataName');
+  if (mataText) {
+    ctx.font=`${nidSV('nid-sl_mataSize')}px 'Kalpurush',serif`;
+    ctx.fillStyle='#000000'; ctx.textAlign='left';
+    ctx.fillText(mataText, nidSV('nid-sl_mataX'), nidSV('nid-sl_mataY'));
+  }
+
+  /* Field 5 — DOB (Red) */
+  const dobText = nidFV('nid-dob');
+  if (dobText) {
+    ctx.font=`${nidSV('nid-sl_dobSize')}px 'Arial Regular',Arial,sans-serif`;
+    ctx.fillStyle='#ff0000'; ctx.textAlign='left';
+    ctx.fillText(dobText, nidSV('nid-sl_dobX'), nidSV('nid-sl_dobY'));
+  }
+
+  /* Field 6 — ID Number (Bold, Red) */
+  const idNoText = nidFV('nid-idNo');
+  if (idNoText) {
+    ctx.font=`bold ${nidSV('nid-sl_idNoSize')}px 'Arial Bold',Arial,sans-serif`;
+    ctx.fillStyle='#ff0000'; ctx.textAlign='left';
+    ctx.fillText(idNoText, nidSV('nid-sl_idNoX'), nidSV('nid-sl_idNoY'));
+  }
+
+  ctx.restore();
+
+  document.getElementById('nid-canvasWrapper').style.display    = 'block';
+  document.getElementById('nid-canvasPlaceholder').style.display = 'none';
+  nidShowSpinner(false);
+  nidSetStatus(`Card rendered — ${W}×${H}px · Kalpurush:${NID.fontsLoaded.kalpurush?'✓':'✗(fallback)'} · Arial:${NID.fontsLoaded.arial?'✓':'✗(fallback)'}`);
+}
+
+function nidDownloadJPG() {
+  const canvas = document.getElementById('nid-nidCanvas');
+  if (!canvas.width) { showToast('error','Render the card first.'); return; }
+  const idNo   = nidFV('nid-idNo') || 'nid';
+  const link   = document.createElement('a');
+  link.download = `NID-${idNo}.jpg`;
+  link.href = canvas.toDataURL('image/jpeg',0.97); link.click();
+  showToast('success',`📥 Downloaded NID-${idNo}.jpg`);
+}
+
+function nidResetDefaults() {
+  NID.profilePhoto = null;
+  const th = document.getElementById('nid-photoPreviewThumb');
+  th.style.display='none';
+  document.getElementById('nid-photoUploadIcon').style.display='';
+  document.getElementById('nid-photoUploadText').textContent='Click to upload profile photo';
+  document.getElementById('nid-photoUploader').value='';
+
+  const textDefaults = {
+    'nid-nameBangla':  'মোঃ রিয়াদ সরকার',
+    'nid-nameEnglish': 'Md. Riyad Sarkar',
+    'nid-pitaName':    'মোঃ আব্দুল করিম',
+    'nid-mataName':    'মোছাঃ রাহেলা বেগম',
+    'nid-dob':         '01 Jan 1990',
+    'nid-idNo':        '1234567890123'
+  };
+  Object.entries(textDefaults).forEach(([id,v])=>{ const el=document.getElementById(id); if(el)el.value=v; });
+
+  const sliders = [
+    ['nid-sl_nameBanglaSize',  'nid-badge_nameBanglaSize',  NID_CARD_DEFAULTS.nameBanglaSize],
+    ['nid-sl_nameBanglaX',     'nid-badge_nameBanglaX',     NID_CARD_DEFAULTS.nameBanglaX],
+    ['nid-sl_nameBanglaY',     'nid-badge_nameBanglaY',     NID_CARD_DEFAULTS.nameBanglaY],
+    ['nid-sl_nameEnglishSize', 'nid-badge_nameEnglishSize', NID_CARD_DEFAULTS.nameEnglishSize],
+    ['nid-sl_nameEnglishX',    'nid-badge_nameEnglishX',    NID_CARD_DEFAULTS.nameEnglishX],
+    ['nid-sl_nameEnglishY',    'nid-badge_nameEnglishY',    NID_CARD_DEFAULTS.nameEnglishY],
+    ['nid-sl_pitaSize',        'nid-badge_pitaSize',        NID_CARD_DEFAULTS.pitaSize],
+    ['nid-sl_pitaX',           'nid-badge_pitaX',           NID_CARD_DEFAULTS.pitaX],
+    ['nid-sl_pitaY',           'nid-badge_pitaY',           NID_CARD_DEFAULTS.pitaY],
+    ['nid-sl_mataSize',        'nid-badge_mataSize',        NID_CARD_DEFAULTS.mataSize],
+    ['nid-sl_mataX',           'nid-badge_mataX',           NID_CARD_DEFAULTS.mataX],
+    ['nid-sl_mataY',           'nid-badge_mataY',           NID_CARD_DEFAULTS.mataY],
+    ['nid-sl_dobSize',         'nid-badge_dobSize',         NID_CARD_DEFAULTS.dobSize],
+    ['nid-sl_dobX',            'nid-badge_dobX',            NID_CARD_DEFAULTS.dobX],
+    ['nid-sl_dobY',            'nid-badge_dobY',            NID_CARD_DEFAULTS.dobY],
+    ['nid-sl_idNoSize',        'nid-badge_idNoSize',        NID_CARD_DEFAULTS.idNoSize],
+    ['nid-sl_idNoX',           'nid-badge_idNoX',           NID_Card_DEFAULTS.idNoX],
+    ['nid-sl_idNoY',           'nid-badge_idNoY',           NID_Card_DEFAULTS.idNoY],
+    ['nid-sl_photoX',          'nid-badge_photoX',          NID_CARD_DEFAULTS.photoX],
+    ['nid-sl_photoY',          'nid-badge_photoY',          NID_CARD_DEFAULTS.photoY],
+    ['nid-sl_photoW',          'nid-badge_photoW',          NID_CARD_DEFAULTS.photoW],
+    ['nid-sl_photoH',          'nid-badge_photoH',          NID_CARD_DEFAULTS.photoH],
+  ];
+  sliders.forEach(([slId,bdId,v])=>{ const sl=document.getElementById(slId); const bd=document.getElementById(bdId); if(sl)sl.value=v; if(bd)bd.value=v; });
+  nidScheduleRender(); showToast('info','↩ NID reset to calibrated defaults.');
+}
+
+function nidSetStatus(msg) { const el=document.getElementById('nid-statusText'); if(el)el.textContent=msg; }
+function nidShowSpinner(on) { document.getElementById('nid-renderSpinner').style.display=on?'block':'none'; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SHARED HELPERS
+═══════════════════════════════════════════════════════════════════════ */
+function formatTimestamp(d) {
+  const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const day=String(d.getDate()).padStart(2,'0'),m=M[d.getMonth()],y=d.getFullYear();
+  const h24=d.getHours(),h12=h24%12||12,mm=String(d.getMinutes()).padStart(2,'0'),ap=h24>=12?'PM':'AM';
+  return `${day} ${m} ${y} — ${String(h12).padStart(2,'0')}:${mm} ${ap}`;
+}
+
+function showToast(type, msg) {
+  const toast=document.getElementById('toast');
+  document.getElementById('toast-icon').textContent = type==='success'?'✅':type==='error'?'❌':'ℹ️';
+  document.getElementById('toast-msg').textContent  = msg;
+  toast.className=`show ${type}`;
+  clearTimeout(toast._timer);
+  toast._timer=setTimeout(()=>toast.classList.remove('show'),4000);
+}
+
+document.addEventListener('DOMContentLoaded', wireInputListeners);
+</script>
+</body>
+</html>

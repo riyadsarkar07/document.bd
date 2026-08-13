@@ -1,0 +1,63 @@
+export type Role = 'admin' | 'editor' | 'viewer';
+
+export interface Profile {
+  id: string;
+  email: string;
+  full_name?: string | null;
+  role: Role;
+}
+
+export interface ActivityRecord {
+  id?: string;
+  user_id?: string;
+  email?: string;
+  action: string;
+  detail?: string;
+  created_at?: string;
+}
+
+export interface TemplateRecord {
+  id?: string;
+  name: string;
+  kind: 'tm' | 'nid';
+  description?: string;
+  state: Record<string, unknown>;
+  thumbnail?: string | null;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProjectRecord {
+  id?: string;
+  name: string;
+  kind: 'tm' | 'nid';
+  state: Record<string, unknown>;
+  owner_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const ROLE_LABEL: Record<Role, string> = {
+  admin: 'Admin',
+  editor: 'Editor',
+  viewer: 'Viewer',
+};
+
+export const ROLE_DESCRIPTION: Record<Role, string> = {
+  admin: 'Full access to documents, templates, users and activity logs',
+  editor: 'Can create, edit and export documents and templates',
+  viewer: 'Read-only access to documents and templates',
+};
+
+export function canManageUsers(role?: Role | null): boolean {
+  return role === 'admin';
+}
+
+export function canManageTemplates(role?: Role | null): boolean {
+  return role === 'admin' || role === 'editor';
+}
+
+export function canEditDocuments(role?: Role | null): boolean {
+  return role === 'admin' || role === 'editor';
+}
