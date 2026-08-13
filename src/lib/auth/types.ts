@@ -1,5 +1,13 @@
 export type Role = 'admin' | 'editor' | 'viewer';
 
+export type DocKind = 'tm' | 'nid' | 'tin';
+
+export const DOC_KIND_LABEL: Record<DocKind, string> = {
+  tm: 'Trademark Certificate',
+  nid: 'NID Card',
+  tin: 'TIN Record',
+};
+
 export interface Profile {
   id: string;
   email: string;
@@ -19,7 +27,7 @@ export interface ActivityRecord {
 export interface TemplateRecord {
   id?: string;
   name: string;
-  kind: 'tm' | 'nid';
+  kind: DocKind;
   description?: string;
   state: Record<string, unknown>;
   thumbnail?: string | null;
@@ -31,7 +39,7 @@ export interface TemplateRecord {
 export interface ProjectRecord {
   id?: string;
   name: string;
-  kind: 'tm' | 'nid';
+  kind: DocKind;
   state: Record<string, unknown>;
   owner_id?: string;
   created_at?: string;

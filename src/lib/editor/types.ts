@@ -1,4 +1,36 @@
-export type DocKind = 'tm' | 'nid';
+export type DocKind = 'tm' | 'nid' | 'tin';
+
+export type TinAlign = 'left' | 'center' | 'right' | 'justify';
+export type TinWeight = 'normal' | 'bold';
+
+export interface TinLayout {
+  fontSize: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  lineHeight: number;
+  align: TinAlign;
+  fontWeight: TinWeight;
+}
+
+export const TIN_FIELD_KEYS = [
+  'tinNo',
+  'taxpayerName',
+  'dob',
+  'fatherName',
+  'motherName',
+  'currentAddress',
+  'permanentAddress',
+  'previousTin',
+  'status',
+  'taxZone',
+  'taxCircle',
+  'date',
+  'deputyInfo',
+] as const;
+
+export type TinFieldKey = (typeof TIN_FIELD_KEYS)[number];
 
 export interface SliderSpec {
   key: string;
@@ -87,4 +119,24 @@ export interface NIDSnapshot {
   photoY: number;
   photoW: number;
   photoH: number;
+}
+
+export interface TINSnapshot {
+  tinNo: string;
+  taxpayerName: string;
+  dob: string;
+  fatherName: string;
+  motherName: string;
+  currentAddress: string;
+  permanentAddress: string;
+  previousTin: string;
+  status: string;
+  taxZone: string;
+  taxCircle: string;
+  date: string;
+  deputyInfo: string;
+  layouts: Record<TinFieldKey, TinLayout>;
+  qrSize: number;
+  qrX: number;
+  qrY: number;
 }

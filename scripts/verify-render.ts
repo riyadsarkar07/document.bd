@@ -19,9 +19,12 @@ import {
   TM_SLIDERS,
 } from '../src/lib/constants/tm';
 import { NID_DEFAULTS, NID_SLIDERS } from '../src/lib/constants/nid';
+import { TIN_DEFAULTS, TIN_FIELD_ORDER } from '../src/lib/constants/tin';
 import { renderTMCertificate } from '../src/lib/renderers/tmRenderer';
 import { renderNIDCard } from '../src/lib/renderers/nidRenderer';
-import type { NIDSnapshot, TMSnapshot } from '../src/lib/editor/types';
+import { renderTINDocument, TIN_ROW_BOXES, wrapTinText } from '../src/lib/renderers/tinRenderer';
+import { buildTinQrPayload, encodeDemoQr, parseTinQrPayload } from '../src/lib/tinQr';
+import type { NIDSnapshot, TINSnapshot, TMSnapshot } from '../src/lib/editor/types';
 
 const ROOT = process.cwd();
 const legacyHtml = readFileSync(join(ROOT, 'legacy/index.html'), 'utf-8');
@@ -529,6 +532,57 @@ async function main() {
   };
   const r5 = renderBothNID(nidCustom, nidBg, photo);
   assert(buffersEqual(r5.original.buffer, r5.ported.buffer), 'NID custom values — pixels identical');
+
+  console.log('\n[6] TIN DEMO document renderer\n');
+  const tinCanvas = createCanvas(1, 1);
+  renderTINDocument(tinCanvas as unknown as HTMLCanvasElement, { ...TIN_DEFAULTS }, null, 1);
+  assert(tinCanvas.width === 2480 && tinCanvas.height === 3508, `TIN canvas 2480×3508 (got ${tinCanvas.width}×${tinCanvas.height})`);
+
+  const tinScaled = createCanvas(1, 1);
+  renderTINDocument(tinScaled as unknown as HTMLCanvasElement, { ...TIN_DEFAULTS }, null, 0.5);
+  assert(tinScaled.width === 1240 && tinScaled.height === 1754, `TIN scaled canvas 1240×1754 (got ${tinScaled.width}×${tinScaled.height})`);
+
+  const tinPixels = tinCanvas.getContext('2d')!.getImageData(0, 0, tinCanvas.width, tinCanvas.height).data;
+  let nonWhite = 0;
+  for (let i = 0; i < tinPixels.length; i += 4) {
+    if (tinPixels[i] !== 255 || tinPixels[i + 1] !== 255 || tinPixels[i + 2] !== 255) nonWhite++;
+  }
+  assert(nonWhite > 1000, `TIN page draws header/form content (${nonWhite} non-white pixels)`);
+
+  const wctx = tinCanvas.getContext('2d')!;
+  wctx.font = "40px 'Arial Regular',sans-serif";
+  const wrapCtx = wctx as unknown as CanvasRenderingContext2D;
+  assert(wrapTinText(wrapCtx, 'hello', 400).join(' ') === 'hello', 'TIN wrapTinText single word');
+  assert(wrapTinText(wrapCtx, 'one two three four five', 300).length > 1, 'TIN wrapTinText wraps long text');
+
+  for (const key of TIN_FIELD_ORDER) {
+    assert(typeof TIN_DEFAULTS[key] === 'string', `TIN text field "${key}" present`);
+    assert(Boolean(TIN_DEFAULTS.layouts[key]), `TIN layout exists for "${key}"`);
+    assert(Boolean(TIN_ROW_BOXES[key]), `TIN row box exists for "${key}"`);
+  }
+
+  console.log('\n[7] TIN DEMO QR payload\n');
+  const tinDefault: TINSnapshot = { ...TIN_DEFAULTS };
+  const qrPayload = buildTinQrPayload(tinDefault);
+  const parsedQr = parseTinQrPayload(qrPayload);
+  assert(parsedQr !== null, 'TIN QR payload parses back');
+  assert(parsedQr?.demo === true, 'TIN QR payload flagged as demo');
+  assert((parsedQr?.note ?? '').includes('NOT OFFICIAL NBR VERIFICATION'), 'TIN QR payload carries DEMO disclosure');
+  assert(parsedQr?.tin === TIN_DEFAULTS.tinNo, 'TIN QR payload → TIN Number');
+  assert(parsedQr?.taxpayerName === TIN_DEFAULTS.taxpayerName, 'TIN QR payload → Taxpayer Name');
+  assert(parsedQr?.dob === TIN_DEFAULTS.dob, 'TIN QR payload → DOB');
+  assert(parsedQr?.fatherName === TIN_DEFAULTS.fatherName, 'TIN QR payload → Father Name');
+  assert(parsedQr?.motherName === TIN_DEFAULTS.motherName, 'TIN QR payload → Mother Name');
+  assert(parsedQr?.date === TIN_DEFAULTS.date, 'TIN QR payload → Date');
+  assert(parsedQr?.currentAddress === TIN_DEFAULTS.currentAddress, 'TIN QR payload → Current Address');
+  assert(parsedQr?.permanentAddress === TIN_DEFAULTS.permanentAddress, 'TIN QR payload → Permanent Address');
+  assert(parsedQr?.taxZone === TIN_DEFAULTS.taxZone, 'TIN QR payload → Tax Zone');
+  assert(parsedQr?.taxCircle === TIN_DEFAULTS.taxCircle, 'TIN QR payload → Tax Circle');
+  assert(parsedQr?.status === TIN_DEFAULTS.status, 'TIN QR payload → Status');
+  assert(parsedQr?.previousTin === TIN_DEFAULTS.previousTin, 'TIN QR payload → Previous TIN');
+
+  const tinQrDataUrl = await encodeDemoQr(tinDefault, 256);
+  assert(typeof tinQrDataUrl === 'string' && tinQrDataUrl.startsWith('data:image/png'), 'TIN DEMO QR encodes to PNG data URL');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);

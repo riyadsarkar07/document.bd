@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { CreditCard, FileText, FolderKanban, FolderOpen, Plus, Trash2 } from 'lucide-react';
+import { CreditCard, FileText, FolderKanban, FolderOpen, Landmark, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { listProjects, saveProject, deleteProject } from '@/lib/workspace/store';
-import type { ProjectRecord } from '@/lib/auth/types';
+import { DOC_KIND_LABEL, type ProjectRecord } from '@/lib/auth/types';
 import { TM_DEFAULTS } from '@/lib/constants/tm';
 import { NID_DEFAULTS } from '@/lib/constants/nid';
+import { TIN_DEFAULTS } from '@/lib/constants/tin';
 import { Card, PageHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -17,13 +18,21 @@ import { FieldLabel, Input } from '@/components/ui/input';
 import { useToast } from '@/lib/toast/toast-provider';
 import { timeAgo } from '@/lib/utils';
 
+const KIND_ICON = { tm: FileText, nid: CreditCard, tin: Landmark } as const;
+const KIND_TONE = { tm: 'gold', nid: 'blue', tin: 'green' } as const;
+const KIND_GRADIENT = {
+  tm: 'bg-gradient-to-br from-accent to-accent-bright text-canvas',
+  nid: 'bg-gradient-to-br from-info to-blue-500 text-white',
+  tin: 'bg-gradient-to-br from-success to-emerald-500 text-white',
+} as const;
+
 export default function ProjectsPage() {
   const { user } = useAuth();
   const toast = useToast();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [source, setSource] = useState<'supabase' | 'local'>('supabase');
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' }>({
+  const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' | 'tin' }>({
     open: false,
     kind: 'tm',
   });
@@ -41,8 +50,8 @@ export default function ProjectsPage() {
     void refresh();
   }, [refresh]);
 
-  const openCreate = (kind: 'tm' | 'nid') => {
-    setName(`${kind === 'tm' ? 'Trademark Certificate' : 'NID Card'} — Project`);
+  const openCreate = (kind: 'tm' | 'nid' | 'tin') => {
+    setName(`${DOC_KIND_LABEL[kind]} — Project`);
     setModal({ open: true, kind });
   };
 
@@ -50,7 +59,9 @@ export default function ProjectsPage() {
     const state =
       modal.kind === 'tm'
         ? ({ ...TM_DEFAULTS } as unknown as Record<string, unknown>)
-        : ({ ...NID_DEFAULTS } as unknown as Record<string, unknown>);
+        : modal.kind === 'nid'
+          ? ({ ...NID_DEFAULTS } as unknown as Record<string, unknown>)
+          : ({ ...TIN_DEFAULTS } as unknown as Record<string, unknown>);
     const proj: ProjectRecord = {
       name: name.trim() || 'Untitled project',
       kind: modal.kind,
@@ -85,8 +96,11 @@ export default function ProjectsPage() {
             <Button variant="secondary" icon={<FileText className="h-4 w-4" />} onClick={() => openCreate('tm')}>
               New TM Project
             </Button>
-            <Button variant="primary" icon={<CreditCard className="h-4 w-4" />} onClick={() => openCreate('nid')}>
+            <Button variant="outline" icon={<CreditCard className="h-4 w-4" />} onClick={() => openCreate('nid')}>
               New NID Project
+            </Button>
+            <Button variant="success" icon={<Landmark className="h-4 w-4" />} onClick={() => openCreate('tin')}>
+              New TIN Project
             </Button>
           </>
         }
@@ -107,14 +121,15 @@ export default function ProjectsPage() {
               <div className="mb-3 flex items-start justify-between gap-2">
                 <div
                   className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-                    p.kind === 'tm'
-                      ? 'bg-gradient-to-br from-accent to-accent-bright text-canvas'
-                      : 'bg-gradient-to-br from-info to-blue-500 text-white'
+                    KIND_GRADIENT[p.kind] ?? KIND_GRADIENT.tm
                   }`}
                 >
-                  {p.kind === 'tm' ? <FileText className="h-5 w-5" /> : <CreditCard className="h-5 w-5" />}
+                  {(() => {
+                    const Icon = KIND_ICON[p.kind] ?? FileText;
+                    return <Icon className="h-5 w-5" />;
+                  })()}
                 </div>
-                <Badge tone={p.kind === 'tm' ? 'gold' : 'blue'}>{p.kind.toUpperCase()}</Badge>
+                <Badge tone={KIND_TONE[p.kind] ?? 'gold'}>{p.kind.toUpperCase()}</Badge>
               </div>
               <h3 className="font-medium text-primary">{p.name}</h3>
               <div className="mt-1 font-mono text-[10.5px] text-dimm">
@@ -144,7 +159,7 @@ export default function ProjectsPage() {
         open={modal.open}
         onClose={() => setModal({ open: false, kind: modal.kind })}
         title="Create New Project"
-        meta={modal.kind === 'tm' ? 'Trademark Certificate workspace' : 'NID Card workspace'}
+        meta={`${DOC_KIND_LABEL[modal.kind]} workspace`}
       >
         <div className="flex flex-col gap-4">
           <div>

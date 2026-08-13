@@ -6,8 +6,8 @@ import {
   CreditCard,
   FileText,
   FolderKanban,
+  Landmark,
   LayoutDashboard,
-  Shapes,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,7 +16,7 @@ const ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/studio', label: 'Home', icon: LayoutDashboard },
   { href: '/studio/editor/tm', label: 'TM', icon: FileText },
   { href: '/studio/editor/nid', label: 'NID', icon: CreditCard },
-  { href: '/studio/templates', label: 'Templates', icon: Shapes },
+  { href: '/studio/editor/tin', label: 'TIN', icon: Landmark },
   { href: '/studio/projects', label: 'Projects', icon: FolderKanban },
 ];
 

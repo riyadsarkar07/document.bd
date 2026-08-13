@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Copy, FileText, CreditCard, Plus, Shapes, Trash2 } from 'lucide-react';
+import { Copy, CreditCard, FileText, Landmark, Plus, Shapes, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
-import { canManageTemplates } from '@/lib/auth/types';
+import { canManageTemplates, DOC_KIND_LABEL } from '@/lib/auth/types';
 import { listTemplates, saveTemplate, deleteTemplate } from '@/lib/workspace/store';
 import type { TemplateRecord } from '@/lib/auth/types';
 import { TM_DEFAULTS } from '@/lib/constants/tm';
 import { NID_DEFAULTS } from '@/lib/constants/nid';
+import { TIN_DEFAULTS } from '@/lib/constants/tin';
 import { Card, PageHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -18,13 +19,21 @@ import { FieldLabel, Input, Textarea } from '@/components/ui/input';
 import { useToast } from '@/lib/toast/toast-provider';
 import { timeAgo } from '@/lib/utils';
 
+const KIND_ICON = { tm: FileText, nid: CreditCard, tin: Landmark } as const;
+const KIND_TONE = { tm: 'gold', nid: 'blue', tin: 'green' } as const;
+const KIND_GRADIENT = {
+  tm: 'bg-gradient-to-br from-accent to-accent-bright text-canvas',
+  nid: 'bg-gradient-to-br from-info to-blue-500 text-white',
+  tin: 'bg-gradient-to-br from-success to-emerald-500 text-white',
+} as const;
+
 export default function TemplatesPage() {
   const { user, role } = useAuth();
   const toast = useToast();
   const [templates, setTemplates] = useState<TemplateRecord[]>([]);
   const [source, setSource] = useState<'supabase' | 'local'>('supabase');
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' }>({
+  const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' | 'tin' }>({
     open: false,
     kind: 'tm',
   });
@@ -43,8 +52,8 @@ export default function TemplatesPage() {
     void refresh();
   }, [refresh]);
 
-  const openCreate = (kind: 'tm' | 'nid') => {
-    setName(`${kind === 'tm' ? 'Trademark Certificate' : 'NID Card'} — ${new Date().toLocaleDateString()}`);
+  const openCreate = (kind: 'tm' | 'nid' | 'tin') => {
+    setName(`${DOC_KIND_LABEL[kind]} — ${new Date().toLocaleDateString()}`);
     setDescription('');
     setModal({ open: true, kind });
   };
@@ -53,7 +62,9 @@ export default function TemplatesPage() {
     const state =
       modal.kind === 'tm'
         ? ({ ...TM_DEFAULTS } as unknown as Record<string, unknown>)
-        : ({ ...NID_DEFAULTS } as unknown as Record<string, unknown>);
+        : modal.kind === 'nid'
+          ? ({ ...NID_DEFAULTS } as unknown as Record<string, unknown>)
+          : ({ ...TIN_DEFAULTS } as unknown as Record<string, unknown>);
     const tpl: TemplateRecord = {
       name: name.trim() || `Untitled template`,
       kind: modal.kind,
@@ -94,8 +105,11 @@ export default function TemplatesPage() {
               <Button variant="secondary" icon={<FileText className="h-4 w-4" />} onClick={() => openCreate('tm')}>
                 Save TM Template
               </Button>
-              <Button variant="primary" icon={<CreditCard className="h-4 w-4" />} onClick={() => openCreate('nid')}>
+              <Button variant="outline" icon={<CreditCard className="h-4 w-4" />} onClick={() => openCreate('nid')}>
                 Save NID Template
+              </Button>
+              <Button variant="success" icon={<Landmark className="h-4 w-4" />} onClick={() => openCreate('tin')}>
+                Save TIN Template
               </Button>
             </>
           ) : (
@@ -112,7 +126,7 @@ export default function TemplatesPage() {
           title="No templates yet"
           description={
             canManageTemplates(role)
-              ? 'Use “Save TM Template” or “Save NID Template” to store a preset.'
+              ? 'Use “Save TM / NID / TIN Template” to store a preset.'
               : 'Templates will appear here once an editor creates them.'
           }
         />
@@ -123,14 +137,15 @@ export default function TemplatesPage() {
               <div className="mb-3 flex items-start justify-between gap-2">
                 <div
                   className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-                    t.kind === 'tm'
-                      ? 'bg-gradient-to-br from-accent to-accent-bright text-canvas'
-                      : 'bg-gradient-to-br from-info to-blue-500 text-white'
+                    KIND_GRADIENT[t.kind] ?? KIND_GRADIENT.tm
                   }`}
                 >
-                  {t.kind === 'tm' ? <FileText className="h-5 w-5" /> : <CreditCard className="h-5 w-5" />}
+                  {(() => {
+                    const Icon = KIND_ICON[t.kind] ?? FileText;
+                    return <Icon className="h-5 w-5" />;
+                  })()}
                 </div>
-                <Badge tone={t.kind === 'tm' ? 'gold' : 'blue'}>{t.kind.toUpperCase()}</Badge>
+                <Badge tone={KIND_TONE[t.kind] ?? 'gold'}>{t.kind.toUpperCase()}</Badge>
               </div>
               <h3 className="font-medium text-primary">{t.name}</h3>
               {t.description && (
@@ -167,7 +182,7 @@ export default function TemplatesPage() {
         open={modal.open}
         onClose={() => setModal({ open: false, kind: modal.kind })}
         title="Save Document as Template"
-        meta={`Snapshot of ${modal.kind === 'tm' ? 'Trademark Certificate' : 'NID Card'} defaults`}
+        meta={`Snapshot of ${DOC_KIND_LABEL[modal.kind]} defaults`}
       >
         <div className="flex flex-col gap-4">
           <div>

@@ -50,7 +50,7 @@ create policy "profiles_admin_delete" on public.profiles
 create table if not exists public.templates (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  kind text not null check (kind in ('tm', 'nid')),
+  kind text not null check (kind in ('tm', 'nid', 'tin')),
   description text,
   state jsonb not null default '{}'::jsonb,
   thumbnail text,
@@ -58,6 +58,16 @@ create table if not exists public.templates (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Upgrade older databases whose check constraint only allowed ('tm','nid')
+do $$
+begin
+  alter table public.templates drop constraint if exists templates_kind_check;
+  alter table public.templates add constraint templates_kind_check
+    check (kind in ('tm', 'nid', 'tin'));
+exception when others then
+  raise notice 'templates_kind_check upgrade skipped: %', sqlerrm;
+end $$;
 
 alter table public.templates enable row level security;
 
@@ -73,12 +83,22 @@ create policy "templates_write" on public.templates
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  kind text not null check (kind in ('tm', 'nid')),
+  kind text not null check (kind in ('tm', 'nid', 'tin')),
   state jsonb not null default '{}'::jsonb,
   owner_id uuid references auth.users (id) on delete cascade,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Upgrade older databases whose check constraint only allowed ('tm','nid')
+do $$
+begin
+  alter table public.projects drop constraint if exists projects_kind_check;
+  alter table public.projects add constraint projects_kind_check
+    check (kind in ('tm', 'nid', 'tin'));
+exception when others then
+  raise notice 'projects_kind_check upgrade skipped: %', sqlerrm;
+end $$;
 
 alter table public.projects enable row level security;
 

@@ -7,6 +7,7 @@ import {
   CreditCard,
   FileText,
   History,
+  Landmark,
   Package,
   Shapes,
   Sparkles,
@@ -88,6 +89,11 @@ export default function DashboardPage() {
                 NID Card
               </Button>
             </Link>
+            <Link href="/studio/editor/tin">
+              <Button variant="success" icon={<Landmark className="h-4 w-4" />}>
+                TIN Record
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
@@ -156,6 +162,14 @@ export default function DashboardPage() {
               icon: CreditCard,
               tone: 'from-info to-blue-500 text-white',
               meta: '3570 × 2203 px',
+            },
+            {
+              href: '/studio/editor/tin',
+              title: 'TIN Record Editor',
+              desc: 'Edit a DEMO TIN information record with live QR — not an NBR certificate.',
+              icon: Landmark,
+              tone: 'from-success to-emerald-500 text-white',
+              meta: '2480 × 3508 px',
             },
             {
               href: '/studio/templates',
