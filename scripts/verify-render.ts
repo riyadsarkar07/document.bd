@@ -19,12 +19,18 @@ import {
   TM_SLIDERS,
 } from '../src/lib/constants/tm';
 import { NID_DEFAULTS, NID_SLIDERS } from '../src/lib/constants/nid';
-import { TIN_DEFAULTS, TIN_FIELD_ORDER, TIN_ROW_BOXES } from '../src/lib/constants/tin';
+import {
+  TIN_DEFAULTS,
+  TIN_DEFAULT_LAYOUTS,
+  TIN_FIELD_ORDER,
+  TIN_ROW_BOXES,
+  normalizeTinSnapshot,
+} from '../src/lib/constants/tin';
 import { renderTMCertificate } from '../src/lib/renderers/tmRenderer';
 import { renderNIDCard } from '../src/lib/renderers/nidRenderer';
 import { renderTINDocument, wrapTinText } from '../src/lib/renderers/tinRenderer';
 import { buildTinQrPayload, encodeDemoQr, parseTinQrPayload } from '../src/lib/tinQr';
-import type { NIDSnapshot, TINSnapshot, TMSnapshot } from '../src/lib/editor/types';
+import type { NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
 
 const ROOT = process.cwd();
 const legacyHtml = readFileSync(join(ROOT, 'legacy/index.html'), 'utf-8');
@@ -606,6 +612,40 @@ async function main() {
 
   const tinQrDataUrl = await encodeDemoQr(tinDefault, 256);
   assert(typeof tinQrDataUrl === 'string' && tinQrDataUrl.startsWith('data:image/png'), 'TIN DEMO QR encodes to PNG data URL');
+
+  console.log('\n[8] TIN per-field independence (X/Y/font-size never bleed across fields)\n');
+  const original = normalizeTinSnapshot({});
+  const moved = normalizeTinSnapshot({});
+  const patch = (key: keyof TINSnapshot & TinFieldKey, p: Partial<TinLayout>) => {
+    moved.layouts[key] = { ...moved.layouts[key], ...p };
+  };
+  // Simulate the inspector: move Taxpayer Name, then Father's Name, then Mother's Name.
+  patch('taxpayerName', { x: moved.layouts.taxpayerName.x + 100, fontSize: moved.layouts.taxpayerName.fontSize + 10 });
+  patch('fatherName', { y: moved.layouts.fatherName.y - 50, fontSize: moved.layouts.fatherName.fontSize - 5 });
+  patch('motherName', { x: moved.layouts.motherName.x - 20, y: moved.layouts.motherName.y + 12 });
+  // X/Y are independent per field.
+  assert(moved.layouts.taxpayerName.x === original.layouts.taxpayerName.x + 100, 'moving Taxpayer Name X affects only it');
+  assert(moved.layouts.taxpayerName.y === original.layouts.taxpayerName.y, 'Taxpayer Name Y untouched by others');
+  assert(moved.layouts.fatherName.x === original.layouts.fatherName.x, 'Father Name X untouched by others');
+  assert(moved.layouts.motherName.y === original.layouts.motherName.y + 12, 'Mother Name Y moved independently');
+  assert(moved.layouts.taxCircle.x === original.layouts.taxCircle.x, 'Tax Circle X untouched by others');
+  assert(moved.layouts.tinNo.y === original.layouts.tinNo.y, 'TIN Number Y untouched by others');
+  // Font sizes are independent per field.
+  assert(moved.layouts.taxpayerName.fontSize === original.layouts.taxpayerName.fontSize + 10, 'Taxpayer Name font-size grows alone');
+  assert(moved.layouts.fatherName.fontSize === original.layouts.fatherName.fontSize - 5, 'Father Name font-size shrinks alone');
+  assert(moved.layouts.motherName.fontSize === original.layouts.motherName.fontSize, 'Mother Name font-size unchanged');
+  assert(moved.layouts.status.fontSize === original.layouts.status.fontSize, 'Status font-size unchanged');
+  assert(moved.layouts.deputyInfo.fontSize === original.layouts.deputyInfo.fontSize, 'Office font-size unchanged');
+  // Layout/typography persist through save → restore (project state round-trip).
+  const saved = normalizeTinSnapshot({
+    layouts: { taxpayerName: { ...moved.layouts.taxpayerName, x: 777, fontSize: 123 } },
+    qrSize: 520,
+    qrX: 333,
+  } as Partial<TINSnapshot>);
+  assert(saved.layouts.taxpayerName.x === 777, 'saved Taxpayer Name X persists after reopen');
+  assert(saved.layouts.taxpayerName.fontSize === 123, 'saved Taxpayer Name font-size persists after reopen');
+  assert(saved.layouts.motherName.x === TIN_DEFAULT_LAYOUTS.motherName.x, 'missing layouts restored to defaults on reopen');
+  assert(saved.qrSize === 520 && saved.qrX === 333, 'QR size/position persist after reopen');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);

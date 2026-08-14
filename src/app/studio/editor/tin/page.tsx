@@ -25,7 +25,7 @@ import {
   TIN_TEMPLATE_SRC,
   normalizeTinSnapshot,
 } from '@/lib/constants/tin';
-import type { TINSnapshot, TinAlign, TinFieldKey, TinWeight } from '@/lib/editor/types';
+import type { TINSnapshot, TinAlign, TinFieldKey, TinLayout, TinWeight } from '@/lib/editor/types';
 import { renderTINDocument } from '@/lib/renderers/tinRenderer';
 import { loadDataUrlImage, loadImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
@@ -42,7 +42,22 @@ import { PropertySlider } from '@/components/editor/property-slider';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { clamp, cn } from '@/lib/utils';
+
+/** A single directional-move button on the inspector's move pad. */
+function MoveButton({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-surface text-accent-bright shadow-sm transition hover:border-accent hover:bg-surface-raised active:scale-95"
+    >
+      {label}
+    </button>
+  );
+}
 
 export default function TINEditorPage() {
   return (
@@ -64,7 +79,8 @@ function TINEditorInner() {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrImg, setQrImg] = useState<HTMLImageElement | null>(null);
   const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
-  const [activeField, setActiveField] = useState<TinFieldKey>('taxpayerName');
+  const [activeField, setActiveField] = useState<TinFieldKey | 'qr'>('taxpayerName');
+  const [moveStep, setMoveStep] = useState(5);
 
   const externalCacheRef = useRef<TINSnapshot | null>(null);
 
@@ -217,10 +233,16 @@ function TINEditorInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Layout helpers bound to the selected field.
-  const activeLayout = present.layouts[activeField] ?? TIN_DEFAULT_LAYOUTS[activeField];
+  // Layout helpers bound to the selected field. Each field keeps its own layout
+  // in `present.layouts[key]` so selecting/switching fields never mixes values.
+  const isQr = activeField === 'qr';
+  const activeLayout = isQr ? null : present.layouts[activeField] ?? TIN_DEFAULT_LAYOUTS[activeField];
   const setLayout = useCallback(
-    <K extends keyof typeof activeLayout>(key: K, value: (typeof activeLayout)[K]) => {
+    <K extends 'fontSize' | 'x' | 'y' | 'width' | 'height' | 'lineHeight' | 'align' | 'fontWeight'>(
+      key: K,
+      value: TinLayout[K],
+    ) => {
+      if (activeField === 'qr') return; // QR uses qrSize/qrX/qrY, handled separately
       const base = presentRef.current.layouts[activeField] ?? TIN_DEFAULT_LAYOUTS[activeField];
       setField('layouts', {
         ...presentRef.current.layouts,
@@ -230,6 +252,28 @@ function TINEditorInner() {
     // activeField is stable enough via ref pattern; setField is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeField, setField],
+  );
+
+  // Directional move: updates ONLY the selected field's X/Y. The same state the
+  // X/Y sliders write to, so buttons and manual values always stay in sync.
+  const moveField = useCallback(
+    (dx: number, dy: number) => {
+      if (activeField === 'qr') {
+        setField('qrX', clamp(presentRef.current.qrX + dx * moveStep, 0, TIN_DOC_WIDTH));
+        setField('qrY', clamp(presentRef.current.qrY + dy * moveStep, 0, TIN_DOC_HEIGHT));
+        return;
+      }
+      const base = presentRef.current.layouts[activeField] ?? TIN_DEFAULT_LAYOUTS[activeField];
+      setField('layouts', {
+        ...presentRef.current.layouts,
+        [activeField]: {
+          ...base,
+          x: clamp(base.x + dx * moveStep, 0, TIN_DOC_WIDTH),
+          y: clamp(base.y + dy * moveStep, 0, TIN_DOC_HEIGHT),
+        },
+      });
+    },
+    [activeField, setField, moveStep],
   );
 
   const setAlign = useCallback(
@@ -304,7 +348,12 @@ function TINEditorInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [present, user, toast]);
 
-  const activeMeta = TIN_FIELDS.find((f) => f.key === activeField);
+  const activeMeta = isQr ? undefined : TIN_FIELDS.find((f) => f.key === activeField);
+  const activeLabel = isQr ? 'QR Code' : (activeMeta?.label ?? '');
+  const fieldOptions = [
+    ...TIN_FIELDS.map((f) => ({ value: f.key, label: f.label })),
+    { value: 'qr', label: 'QR Code' },
+  ];
 
   const qrPayload = useMemo(() => buildTinQrPayload(present), [present]);
 
@@ -403,81 +452,179 @@ function TINEditorInner() {
           icon={<Type className="h-3.5 w-3.5" />}
           badge={
             <span className="rounded-full border border-info/30 bg-info/10 px-2 py-0.5 font-mono text-[9.5px] normal-case tracking-normal text-info">
-              {activeMeta?.label}
+              {activeLabel}
             </span>
           }
         >
-          <Select
-            aria-label="Select field"
-            value={activeField}
-            onChange={(e) => setActiveField(e.target.value as TinFieldKey)}
-            options={TIN_FIELDS.map((f) => ({ value: f.key, label: f.label }))}
-          />
-          <PropertyInput
-            label="Text"
-            value={present[activeField]}
-            textarea={activeMeta?.textarea}
-            onChange={(v) => setField(activeField as keyof TINSnapshot, v as never)}
-          />
+          <div className="flex flex-col gap-3">
+            <Select
+              aria-label="Select field"
+              value={activeField}
+              onChange={(e) => setActiveField(e.target.value as TinFieldKey | 'qr')}
+              options={fieldOptions}
+            />
 
-          <div className="grid grid-cols-2 gap-3">
-            {(Object.keys(TIN_LAYOUT_RANGES) as Array<keyof typeof TIN_LAYOUT_RANGES>).map((rangeKey) => {
-              const spec = TIN_LAYOUT_RANGES[rangeKey];
-              return (
-                <PropertySlider
-                  key={rangeKey}
-                  label={spec.label}
-                  value={activeLayout[rangeKey] as number}
-                  min={spec.min}
-                  max={spec.max}
-                  step={spec.step}
-                  mono={spec.mono}
-                  onChange={(v) => setLayout(rangeKey as never, v as never)}
-                />
-              );
-            })}
-          </div>
+            {isQr ? (
+              <p className="rounded-xl border border-line bg-surface-raised px-3 py-2 text-[10.5px] leading-relaxed text-muted">
+                The QR auto-generates from the current record. Use Size, X and Y
+                below to position it on the template.
+              </p>
+            ) : (
+              <PropertyInput
+                label="Text"
+                value={present[activeField]}
+                textarea={activeMeta?.textarea}
+                onChange={(v) => setField(activeField as keyof TINSnapshot, v as never)}
+              />
+            )}
 
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] text-muted">Alignment</span>
-            <div className="grid grid-cols-4 gap-1 rounded-xl border border-line bg-surface-raised p-1">
-              {TIN_ALIGNMENTS.map((a) => (
-                <button
-                  key={a.value}
-                  type="button"
-                  onClick={() => setAlign(a.value)}
-                  className={cn(
-                    'rounded-lg px-1 py-1.5 text-[10.5px] font-semibold transition',
-                    activeLayout.align === a.value
-                      ? 'bg-info/15 text-info shadow-sm'
-                      : 'text-muted hover:text-primary',
-                  )}
-                >
-                  {a.label}
-                </button>
-              ))}
+            {/* Position & Size — Font Size, X, Y clearly visible with the move pad nearby */}
+            <div className="flex flex-col gap-3 rounded-xl border border-info/20 bg-info/5 p-3">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-info">Position &amp; Size</span>
+
+              {isQr ? (
+                <div className="flex flex-col gap-3">
+                  {TIN_QR_SLIDERS.map((spec) => (
+                    <PropertySlider
+                      key={spec.key}
+                      label={spec.label}
+                      value={present[spec.key as keyof TINSnapshot] as number}
+                      min={spec.min}
+                      max={spec.max}
+                      step={spec.step}
+                      mono={spec.mono}
+                      onChange={(v) => setField(spec.key as keyof TINSnapshot, v as never)}
+                    />
+                  ))}
+                </div>
+              ) : activeLayout && (
+                <div className="flex flex-col gap-3">
+                  <PropertySlider
+                    label="Font Size"
+                    value={activeLayout.fontSize}
+                    min={TIN_LAYOUT_RANGES.fontSize.min}
+                    max={TIN_LAYOUT_RANGES.fontSize.max}
+                    step={TIN_LAYOUT_RANGES.fontSize.step}
+                    mono
+                    onChange={(v) => setLayout('fontSize', v)}
+                  />
+                  <PropertySlider
+                    label="X"
+                    value={activeLayout.x}
+                    min={TIN_LAYOUT_RANGES.x.min}
+                    max={TIN_LAYOUT_RANGES.x.max}
+                    step={TIN_LAYOUT_RANGES.x.step}
+                    mono
+                    onChange={(v) => setLayout('x', v)}
+                  />
+                  <PropertySlider
+                    label="Y"
+                    value={activeLayout.y}
+                    min={TIN_LAYOUT_RANGES.y.min}
+                    max={TIN_LAYOUT_RANGES.y.max}
+                    step={TIN_LAYOUT_RANGES.y.step}
+                    mono
+                    onChange={(v) => setLayout('y', v)}
+                  />
+                </div>
+              )}
+
+              {/* Move pad: only moves the selected field, at the chosen step */}
+              <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-raised p-2">
+                <div className="flex flex-col gap-1">
+                  {[1, 5, 10].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setMoveStep(s)}
+                      className={cn(
+                        'rounded-lg border px-2 py-0.5 font-mono text-[10px] font-semibold transition',
+                        moveStep === s
+                          ? 'border-info bg-info/15 text-info'
+                          : 'border-line bg-surface text-muted hover:text-primary',
+                      )}
+                    >
+                      {s}px
+                    </button>
+                  ))}
+                </div>
+                <div className="grid flex-1 grid-cols-3 gap-1.5">
+                  <span />
+                  <MoveButton label="↑" title="Move up" onClick={() => moveField(0, -1)} />
+                  <span />
+                  <MoveButton label="←" title="Move left" onClick={() => moveField(-1, 0)} />
+                  <span className="flex items-center justify-center text-[9px] font-mono text-dimm">{moveStep}px</span>
+                  <MoveButton label="→" title="Move right" onClick={() => moveField(1, 0)} />
+                  <span />
+                  <MoveButton label="↓" title="Move down" onClick={() => moveField(0, 1)} />
+                  <span />
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] text-muted">Font Weight</span>
-            <div className="grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface-raised p-1">
-              {(['normal', 'bold'] as TinWeight[]).map((w) => (
-                <button
-                  key={w}
-                  type="button"
-                  onClick={() => setWeight(w)}
-                  className={cn(
-                    'rounded-lg px-1 py-1.5 text-[10.5px] font-semibold capitalize transition',
-                    activeLayout.fontWeight === w
-                      ? 'bg-info/15 text-info shadow-sm'
-                      : 'text-muted hover:text-primary',
-                  )}
-                >
-                  {w}
-                </button>
-              ))}
-            </div>
+            {!isQr && activeLayout && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  {(['width', 'height', 'lineHeight'] as const).map((rangeKey) => {
+                    const spec = TIN_LAYOUT_RANGES[rangeKey];
+                    return (
+                      <PropertySlider
+                        key={rangeKey}
+                        label={spec.label}
+                        value={activeLayout[rangeKey] as number}
+                        min={spec.min}
+                        max={spec.max}
+                        step={spec.step}
+                        mono={spec.mono}
+                        onChange={(v) => setLayout(rangeKey, v)}
+                      />
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[11px] text-muted">Alignment</span>
+                  <div className="grid grid-cols-4 gap-1 rounded-xl border border-line bg-surface-raised p-1">
+                    {TIN_ALIGNMENTS.map((a) => (
+                      <button
+                        key={a.value}
+                        type="button"
+                        onClick={() => setAlign(a.value)}
+                        className={cn(
+                          'rounded-lg px-1 py-1.5 text-[10.5px] font-semibold transition',
+                          activeLayout.align === a.value
+                            ? 'bg-info/15 text-info shadow-sm'
+                            : 'text-muted hover:text-primary',
+                        )}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[11px] text-muted">Font Weight</span>
+                  <div className="grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface-raised p-1">
+                    {(['normal', 'bold'] as TinWeight[]).map((w) => (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => setWeight(w)}
+                        className={cn(
+                          'rounded-lg px-1 py-1.5 text-[10.5px] font-semibold capitalize transition',
+                          activeLayout.fontWeight === w
+                            ? 'bg-info/15 text-info shadow-sm'
+                            : 'text-muted hover:text-primary',
+                        )}
+                      >
+                        {w}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </CollapsibleSection>
 
@@ -512,21 +659,6 @@ function TINEditorInner() {
                 View Record
               </Button>
             </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            {TIN_QR_SLIDERS.map((spec) => (
-              <PropertySlider
-                key={spec.key}
-                label={spec.label}
-                value={present[spec.key as keyof TINSnapshot] as number}
-                min={spec.min}
-                max={spec.max}
-                step={spec.step}
-                mono={spec.mono}
-                onChange={(v) => setField(spec.key as keyof TINSnapshot, v as never)}
-              />
-            ))}
           </div>
         </CollapsibleSection>
       </InspectorPanel>
