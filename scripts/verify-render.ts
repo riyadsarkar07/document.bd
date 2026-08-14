@@ -19,10 +19,10 @@ import {
   TM_SLIDERS,
 } from '../src/lib/constants/tm';
 import { NID_DEFAULTS, NID_SLIDERS } from '../src/lib/constants/nid';
-import { TIN_DEFAULTS, TIN_FIELD_ORDER } from '../src/lib/constants/tin';
+import { TIN_DEFAULTS, TIN_FIELD_ORDER, TIN_ROW_BOXES } from '../src/lib/constants/tin';
 import { renderTMCertificate } from '../src/lib/renderers/tmRenderer';
 import { renderNIDCard } from '../src/lib/renderers/nidRenderer';
-import { renderTINDocument, TIN_ROW_BOXES, wrapTinText } from '../src/lib/renderers/tinRenderer';
+import { renderTINDocument, wrapTinText } from '../src/lib/renderers/tinRenderer';
 import { buildTinQrPayload, encodeDemoQr, parseTinQrPayload } from '../src/lib/tinQr';
 import type { NIDSnapshot, TINSnapshot, TMSnapshot } from '../src/lib/editor/types';
 
@@ -533,13 +533,18 @@ async function main() {
   const r5 = renderBothNID(nidCustom, nidBg, photo);
   assert(buffersEqual(r5.original.buffer, r5.ported.buffer), 'NID custom values — pixels identical');
 
-  console.log('\n[6] TIN DEMO document renderer\n');
+  console.log('\n[6] TIN template document renderer\n');
+  // The uploaded reference certificate is the template (1653×2339, A4-ratio).
+  const tinBg = await loadImage('public/assets/E TIN.jpg');
+  assert(tinBg !== null, 'TIN template image loads');
+  assert(tinBg!.width === 1653 && tinBg!.height === 2339, `TIN template 1653×2339 (got ${tinBg!.width}×${tinBg!.height})`);
+
   const tinCanvas = createCanvas(1, 1);
-  renderTINDocument(tinCanvas as unknown as HTMLCanvasElement, { ...TIN_DEFAULTS }, null, 1);
+  renderTINDocument(tinCanvas as unknown as HTMLCanvasElement, { ...TIN_DEFAULTS }, null, 1, tinBg as unknown as HTMLImageElement);
   assert(tinCanvas.width === 2480 && tinCanvas.height === 3508, `TIN canvas 2480×3508 (got ${tinCanvas.width}×${tinCanvas.height})`);
 
   const tinScaled = createCanvas(1, 1);
-  renderTINDocument(tinScaled as unknown as HTMLCanvasElement, { ...TIN_DEFAULTS }, null, 0.5);
+  renderTINDocument(tinScaled as unknown as HTMLCanvasElement, { ...TIN_DEFAULTS }, null, 0.5, tinBg as unknown as HTMLImageElement);
   assert(tinScaled.width === 1240 && tinScaled.height === 1754, `TIN scaled canvas 1240×1754 (got ${tinScaled.width}×${tinScaled.height})`);
 
   const tinPixels = tinCanvas.getContext('2d')!.getImageData(0, 0, tinCanvas.width, tinCanvas.height).data;
@@ -547,7 +552,25 @@ async function main() {
   for (let i = 0; i < tinPixels.length; i += 4) {
     if (tinPixels[i] !== 255 || tinPixels[i + 1] !== 255 || tinPixels[i + 2] !== 255) nonWhite++;
   }
-  assert(nonWhite > 1000, `TIN page draws header/form content (${nonWhite} non-white pixels)`);
+  assert(nonWhite > 100000, `TIN page draws the uploaded template content (${nonWhite} non-white pixels)`);
+
+  // Without the template background the page is far emptier — proves the image is used.
+  const tinBlank = createCanvas(1, 1);
+  renderTINDocument(tinBlank as unknown as HTMLCanvasElement, { ...TIN_DEFAULTS }, null, 1);
+  const blankPixels = tinBlank.getContext('2d')!.getImageData(0, 0, tinBlank.width, tinBlank.height).data;
+  let blankNonWhite = 0;
+  for (let i = 0; i < blankPixels.length; i += 4) {
+    if (blankPixels[i] !== 255 || blankPixels[i + 1] !== 255 || blankPixels[i + 2] !== 255) blankNonWhite++;
+  }
+  assert(nonWhite > blankNonWhite + 50000, `template background adds page content (${nonWhite} vs ${blankNonWhite})`);
+
+  // The editable name is overlaid in the blank sentence gap of the template.
+  const nameBox = tinCanvas.getContext('2d')!.getImageData(500, 1070, 380, 36).data;
+  let nameDark = 0;
+  for (let i = 0; i < nameBox.length; i += 4) {
+    if (nameBox[i] < 110 && nameBox[i + 1] < 110 && nameBox[i + 2] < 110) nameDark++;
+  }
+  assert(nameDark > 10, `TIN taxpayer name renders on the template (${nameDark} dark px)`);
 
   const wctx = tinCanvas.getContext('2d')!;
   wctx.font = "40px 'Arial Regular',sans-serif";
@@ -570,16 +593,16 @@ async function main() {
   assert((parsedQr?.note ?? '').includes('NOT OFFICIAL NBR VERIFICATION'), 'TIN QR payload carries DEMO disclosure');
   assert(parsedQr?.tin === TIN_DEFAULTS.tinNo, 'TIN QR payload → TIN Number');
   assert(parsedQr?.taxpayerName === TIN_DEFAULTS.taxpayerName, 'TIN QR payload → Taxpayer Name');
-  assert(parsedQr?.dob === TIN_DEFAULTS.dob, 'TIN QR payload → DOB');
+  assert(parsedQr?.dob === TIN_DEFAULTS.dob, 'TIN QR payload → DOB/Date');
   assert(parsedQr?.fatherName === TIN_DEFAULTS.fatherName, 'TIN QR payload → Father Name');
   assert(parsedQr?.motherName === TIN_DEFAULTS.motherName, 'TIN QR payload → Mother Name');
-  assert(parsedQr?.date === TIN_DEFAULTS.date, 'TIN QR payload → Date');
   assert(parsedQr?.currentAddress === TIN_DEFAULTS.currentAddress, 'TIN QR payload → Current Address');
   assert(parsedQr?.permanentAddress === TIN_DEFAULTS.permanentAddress, 'TIN QR payload → Permanent Address');
   assert(parsedQr?.taxZone === TIN_DEFAULTS.taxZone, 'TIN QR payload → Tax Zone');
   assert(parsedQr?.taxCircle === TIN_DEFAULTS.taxCircle, 'TIN QR payload → Tax Circle');
   assert(parsedQr?.status === TIN_DEFAULTS.status, 'TIN QR payload → Status');
   assert(parsedQr?.previousTin === TIN_DEFAULTS.previousTin, 'TIN QR payload → Previous TIN');
+  assert(parsedQr?.sealText === TIN_DEFAULTS.sealText, 'TIN QR payload → Circle/Seal');
 
   const tinQrDataUrl = await encodeDemoQr(tinDefault, 256);
   assert(typeof tinQrDataUrl === 'string' && tinQrDataUrl.startsWith('data:image/png'), 'TIN DEMO QR encodes to PNG data URL');

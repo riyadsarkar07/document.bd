@@ -24,10 +24,10 @@ export const TIN_FIELD_KEYS = [
   'permanentAddress',
   'previousTin',
   'status',
-  'taxZone',
   'taxCircle',
-  'date',
+  'taxZone',
   'deputyInfo',
+  'sealText',
 ] as const;
 
 export type TinFieldKey = (typeof TIN_FIELD_KEYS)[number];
@@ -131,10 +131,10 @@ export interface TINSnapshot {
   permanentAddress: string;
   previousTin: string;
   status: string;
-  taxZone: string;
   taxCircle: string;
-  date: string;
+  taxZone: string;
   deputyInfo: string;
+  sealText: string;
   layouts: Record<TinFieldKey, TinLayout>;
   qrSize: number;
   qrX: number;

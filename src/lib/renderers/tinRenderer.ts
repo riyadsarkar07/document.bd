@@ -1,55 +1,24 @@
-import type { TinFieldKey, TinLayout, TINSnapshot } from '../editor/types';
-import { TIN_DOC_HEIGHT, TIN_DOC_WIDTH, TIN_FIELD_ORDER, TIN_LABELS } from '../constants/tin';
+import type { TinLayout, TINSnapshot } from '../editor/types';
+import { TIN_DEFAULT_LAYOUTS, TIN_DOC_HEIGHT, TIN_DOC_WIDTH, TIN_FIELD_ORDER } from '../constants/tin';
 
 /**
- * Original DEMO TIN record renderer for document.bd.
+ * TIN certificate template renderer for document.bd.
  *
- * Draws an A4 portrait page (2480×3508 @ 300 DPI) with a labelled form, an
- * explicit "DEMO RECORD — NOT OFFICIAL NBR VERIFICATION" watermark/banner, and
- * a DEMO QR block. It is an original layout loosely inspired by TIN record
- * registration documents — NOT a reproduction of an official NBR certificate.
+ * The uploaded reference certificate (public/assets/E TIN.jpg) is drawn as the
+ * actual template background, scaled to the A4 portrait canvas (2480×3508 @
+ * 300 DPI). Editable record values are overlaid at the per-field layout boxes
+ * (defaults derived from the reference via OCR × 1.5). The template image is
+ * kept exactly as uploaded — no DEMO watermark is stamped over it; disclosure
+ * lives in the app UI and in the QR scan payload.
  */
 
-export const TIN_ROW_BOXES: Record<TinFieldKey, { x: number; y: number; w: number; h: number }> = {
-  tinNo: { x: 780, y: 600, w: 1460, h: 90 },
-  taxpayerName: { x: 780, y: 710, w: 1460, h: 90 },
-  dob: { x: 780, y: 820, w: 1460, h: 90 },
-  fatherName: { x: 780, y: 930, w: 1460, h: 90 },
-  motherName: { x: 780, y: 1040, w: 1460, h: 90 },
-  previousTin: { x: 780, y: 1150, w: 1460, h: 90 },
-  status: { x: 780, y: 1260, w: 1460, h: 90 },
-  taxZone: { x: 780, y: 1370, w: 1460, h: 90 },
-  taxCircle: { x: 780, y: 1480, w: 1460, h: 90 },
-  date: { x: 780, y: 1590, w: 1460, h: 90 },
-  currentAddress: { x: 780, y: 1700, w: 1460, h: 180 },
-  permanentAddress: { x: 780, y: 1900, w: 1460, h: 180 },
-  deputyInfo: { x: 780, y: 2100, w: 1460, h: 140 },
-};
-
 const INK = '#0b1220';
-const GREEN = '#0b3d2e';
-const RED = '#b91c1c';
-const BOX_FILL = '#f6f8f7';
-const BOX_BORDER = '#d8dde3';
+const SEAL_RED = '#c62828';
 const MUTED = '#5b6b66';
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-): void {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
+// The certificate body is printed in a serif face; the same stack keeps
+// overlaid values visually consistent (Times in browsers, Liberation/DejaVu
+// Serif in the node renderer).
+const VALUE_FONT = "'Times New Roman','Liberation Serif','DejaVu Serif',serif";
 
 /** Word-wrap that also hard-splits words longer than the available width. */
 export function wrapTinText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
@@ -84,14 +53,14 @@ export function wrapTinText(ctx: CanvasRenderingContext2D, text: string, maxWidt
   return lines;
 }
 
-/** Draws one editable value inside its cell honouring the field layout. */
+/** Draws one editable value inside its layout box honouring the field layout. */
 export function renderTinValue(
   ctx: CanvasRenderingContext2D,
   text: string,
   layout: TinLayout,
 ): void {
   if (!text) return;
-  const font = `${layout.fontWeight === 'bold' ? 'bold ' : ''}${layout.fontSize}px 'Arial Regular',Arial,sans-serif`;
+  const font = `${layout.fontWeight === 'bold' ? 'bold ' : ''}${layout.fontSize}px ${VALUE_FONT}`;
   ctx.save();
   ctx.font = font;
   ctx.textBaseline = 'alphabetic';
@@ -126,170 +95,55 @@ export function renderTinValue(
   ctx.restore();
 }
 
-function centerText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  y: number,
-  size: number,
-  weight: string,
-  color: string,
-  font = "'Arial Regular',Arial,sans-serif",
-): void {
+/**
+ * Draws the circle/seal area over the officer block. `sealText` is centred
+ * inside the ring; empty text renders a subtle "SEAL" placeholder so the area
+ * is visible. The ring and placeholder are clearly non-official.
+ */
+function drawSeal(ctx: CanvasRenderingContext2D, snap: TINSnapshot): void {
+  const l = snap.layouts.sealText ?? TIN_DEFAULT_LAYOUTS.sealText;
+  const cx = l.x + l.width / 2;
+  const cy = l.y + l.height / 2;
+  const r = Math.max(24, Math.min(l.width, l.height) / 2 - 4);
   ctx.save();
-  ctx.font = `${weight} ${size}px ${font}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = color;
-  ctx.fillText(text, TIN_DOC_WIDTH / 2, y);
-  ctx.restore();
-}
-
-function drawHeader(ctx: CanvasRenderingContext2D): void {
-  ctx.save();
-  ctx.fillStyle = GREEN;
-  ctx.fillRect(0, 0, TIN_DOC_WIDTH, 16);
-  centerText(ctx, "GOVERNMENT OF THE PEOPLE'S REPUBLIC OF BANGLADESH", 112, 40, 'normal', '#1e3a2f');
-  centerText(ctx, 'জাতীয় রাজস্ব বোর্ড', 236, 74, 'normal', GREEN, "'Kalpurush','Kalpurush Bold',serif");
-  centerText(ctx, 'NATIONAL BOARD OF REVENUE', 348, 58, 'bold', GREEN);
-  centerText(ctx, 'Tax Identification Number (TIN) — DEMO RECORD', 448, 42, 'bold', INK);
-
-  // DEMO banner badge
-  const badge = 'DEMO RECORD — NOT AN OFFICIAL NBR CERTIFICATE';
-  ctx.save();
-  ctx.font = "bold 34px 'Arial Regular',Arial,sans-serif";
-  const bw = ctx.measureText(badge).width + 56;
-  const bx = TIN_DOC_WIDTH / 2 - bw / 2;
-  const by = 476;
-  roundRect(ctx, bx, by, bw, 60, 30);
-  ctx.fillStyle = '#fdeaea';
-  ctx.fill();
-  ctx.strokeStyle = RED;
+  ctx.strokeStyle = SEAL_RED;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - 14, 0, Math.PI * 2);
+  ctx.setLineDash([8, 6]);
   ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.fillStyle = RED;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(badge, TIN_DOC_WIDTH / 2, by + 32);
-  ctx.restore();
-}
-
-function drawWatermark(ctx: CanvasRenderingContext2D): void {
-  ctx.save();
-  ctx.translate(TIN_DOC_WIDTH / 2, TIN_DOC_HEIGHT / 2);
-  ctx.rotate(-0.46);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(185, 28, 28, 0.06)';
-  ctx.font = "bold 540px 'Arial Regular',Arial,sans-serif";
-  ctx.fillText('DEMO RECORD', 0, -120);
-  ctx.font = "bold 210px 'Arial Regular',Arial,sans-serif";
-  ctx.fillText('NOT OFFICIAL NBR VERIFICATION', 0, 200);
-  ctx.restore();
-}
-
-function drawForm(ctx: CanvasRenderingContext2D, snap: TINSnapshot): void {
-  ctx.save();
-  const labelX = 300;
-  for (const key of TIN_FIELD_ORDER) {
-    const box = TIN_ROW_BOXES[key];
-    const label = TIN_LABELS[key];
-
-    // label
-    ctx.font = "bold 38px 'Arial Regular',Arial,sans-serif";
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#1e3a2f';
-    ctx.fillText(label, labelX, box.y + box.h / 2);
-
-    // value cell (the "blank area" bound to the inspector)
-    ctx.save();
-    roundRect(ctx, box.x, box.y, box.w, box.h, 10);
-    ctx.fillStyle = BOX_FILL;
-    ctx.fill();
-    ctx.strokeStyle = BOX_BORDER;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.restore();
-
-    renderTinValue(ctx, snap[key], snap.layouts[key]);
-  }
-
-  // divider above the QR / seal area
-  ctx.strokeStyle = '#c9d1d6';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(240, 2270);
-  ctx.lineTo(2240, 2270);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawStampBlock(ctx: CanvasRenderingContext2D): void {
-  const x = 1500;
-  const y = 2380;
-  const w = 720;
-  const h = 700;
-  ctx.save();
-
-  roundRect(ctx, x, y, w, h, 14);
-  ctx.fillStyle = '#fbfcfb';
-  ctx.fill();
-  ctx.strokeStyle = BOX_BORDER;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  centerText(ctx, 'Office of the Deputy Commissioner of Taxes', y + 70, 32, 'normal', '#1e3a2f');
-  centerText(ctx, '(DEMO)', y + 112, 30, 'bold', MUTED);
-
-  // DEMO seal circle
-  const cx = x + w / 2;
-  const cy = y + h / 2 - 30;
-  ctx.save();
-  ctx.strokeStyle = RED;
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.arc(cx, cy, 130, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(cx, cy, 118, 0, Math.PI * 2);
-  ctx.setLineDash([10, 8]);
-  ctx.lineWidth = 3;
   ctx.stroke();
   ctx.setLineDash([]);
+
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = RED;
-  ctx.font = "bold 46px 'Arial Regular',Arial,sans-serif";
-  ctx.fillText('DEMO', cx, cy - 18);
-  ctx.font = "bold 24px 'Arial Regular',Arial,sans-serif";
-  ctx.fillText('NOT OFFICIAL', cx, cy + 30);
-  ctx.restore();
-
-  // signature line
-  ctx.strokeStyle = '#9aa6a0';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(x + 60, y + h - 130);
-  ctx.lineTo(x + w - 60, y + h - 130);
-  ctx.stroke();
-  ctx.font = "normal 28px 'Monotype Corsiva Bold Italic',cursive,serif";
-  ctx.textAlign = 'center';
-  ctx.fillStyle = INK;
-  ctx.fillText('Authorised Signatory', x + w / 2, y + h - 150);
-  ctx.font = "bold 26px 'Arial Regular',Arial,sans-serif";
-  ctx.fillStyle = MUTED;
-  ctx.fillText('DEMO ONLY — NOT AN OFFICIAL SEAL', x + w / 2, y + h - 66);
+  ctx.fillStyle = SEAL_RED;
+  const text = snap.sealText.trim();
+  if (text) {
+    ctx.font = `${l.fontWeight === 'bold' ? 'bold ' : ''}${l.fontSize}px ${VALUE_FONT}`;
+    const lines = wrapTinText(ctx, text, r * 1.7);
+    const lineH = l.fontSize * l.lineHeight;
+    const startY = cy - ((lines.length - 1) * lineH) / 2;
+    lines.forEach((ln, i) => ctx.fillText(ln, cx, startY + i * lineH));
+  } else {
+    ctx.font = `bold ${Math.max(18, l.fontSize * 0.55)}px ${VALUE_FONT}`;
+    ctx.fillText('SEAL', cx, cy);
+  }
   ctx.restore();
 }
 
+/** Draws the regenerated DEMO QR code on the template's blank bottom-left area. */
 function drawQr(ctx: CanvasRenderingContext2D, snap: TINSnapshot, qrImg: HTMLImageElement | null): void {
   const size = Math.max(40, snap.qrSize);
   ctx.save();
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(snap.qrX - 8, snap.qrY - 8, size + 16, size + 16);
-  ctx.strokeStyle = BOX_BORDER;
+  ctx.fillRect(snap.qrX - 6, snap.qrY - 6, size + 12, size + 12);
+  ctx.strokeStyle = '#c9d1d6';
   ctx.lineWidth = 2;
-  ctx.strokeRect(snap.qrX - 8, snap.qrY - 8, size + 16, size + 16);
+  ctx.strokeRect(snap.qrX - 6, snap.qrY - 6, size + 12, size + 12);
   if (qrImg && qrImg.complete && qrImg.naturalWidth > 0) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
@@ -300,51 +154,23 @@ function drawQr(ctx: CanvasRenderingContext2D, snap: TINSnapshot, qrImg: HTMLIma
     ctx.fillStyle = MUTED;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = "bold 30px 'Arial Regular',Arial,sans-serif";
-    ctx.fillText('[ DEMO QR ]', snap.qrX + size / 2, snap.qrY + size / 2 - 18);
-    ctx.font = "normal 26px 'Arial Regular',Arial,sans-serif";
-    ctx.fillText('scan to view record', snap.qrX + size / 2, snap.qrY + size / 2 + 22);
+    ctx.font = "bold 28px 'Arial Regular',Arial,sans-serif";
+    ctx.fillText('QR', snap.qrX + size / 2, snap.qrY + size / 2);
   }
-
-  const capY = snap.qrY + size + 56;
-  ctx.textAlign = 'left';
-  ctx.font = "bold 30px 'Arial Regular',Arial,sans-serif";
-  ctx.fillStyle = '#1e3a2f';
-  ctx.fillText('Scan to view the current DEMO record', snap.qrX, capY);
-  ctx.font = "normal 27px 'Arial Regular',Arial,sans-serif";
-  ctx.fillStyle = RED;
-  ctx.fillText('DEMO QR — NOT an NBR verification code', snap.qrX, capY + 46);
-  ctx.restore();
-}
-
-function drawFooter(ctx: CanvasRenderingContext2D): void {
-  ctx.save();
-  ctx.strokeStyle = '#c9d1d6';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(240, 3410);
-  ctx.lineTo(2240, 3410);
-  ctx.stroke();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.font = "bold 28px 'Arial Regular',Arial,sans-serif";
-  ctx.fillStyle = RED;
-  ctx.fillText('DEMO RECORD — NOT OFFICIAL NBR VERIFICATION', TIN_DOC_WIDTH / 2, 3450);
-  ctx.font = "normal 26px 'Arial Regular',Arial,sans-serif";
-  ctx.fillStyle = MUTED;
-  ctx.fillText('Generated by Document Studio (document.bd) · For demonstration only', TIN_DOC_WIDTH / 2, 3492);
   ctx.restore();
 }
 
 /**
- * Renders the full DEMO TIN document. `qrImg` is the DEMO QR code generated
- * from the current record (null until fonts/QR are ready).
+ * Renders the full TIN certificate. `bgImg` is the uploaded reference template
+ * (scaled to fill the A4 canvas). `qrImg` is the QR generated from the current
+ * record (null until fonts/QR are ready).
  */
 export function renderTINDocument(
   canvas: HTMLCanvasElement,
   snap: TINSnapshot,
   qrImg: HTMLImageElement | null,
   scale = 1,
+  bgImg: HTMLImageElement | null = null,
 ): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -359,14 +185,19 @@ export function renderTINDocument(
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  // page
+  // Page + the uploaded reference template.
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, W, H);
+  if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
+    ctx.drawImage(bgImg, 0, 0, W, H);
+  }
 
-  drawWatermark(ctx);
-  drawHeader(ctx);
-  drawForm(ctx, snap);
-  drawStampBlock(ctx);
+  for (const key of TIN_FIELD_ORDER) {
+    if (key === 'sealText') continue; // seal drawn as a circle, not a plain value
+    const layout = snap.layouts[key] ?? TIN_DEFAULT_LAYOUTS[key];
+    renderTinValue(ctx, snap[key], layout);
+  }
+
+  drawSeal(ctx, snap);
   drawQr(ctx, snap, qrImg);
-  drawFooter(ctx);
 }

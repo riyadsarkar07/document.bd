@@ -13,6 +13,8 @@ interface UseDocumentEditorOptions<T> {
   autosaveKey: string;
   /** Load initial state from external source (project/template). Returns null to keep defaults. */
   loadExternal?: () => T | null;
+  /** Normalise a restored snapshot (e.g. merge missing layout keys) before use. */
+  normalize?: (state: T) => T;
   onAutosave?: (state: T) => void;
 }
 
@@ -21,6 +23,7 @@ export function useDocumentEditor<T>({
   defaults,
   autosaveKey,
   loadExternal,
+  normalize,
   onAutosave,
 }: UseDocumentEditorOptions<T>) {
   const history = useHistory<T>(defaults);
@@ -61,7 +64,7 @@ export function useDocumentEditor<T>({
       const external = loadExternal();
       if (external) loaded = external;
     }
-    if (loaded) history.replace(loaded);
+    if (loaded) history.replace(normalize ? normalize(loaded) : loaded);
     readyRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

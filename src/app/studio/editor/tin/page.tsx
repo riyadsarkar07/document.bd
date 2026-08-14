@@ -16,15 +16,18 @@ import { useDocumentEditor } from '@/lib/editor/use-document-editor';
 import {
   TIN_ALIGNMENTS,
   TIN_DEFAULTS,
+  TIN_DEFAULT_LAYOUTS,
   TIN_DOC_HEIGHT,
   TIN_DOC_WIDTH,
   TIN_FIELDS,
   TIN_LAYOUT_RANGES,
   TIN_QR_SLIDERS,
+  TIN_TEMPLATE_SRC,
+  normalizeTinSnapshot,
 } from '@/lib/constants/tin';
 import type { TINSnapshot, TinAlign, TinFieldKey, TinWeight } from '@/lib/editor/types';
 import { renderTINDocument } from '@/lib/renderers/tinRenderer';
-import { loadDataUrlImage } from '@/lib/images';
+import { loadDataUrlImage, loadImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { encodeDemoQr, buildTinQrPayload } from '@/lib/tinQr';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
@@ -60,6 +63,7 @@ function TINEditorInner() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrImg, setQrImg] = useState<HTMLImageElement | null>(null);
+  const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
   const [activeField, setActiveField] = useState<TinFieldKey>('taxpayerName');
 
   const externalCacheRef = useRef<TINSnapshot | null>(null);
@@ -69,6 +73,7 @@ function TINEditorInner() {
     defaults: TIN_DEFAULTS,
     autosaveKey: 'studio.autosave.tin',
     loadExternal: () => externalCacheRef.current,
+    normalize: (s) => normalizeTinSnapshot(s as Partial<TINSnapshot>),
   });
 
   const { present, zoom, setField, setStatus, setBusy, setRendered, setDims, dims } = editor;
@@ -79,6 +84,8 @@ function TINEditorInner() {
   presentRef.current = present;
   const qrImgRef = useRef(qrImg);
   qrImgRef.current = qrImg;
+  const bgImgRef = useRef(bgImg);
+  bgImgRef.current = bgImg;
   const fontsLoadedRef = useRef(fontsLoaded);
   fontsLoadedRef.current = fontsLoaded;
 
@@ -91,7 +98,7 @@ function TINEditorInner() {
         const res = await listProjects();
         const found = res.data.find((p) => String(p.id) === projectId || p.name === projectId);
         if (found) {
-          const next = { ...TIN_DEFAULTS, ...(found.state as Partial<TINSnapshot>) };
+          const next = normalizeTinSnapshot(found.state as Partial<TINSnapshot>);
           externalCacheRef.current = next;
           editor.replace(next);
           setStatus(`Project "${found.name}" loaded`);
@@ -101,7 +108,7 @@ function TINEditorInner() {
         const res = await listTemplates();
         const found = res.data.find((t) => String(t.id) === templateName || t.name === templateName);
         if (found) {
-          const next = { ...TIN_DEFAULTS, ...(found.state as Partial<TINSnapshot>) };
+          const next = normalizeTinSnapshot(found.state as Partial<TINSnapshot>);
           externalCacheRef.current = next;
           editor.replace(next);
           setStatus(`Template "${found.name}" applied`);
@@ -119,6 +126,17 @@ function TINEditorInner() {
       if (ok) setStatus('Renderer fonts loaded');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load the uploaded reference certificate as the editor template background.
+  useEffect(() => {
+    let alive = true;
+    void loadImage(TIN_TEMPLATE_SRC).then((img) => {
+      if (alive && img) setBgImg(img);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // DEMO QR regeneration — coalesced with rAF and keyed on the encoded payload
@@ -156,7 +174,7 @@ function TINEditorInner() {
   // Draw the latest snapshot onto the canvas at a given scale.
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
-      renderTINDocument(canvas, presentRef.current, qrImgRef.current, scale);
+      renderTINDocument(canvas, presentRef.current, qrImgRef.current, scale, bgImgRef.current);
       setDims((prev) =>
         prev && prev.w === TIN_DOC_WIDTH && prev.h === TIN_DOC_HEIGHT ? prev : { w: TIN_DOC_WIDTH, h: TIN_DOC_HEIGHT },
       );
@@ -176,7 +194,7 @@ function TINEditorInner() {
       if (canvas) void draw(canvas, liveScaleRef.current);
     });
     return () => cancelAnimationFrame(rafRef.current);
-  }, [present, fontsLoaded, qrImg, zoom, draw]);
+  }, [present, fontsLoaded, qrImg, bgImg, zoom, draw]);
 
   // Force refresh at full resolution (explicit "Render" action).
   const forceRender = useCallback(async () => {
@@ -195,17 +213,18 @@ function TINEditorInner() {
     setQrDataUrl(null);
     setQrImg(null);
     setStatus('Defaults applied');
-    toast.info('TIN editor reset to DEMO defaults');
+    toast.info('TIN editor reset to defaults');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Layout helpers bound to the selected field.
-  const activeLayout = present.layouts[activeField];
+  const activeLayout = present.layouts[activeField] ?? TIN_DEFAULT_LAYOUTS[activeField];
   const setLayout = useCallback(
     <K extends keyof typeof activeLayout>(key: K, value: (typeof activeLayout)[K]) => {
+      const base = presentRef.current.layouts[activeField] ?? TIN_DEFAULT_LAYOUTS[activeField];
       setField('layouts', {
         ...presentRef.current.layouts,
-        [activeField]: { ...presentRef.current.layouts[activeField], [key]: value },
+        [activeField]: { ...base, [key]: value },
       });
     },
     // activeField is stable enough via ref pattern; setField is stable.
@@ -226,7 +245,7 @@ function TINEditorInner() {
 
   const exportJpg = useCallback(async () => {
     const canvas = document.createElement('canvas');
-    renderTINDocument(canvas, presentRef.current, qrImgRef.current, 1);
+    renderTINDocument(canvas, presentRef.current, qrImgRef.current, 1, bgImgRef.current);
     const link = document.createElement('a');
     const tin = presentRef.current.tinNo || 'record';
     link.download = `TIN-${tin}-DEMO.jpg`;
@@ -238,7 +257,7 @@ function TINEditorInner() {
 
   const exportPdf = useCallback(async () => {
     const canvas = document.createElement('canvas');
-    renderTINDocument(canvas, presentRef.current, qrImgRef.current, 1);
+    renderTINDocument(canvas, presentRef.current, qrImgRef.current, 1, bgImgRef.current);
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: 'a4' });
     const pW = pdf.internal.pageSize.getWidth();
     const pH = pdf.internal.pageSize.getHeight();
@@ -264,7 +283,7 @@ function TINEditorInner() {
 
   const preview = useCallback(async () => {
     const canvas = document.createElement('canvas');
-    renderTINDocument(canvas, presentRef.current, qrImgRef.current, 1);
+    renderTINDocument(canvas, presentRef.current, qrImgRef.current, 1, bgImgRef.current);
     setPreviewDataUrl(canvas.toDataURL('image/jpeg', 0.96));
     setPreviewOpen(true);
   }, []);
@@ -317,8 +336,8 @@ function TINEditorInner() {
           onFit={editor.fit}
           onActual={editor.zoomActual}
           onZoomPreset={editor.zoomPreset}
-          placeholderTitle="Fill in the record — the TIN document renders live"
-          placeholderSub="A4 portrait · 2480 × 3508 px · 300 DPI · DEMO record"
+          placeholderTitle="Fill in the record — the TIN certificate renders live over the uploaded template"
+          placeholderSub="A4 portrait · 2480 × 3508 px · 300 DPI · uploaded template"
           fullscreen={editor.fullscreen}
           onToggleFullscreen={editor.toggleFullscreen}
           kindLabel="TIN Document"
@@ -336,7 +355,7 @@ function TINEditorInner() {
 
       <InspectorPanel
         title="TIN Information Inspector"
-        subtitle="A4 · 2480×3508 · DEMO record editor"
+        subtitle="A4 · 2480×3508 · uploaded template"
         open={editor.inspectorOpen}
         onToggle={editor.toggleInspector}
         footer={
@@ -357,11 +376,12 @@ function TINEditorInner() {
       >
         <div className="border-b border-line bg-surface-raised px-4 py-3">
           <p className="text-[10.5px] font-bold uppercase tracking-wide text-danger">
-            DEMO · TIN Record v1.0
+            DEMO · TIN Certificate Editor
           </p>
           <p className="mt-1 text-xs text-muted">
-            Every value cell on the page maps to a live inspector input — fill,
-            clear and edit any field; the preview updates instantly.
+            The uploaded reference is the template. Every editable value maps to a
+            live inspector input — fill, clear and edit any field; the preview
+            updates instantly and the QR regenerates from the record.
           </p>
         </div>
 
