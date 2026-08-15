@@ -17,6 +17,7 @@ export interface TinLayout {
 export const TIN_FIELD_KEYS = [
   'tinNo',
   'taxpayerName',
+  'name',
   'dob',
   'fatherName',
   'motherName',
@@ -120,6 +121,7 @@ export interface NIDSnapshot {
 export interface TINSnapshot {
   tinNo: string;
   taxpayerName: string;
+  name: string;
   dob: string;
   fatherName: string;
   motherName: string;

@@ -635,6 +635,7 @@ async function main() {
   patch('motherName', { x: moved.layouts.motherName.x - 20, y: moved.layouts.motherName.y + 12 });
   patch('taxZone', { x: moved.layouts.taxZone.x + 40, fontSize: moved.layouts.taxZone.fontSize + 6 });
   patch('taxCircle', { y: moved.layouts.taxCircle.y + 25, fontSize: moved.layouts.taxCircle.fontSize + 3 });
+  patch('name', { x: moved.layouts.name.x + 30, y: moved.layouts.name.y - 18, fontSize: moved.layouts.name.fontSize + 4 });
   // X/Y are independent per field.
   assert(moved.layouts.taxpayerName.x === original.layouts.taxpayerName.x + 100, 'moving Taxpayer Name X affects only it');
   assert(moved.layouts.taxpayerName.y === original.layouts.taxpayerName.y, 'Taxpayer Name Y untouched by others');
@@ -646,21 +647,35 @@ async function main() {
   assert(moved.layouts.taxCircle.y === original.layouts.taxCircle.y + 25, 'moving Tax Circle Y affects only it');
   assert(moved.layouts.tinNo.y === original.layouts.tinNo.y, 'TIN Number Y untouched by others');
   assert(moved.layouts.currentAddress.x === original.layouts.currentAddress.x, 'Current Address X untouched by others');
+  assert(moved.layouts.name.x === original.layouts.name.x + 30, 'moving Name X affects only it');
+  assert(moved.layouts.name.y === original.layouts.name.y - 18, 'moving Name Y affects only it');
+  assert(moved.layouts.fatherName.y === original.layouts.fatherName.y - 50, 'Father Name Y untouched by Name move');
+  assert(moved.layouts.motherName.y === original.layouts.motherName.y + 12, 'Mother Name Y untouched by Name move');
+  assert(moved.layouts.taxCircle.y === original.layouts.taxCircle.y + 25, 'Tax Circle Y untouched by Name move');
+  assert(moved.layouts.taxZone.x === original.layouts.taxZone.x + 40, 'Tax Zone X untouched by Name move');
+  assert(moved.layouts.permanentAddress.x === original.layouts.permanentAddress.x, 'Permanent Address X untouched by others');
   // Font sizes are independent per field.
   assert(moved.layouts.taxpayerName.fontSize === original.layouts.taxpayerName.fontSize + 10, 'Taxpayer Name font-size grows alone');
   assert(moved.layouts.fatherName.fontSize === original.layouts.fatherName.fontSize - 5, 'Father Name font-size shrinks alone');
   assert(moved.layouts.motherName.fontSize === original.layouts.motherName.fontSize, 'Mother Name font-size unchanged');
   assert(moved.layouts.taxZone.fontSize === original.layouts.taxZone.fontSize + 6, 'Tax Zone font-size grows alone');
   assert(moved.layouts.taxCircle.fontSize === original.layouts.taxCircle.fontSize + 3, 'Tax Circle font-size grows alone');
+  assert(moved.layouts.name.fontSize === original.layouts.name.fontSize + 4, 'Name font-size grows alone');
   assert(moved.layouts.fatherName.fontSize === original.layouts.fatherName.fontSize - 5, 'Father Name font-size untouched by Zone/Circle moves');
   // Layout/typography persist through save → restore (project state round-trip).
   const saved = normalizeTinSnapshot({
-    layouts: { taxpayerName: { ...moved.layouts.taxpayerName, x: 777, fontSize: 123 } },
+    layouts: {
+      taxpayerName: { ...moved.layouts.taxpayerName, x: 777, fontSize: 123 },
+      name: { ...moved.layouts.name, x: 999, y: 1245, fontSize: 42 },
+    },
     qrSize: 520,
     qrX: 333,
   } as Partial<TINSnapshot>);
   assert(saved.layouts.taxpayerName.x === 777, 'saved Taxpayer Name X persists after reopen');
   assert(saved.layouts.taxpayerName.fontSize === 123, 'saved Taxpayer Name font-size persists after reopen');
+  assert(saved.layouts.name.x === 999, 'saved Name X persists after reopen');
+  assert(saved.layouts.name.y === 1245, 'saved Name Y persists after reopen');
+  assert(saved.layouts.name.fontSize === 42, 'saved Name font-size persists after reopen');
   assert(saved.layouts.motherName.x === TIN_DEFAULT_LAYOUTS.motherName.x, 'missing layouts restored to defaults on reopen');
   assert(saved.qrSize === 520 && saved.qrX === 333, 'QR size/position persist after reopen');
 

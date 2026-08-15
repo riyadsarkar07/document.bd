@@ -39,6 +39,7 @@ export interface TinFieldMeta {
 export const TIN_FIELDS: TinFieldMeta[] = [
   { key: 'tinNo', label: 'TIN Number' },
   { key: 'taxpayerName', label: 'Taxpayer Name' },
+  { key: 'name', label: 'Name' },
   { key: 'dob', label: 'DOB / Date' },
   { key: 'fatherName', label: "Father's Name" },
   { key: 'motherName', label: "Mother's Name" },
@@ -84,6 +85,9 @@ export const TIN_DEFAULT_LAYOUTS: Record<TinFieldKey, TinLayout> = {
   tinNo: layout(1140, 880, 1050, 45, 34, { fontWeight: 'bold' }),
   // Name rendered inline inside "This is to Certify that __ is a Registered…".
   taxpayerName: layout(445, 1066, 630, 44, 32),
+  // "1) Name :" row in the Taxpayer's Particulars list — the value sits right
+  // after the printed label (label right edge ≈ x663, value box starts after it).
+  name: layout(680, 1238, 1650, 44, 30),
   // Inline sentence — "Taxes Circle-__," (blank gap between the printed label and comma).
   taxCircle: layout(778, 1136, 92, 40, 28),
   // Inline sentence — "Taxes Zone __".
@@ -99,6 +103,7 @@ export const TIN_DEFAULT_LAYOUTS: Record<TinFieldKey, TinLayout> = {
 export const TIN_DEFAULTS: TINSnapshot = {
   tinNo: '1234567890',
   taxpayerName: 'Md. Riyad Sarkar',
+  name: 'Md. Riyad Sarkar',
   dob: '',
   fatherName: 'Md. Abdul Karim',
   motherName: 'Rahila Begum',
@@ -144,6 +149,7 @@ export function normalizeTinSnapshot(s: Partial<TINSnapshot>): TINSnapshot {
 export const TIN_ROW_BOXES: Record<TinFieldKey, { x: number; y: number; w: number; h: number }> = {
   tinNo: { x: 1140, y: 880, w: 1050, h: 45 },
   taxpayerName: { x: 445, y: 1066, w: 630, h: 44 },
+  name: { x: 680, y: 1238, w: 1650, h: 44 },
   taxCircle: { x: 778, y: 1136, w: 92, h: 40 },
   taxZone: { x: 1115, y: 1136, w: 235, h: 40 },
   dob: { x: 335, y: 2097, w: 540, h: 42 },
