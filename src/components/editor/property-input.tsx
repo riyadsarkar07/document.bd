@@ -41,5 +41,6 @@ export const PropertyInput = memo(
     prev.value === next.value &&
     prev.textarea === next.textarea &&
     prev.rows === next.rows &&
-    prev.mono === next.mono,
+    prev.mono === next.mono &&
+    prev.onChange === next.onChange,
 );

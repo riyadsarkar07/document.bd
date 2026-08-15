@@ -96,5 +96,7 @@ export const PropertySlider = memo(
     prev.min === next.min &&
     prev.max === next.max &&
     prev.step === next.step &&
-    prev.mono === next.mono,
+    prev.mono === next.mono &&
+    prev.onChange === next.onChange &&
+    prev.onCommit === next.onCommit,
 );

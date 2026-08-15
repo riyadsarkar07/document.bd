@@ -679,6 +679,40 @@ async function main() {
   assert(saved.layouts.motherName.x === TIN_DEFAULT_LAYOUTS.motherName.x, 'missing layouts restored to defaults on reopen');
   assert(saved.qrSize === 520 && saved.qrX === 333, 'QR size/position persist after reopen');
 
+  console.log('\n[9] Name field renders independently (X/Y/font-size touch only Name pixels)\n');
+  const regionOf = (canvas: unknown, box: { x: number; y: number; w: number; h: number }) => {
+    const ctx = (canvas as { getContext: (t: string) => CanvasRenderingContext2D }).getContext('2d');
+    return Buffer.from(ctx.getImageData(box.x, box.y, box.w, box.h).data.buffer);
+  };
+  const renderTinAt = (nameLayout: TinLayout) => {
+    const c = createCanvas(1, 1);
+    renderTINDocument(
+      c as unknown as HTMLCanvasElement,
+      { ...TIN_DEFAULTS, layouts: { ...TIN_DEFAULT_LAYOUTS, name: nameLayout } },
+      null,
+      1,
+      tinBg as unknown as HTMLImageElement,
+    );
+    return c;
+  };
+  const baseline = renderTinAt(TIN_DEFAULT_LAYOUTS.name);
+  // Move Name well away from every other field's printed row and change its size.
+  const movedName: TinLayout = { ...TIN_DEFAULT_LAYOUTS.name, x: 720, y: 1200, fontSize: 40, height: 46 };
+  const nameMoved = renderTinAt(movedName);
+  for (const key of TIN_FIELD_ORDER) {
+    if (key === 'name') continue;
+    const box = { ...TIN_ROW_BOXES[key], w: Math.max(80, TIN_ROW_BOXES[key].w) };
+    assert(
+      regionOf(baseline, box).equals(regionOf(nameMoved, box)),
+      `Name X/Y/font-size change leaves "${key}" pixels identical`,
+    );
+  }
+  // The Name row itself must have changed.
+  assert(
+    !regionOf(baseline, TIN_ROW_BOXES.name).equals(regionOf(nameMoved, { ...TIN_ROW_BOXES.name, y: 1198, h: 48 })),
+    'Name X/Y/font-size change moves the rendered Name text',
+  );
+
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
 }
