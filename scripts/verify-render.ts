@@ -29,7 +29,7 @@ import {
 import { renderTMCertificate } from '../src/lib/renderers/tmRenderer';
 import { renderNIDCard } from '../src/lib/renderers/nidRenderer';
 import { renderTINDocument, wrapTinText } from '../src/lib/renderers/tinRenderer';
-import { buildTinQrPayload, encodeDemoQr, parseTinQrPayload } from '../src/lib/tinQr';
+import { buildTinQrPayload, encodeDemoQr } from '../src/lib/tinQr';
 import type { NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
 
 const ROOT = process.cwd();
@@ -593,19 +593,32 @@ async function main() {
   console.log('\n[7] TIN DEMO QR payload\n');
   const tinDefault: TINSnapshot = { ...TIN_DEFAULTS };
   const qrPayload = buildTinQrPayload(tinDefault);
-  const parsedQr = parseTinQrPayload(qrPayload);
-  assert(parsedQr !== null, 'TIN QR payload parses back');
-  assert(parsedQr?.demo === true, 'TIN QR payload flagged as demo');
-  assert((parsedQr?.note ?? '').includes('NOT OFFICIAL NBR VERIFICATION'), 'TIN QR payload carries DEMO disclosure');
-  assert(parsedQr?.tin === TIN_DEFAULTS.tinNo, 'TIN QR payload → TIN Number');
-  assert(parsedQr?.taxpayerName === TIN_DEFAULTS.taxpayerName, 'TIN QR payload → Taxpayer Name');
-  assert(parsedQr?.dob === TIN_DEFAULTS.dob, 'TIN QR payload → DOB/Date');
-  assert(parsedQr?.fatherName === TIN_DEFAULTS.fatherName, 'TIN QR payload → Father Name');
-  assert(parsedQr?.motherName === TIN_DEFAULTS.motherName, 'TIN QR payload → Mother Name');
-  assert(parsedQr?.currentAddress === TIN_DEFAULTS.currentAddress, 'TIN QR payload → Current Address');
-  assert(parsedQr?.permanentAddress === TIN_DEFAULTS.permanentAddress, 'TIN QR payload → Permanent Address');
-  assert(parsedQr?.taxZone === TIN_DEFAULTS.taxZone, 'TIN QR payload → Tax Zone');
-  assert(parsedQr?.taxCircle === TIN_DEFAULTS.taxCircle, 'TIN QR payload → Tax Circle');
+  assert(qrPayload.length > 0, 'TIN QR payload is non-empty');
+  assert(!qrPayload.startsWith('{') && !qrPayload.includes('{'), 'TIN QR payload is plain text, not JSON');
+  assert(!qrPayload.includes('generatedAt'), 'TIN QR payload has no generatedAt');
+  assert(!qrPayload.includes('demo'), 'TIN QR payload has no demo flag / internal metadata');
+  assert(!qrPayload.includes('taxpayerName') && !qrPayload.includes('tinNo'), 'TIN QR payload uses readable labels, not internal field names');
+  assert(qrPayload.includes(`TIN : ${TIN_DEFAULTS.tinNo}`), 'TIN QR payload → TIN Number');
+  assert(qrPayload.includes(`Taxpayer's Name : ${TIN_DEFAULTS.taxpayerName}`), 'TIN QR payload → Taxpayer Name');
+  assert(qrPayload.includes(`Father's Name : ${TIN_DEFAULTS.fatherName}`), 'TIN QR payload → Father Name');
+  assert(qrPayload.includes(`Mother's Name : ${TIN_DEFAULTS.motherName}`), 'TIN QR payload → Mother Name');
+  assert(qrPayload.includes(`Current Address : ${TIN_DEFAULTS.currentAddress}`), 'TIN QR payload → Current Address');
+  assert(qrPayload.includes(`Permanent Address : ${TIN_DEFAULTS.permanentAddress}`), 'TIN QR payload → Permanent Address');
+  assert(qrPayload.includes(`Zone : ${TIN_DEFAULTS.taxZone}`), 'TIN QR payload → Tax Zone');
+  assert(qrPayload.includes(`Circle : ${TIN_DEFAULTS.taxCircle}`), 'TIN QR payload → Tax Circle');
+  assert(!qrPayload.includes('DOB :'), 'TIN QR payload omits empty fields (default DOB is blank)');
+
+  // The payload is derived live from the record and stays stable for identical data.
+  const edited: TINSnapshot = {
+    ...TIN_DEFAULTS,
+    taxpayerName: 'SAMSUL ALOM',
+    dob: '10/02/1996',
+  };
+  const editedPayload = buildTinQrPayload(edited);
+  assert(editedPayload !== qrPayload, 'TIN QR payload changes when an editable value changes');
+  assert(editedPayload.includes("Taxpayer's Name : SAMSUL ALOM"), 'TIN QR payload reflects the edited taxpayer name');
+  assert(editedPayload.includes('DOB : 10/02/1996'), 'TIN QR payload reflects the edited DOB');
+  assert(editedPayload === buildTinQrPayload(edited), 'TIN QR payload is stable for identical record data');
 
   const tinQrDataUrl = await encodeDemoQr(tinDefault, 256);
   assert(typeof tinQrDataUrl === 'string' && tinQrDataUrl.startsWith('data:image/png'), 'TIN DEMO QR encodes to PNG data URL');
@@ -620,17 +633,26 @@ async function main() {
   patch('taxpayerName', { x: moved.layouts.taxpayerName.x + 100, fontSize: moved.layouts.taxpayerName.fontSize + 10 });
   patch('fatherName', { y: moved.layouts.fatherName.y - 50, fontSize: moved.layouts.fatherName.fontSize - 5 });
   patch('motherName', { x: moved.layouts.motherName.x - 20, y: moved.layouts.motherName.y + 12 });
+  patch('taxZone', { x: moved.layouts.taxZone.x + 40, fontSize: moved.layouts.taxZone.fontSize + 6 });
+  patch('taxCircle', { y: moved.layouts.taxCircle.y + 25, fontSize: moved.layouts.taxCircle.fontSize + 3 });
   // X/Y are independent per field.
   assert(moved.layouts.taxpayerName.x === original.layouts.taxpayerName.x + 100, 'moving Taxpayer Name X affects only it');
   assert(moved.layouts.taxpayerName.y === original.layouts.taxpayerName.y, 'Taxpayer Name Y untouched by others');
   assert(moved.layouts.fatherName.x === original.layouts.fatherName.x, 'Father Name X untouched by others');
   assert(moved.layouts.motherName.y === original.layouts.motherName.y + 12, 'Mother Name Y moved independently');
   assert(moved.layouts.taxCircle.x === original.layouts.taxCircle.x, 'Tax Circle X untouched by others');
+  assert(moved.layouts.taxZone.x === original.layouts.taxZone.x + 40, 'moving Tax Zone X affects only it');
+  assert(moved.layouts.taxZone.y === original.layouts.taxZone.y, 'Tax Zone Y untouched by others');
+  assert(moved.layouts.taxCircle.y === original.layouts.taxCircle.y + 25, 'moving Tax Circle Y affects only it');
   assert(moved.layouts.tinNo.y === original.layouts.tinNo.y, 'TIN Number Y untouched by others');
+  assert(moved.layouts.currentAddress.x === original.layouts.currentAddress.x, 'Current Address X untouched by others');
   // Font sizes are independent per field.
   assert(moved.layouts.taxpayerName.fontSize === original.layouts.taxpayerName.fontSize + 10, 'Taxpayer Name font-size grows alone');
   assert(moved.layouts.fatherName.fontSize === original.layouts.fatherName.fontSize - 5, 'Father Name font-size shrinks alone');
   assert(moved.layouts.motherName.fontSize === original.layouts.motherName.fontSize, 'Mother Name font-size unchanged');
+  assert(moved.layouts.taxZone.fontSize === original.layouts.taxZone.fontSize + 6, 'Tax Zone font-size grows alone');
+  assert(moved.layouts.taxCircle.fontSize === original.layouts.taxCircle.fontSize + 3, 'Tax Circle font-size grows alone');
+  assert(moved.layouts.fatherName.fontSize === original.layouts.fatherName.fontSize - 5, 'Father Name font-size untouched by Zone/Circle moves');
   // Layout/typography persist through save → restore (project state round-trip).
   const saved = normalizeTinSnapshot({
     layouts: { taxpayerName: { ...moved.layouts.taxpayerName, x: 777, fontSize: 123 } },

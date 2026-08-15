@@ -2,48 +2,32 @@
 
 import QRCode from 'qrcode';
 import type { TINSnapshot } from './editor/types';
-import { TIN_DEMO_NOTE } from './constants/tin';
 
-export interface TinQrRecord {
-  demo: boolean;
-  app: string;
-  kind: 'tin';
-  note: string;
-  tin: string;
-  taxpayerName: string;
-  dob: string;
-  fatherName: string;
-  motherName: string;
-  currentAddress: string;
-  permanentAddress: string;
-  taxZone: string;
-  taxCircle: string;
-  generatedAt: string;
-}
+/** Readable, human-facing payload labels — never internal field keys. */
+const QR_LABELS: { key: keyof TINSnapshot; label: string }[] = [
+  { key: 'taxpayerName', label: "Taxpayer's Name" },
+  { key: 'dob', label: 'DOB' },
+  { key: 'fatherName', label: "Father's Name" },
+  { key: 'motherName', label: "Mother's Name" },
+  { key: 'tinNo', label: 'TIN' },
+  { key: 'currentAddress', label: 'Current Address' },
+  { key: 'permanentAddress', label: 'Permanent Address' },
+  { key: 'taxZone', label: 'Zone' },
+  { key: 'taxCircle', label: 'Circle' },
+];
 
 /**
- * Builds the payload encoded into the DEMO QR code. When a phone scans the QR
- * it sees this JSON record (clearly marked as a demo). It is NOT an official
- * NBR verification payload.
+ * Builds the payload encoded into the DEMO QR code as simple human-readable
+ * plain text (`Label : value`), derived live from the current editor record.
+ * Empty fields are omitted. It is NOT an official NBR verification payload.
  */
-export function buildTinQrPayload(snap: TINSnapshot, now: Date = new Date()): string {
-  const record: TinQrRecord = {
-    demo: true,
-    app: 'document-bd',
-    kind: 'tin',
-    note: TIN_DEMO_NOTE,
-    tin: snap.tinNo,
-    taxpayerName: snap.taxpayerName,
-    dob: snap.dob,
-    fatherName: snap.fatherName,
-    motherName: snap.motherName,
-    currentAddress: snap.currentAddress,
-    permanentAddress: snap.permanentAddress,
-    taxZone: snap.taxZone,
-    taxCircle: snap.taxCircle,
-    generatedAt: now.toISOString(),
-  };
-  return JSON.stringify(record);
+export function buildTinQrPayload(snap: TINSnapshot): string {
+  const lines: string[] = [];
+  for (const { key, label } of QR_LABELS) {
+    const value = String(snap[key] ?? '').trim();
+    if (value) lines.push(`${label} : ${value}`);
+  }
+  return lines.join('\n');
 }
 
 /** Renders the current record as a DEMO QR code data URL. */
@@ -54,19 +38,8 @@ export async function encodeDemoQr(
   const payload = buildTinQrPayload(snap);
   return QRCode.toDataURL(payload, {
     width: size,
-    margin: 1,
+    margin: 4,
     errorCorrectionLevel: 'M',
     color: { dark: '#0b1220', light: '#ffffff' },
   });
-}
-
-/** Parses a scanned payload back into a human-readable record. */
-export function parseTinQrPayload(payload: string): TinQrRecord | null {
-  try {
-    const parsed = JSON.parse(payload) as TinQrRecord;
-    if (parsed.kind !== 'tin') return null;
-    return parsed;
-  } catch {
-    return null;
-  }
 }

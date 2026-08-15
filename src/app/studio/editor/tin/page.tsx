@@ -155,14 +155,20 @@ function TINEditorInner() {
     };
   }, []);
 
-  // DEMO QR regeneration — coalesced with rAF and keyed on the encoded payload
-  // so it only runs when the record actually changed (no debounce, no churn).
+  // DEMO QR payload — simple human-readable plain text built from the current
+  // record. Memoized on `present` so the string only changes when an editable
+  // value changes (never on X/Y/layout/zoom/QR-position state changes).
+  const qrPayload = useMemo(() => buildTinQrPayload(present), [present]);
+
+  // DEMO QR regeneration — rAF-coalesced and keyed on the payload string, so
+  // the QR re-encodes only when the record data actually changed. Encoding is
+  // async, so the editor UI is never blocked.
   const lastQrPayloadRef = useRef<string | null>(null);
   const qrRafRef = useRef(0);
   useEffect(() => {
-    const payload = buildTinQrPayload(presentRef.current);
-    if (payload === lastQrPayloadRef.current) return;
-    lastQrPayloadRef.current = payload;
+    if (qrPayload === lastQrPayloadRef.current) return;
+    lastQrPayloadRef.current = qrPayload;
+    if (!qrPayload) return; // nothing to encode while the record is empty
     cancelAnimationFrame(qrRafRef.current);
     qrRafRef.current = requestAnimationFrame(() => {
       void encodeDemoQr(presentRef.current, 512).then((dataUrl) => {
@@ -170,7 +176,7 @@ function TINEditorInner() {
       });
     });
     return () => cancelAnimationFrame(qrRafRef.current);
-  }, [present]);
+  }, [qrPayload]);
 
   // Hydrate the renderer's QR image whenever a fresh data URL lands.
   useEffect(() => {
@@ -354,8 +360,6 @@ function TINEditorInner() {
     ...TIN_FIELDS.map((f) => ({ value: f.key, label: f.label })),
     { value: 'qr', label: 'QR Code' },
   ];
-
-  const qrPayload = useMemo(() => buildTinQrPayload(present), [present]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -652,8 +656,8 @@ function TINEditorInner() {
             <div className="flex-1">
               <p className="text-[11.5px] font-semibold text-primary">Scan with any QR reader</p>
               <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted">
-                Shows this record as JSON. This is a DEMO QR — it is not an NBR
-                verification code.
+                Shows this record as readable text. This is a DEMO QR — it is
+                not an NBR verification code.
               </p>
               <Button variant="secondary" size="sm" icon={<UserRound className="h-3.5 w-3.5" />} onClick={() => setViewRecordOpen(true)} className="mt-2">
                 View Record
@@ -694,7 +698,7 @@ function TINEditorInner() {
         maxWidth="max-w-lg"
         footer={
           <div className="flex w-full items-center justify-between">
-            <span className="font-mono text-[10.5px] text-dimm">{qrPayload.length} chars · JSON</span>
+            <span className="font-mono text-[10.5px] text-dimm">{qrPayload.length} chars · plain text</span>
             <Button variant="danger" icon={<Eye className="h-4 w-4" />} onClick={() => setViewRecordOpen(false)}>
               Close
             </Button>
