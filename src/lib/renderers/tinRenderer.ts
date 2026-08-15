@@ -98,11 +98,9 @@ export function renderTinValue(
 function drawQr(ctx: CanvasRenderingContext2D, snap: TINSnapshot, qrImg: HTMLImageElement | null): void {
   const size = Math.max(40, snap.qrSize);
   ctx.save();
+  // Plain white backing so the standalone QR sits on white with no frame.
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(snap.qrX - 6, snap.qrY - 6, size + 12, size + 12);
-  ctx.strokeStyle = '#c9d1d6';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(snap.qrX - 6, snap.qrY - 6, size + 12, size + 12);
   if (qrImg && qrImg.complete && qrImg.naturalWidth > 0) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';

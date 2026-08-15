@@ -645,7 +645,7 @@ function TINEditorInner() {
           <div className="flex items-start gap-3 rounded-xl border border-line bg-surface-raised p-3">
             {qrDataUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={qrDataUrl} alt="DEMO QR preview" className="h-24 w-24 rounded-md border border-line bg-white" />
+              <img src={qrDataUrl} alt="DEMO QR preview" className="h-24 w-24 rounded-md bg-white" />
             ) : (
               <div className="flex h-24 w-24 items-center justify-center rounded-md border border-dashed border-line-strong text-[10px] text-dimm">
                 QR
