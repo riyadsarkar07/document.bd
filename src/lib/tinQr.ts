@@ -18,10 +18,6 @@ export interface TinQrRecord {
   permanentAddress: string;
   taxZone: string;
   taxCircle: string;
-  status: string;
-  previousTin: string;
-  deputyInfo: string;
-  sealText: string;
   generatedAt: string;
 }
 
@@ -45,10 +41,6 @@ export function buildTinQrPayload(snap: TINSnapshot, now: Date = new Date()): st
     permanentAddress: snap.permanentAddress,
     taxZone: snap.taxZone,
     taxCircle: snap.taxCircle,
-    status: snap.status,
-    previousTin: snap.previousTin,
-    deputyInfo: snap.deputyInfo,
-    sealText: snap.sealText,
     generatedAt: now.toISOString(),
   };
   return JSON.stringify(record);

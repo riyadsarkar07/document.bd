@@ -13,7 +13,6 @@ import { TIN_DEFAULT_LAYOUTS, TIN_DOC_HEIGHT, TIN_DOC_WIDTH, TIN_FIELD_ORDER } f
  */
 
 const INK = '#0b1220';
-const SEAL_RED = '#c62828';
 const MUTED = '#5b6b66';
 // The certificate body is printed in a serif face; the same stack keeps
 // overlaid values visually consistent (Times in browsers, Liberation/DejaVu
@@ -95,46 +94,6 @@ export function renderTinValue(
   ctx.restore();
 }
 
-/**
- * Draws the circle/seal area over the officer block. `sealText` is centred
- * inside the ring; empty text renders a subtle "SEAL" placeholder so the area
- * is visible. The ring and placeholder are clearly non-official.
- */
-function drawSeal(ctx: CanvasRenderingContext2D, snap: TINSnapshot): void {
-  const l = snap.layouts.sealText ?? TIN_DEFAULT_LAYOUTS.sealText;
-  const cx = l.x + l.width / 2;
-  const cy = l.y + l.height / 2;
-  const r = Math.max(24, Math.min(l.width, l.height) / 2 - 4);
-  ctx.save();
-  ctx.strokeStyle = SEAL_RED;
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r - 14, 0, Math.PI * 2);
-  ctx.setLineDash([8, 6]);
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = SEAL_RED;
-  const text = snap.sealText.trim();
-  if (text) {
-    ctx.font = `${l.fontWeight === 'bold' ? 'bold ' : ''}${l.fontSize}px ${VALUE_FONT}`;
-    const lines = wrapTinText(ctx, text, r * 1.7);
-    const lineH = l.fontSize * l.lineHeight;
-    const startY = cy - ((lines.length - 1) * lineH) / 2;
-    lines.forEach((ln, i) => ctx.fillText(ln, cx, startY + i * lineH));
-  } else {
-    ctx.font = `bold ${Math.max(18, l.fontSize * 0.55)}px ${VALUE_FONT}`;
-    ctx.fillText('SEAL', cx, cy);
-  }
-  ctx.restore();
-}
-
 /** Draws the regenerated DEMO QR code on the template's blank bottom-left area. */
 function drawQr(ctx: CanvasRenderingContext2D, snap: TINSnapshot, qrImg: HTMLImageElement | null): void {
   const size = Math.max(40, snap.qrSize);
@@ -193,11 +152,9 @@ export function renderTINDocument(
   }
 
   for (const key of TIN_FIELD_ORDER) {
-    if (key === 'sealText') continue; // seal drawn as a circle, not a plain value
     const layout = snap.layouts[key] ?? TIN_DEFAULT_LAYOUTS[key];
     renderTinValue(ctx, snap[key], layout);
   }
 
-  drawSeal(ctx, snap);
   drawQr(ctx, snap, qrImg);
 }

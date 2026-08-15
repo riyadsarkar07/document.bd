@@ -606,9 +606,6 @@ async function main() {
   assert(parsedQr?.permanentAddress === TIN_DEFAULTS.permanentAddress, 'TIN QR payload → Permanent Address');
   assert(parsedQr?.taxZone === TIN_DEFAULTS.taxZone, 'TIN QR payload → Tax Zone');
   assert(parsedQr?.taxCircle === TIN_DEFAULTS.taxCircle, 'TIN QR payload → Tax Circle');
-  assert(parsedQr?.status === TIN_DEFAULTS.status, 'TIN QR payload → Status');
-  assert(parsedQr?.previousTin === TIN_DEFAULTS.previousTin, 'TIN QR payload → Previous TIN');
-  assert(parsedQr?.sealText === TIN_DEFAULTS.sealText, 'TIN QR payload → Circle/Seal');
 
   const tinQrDataUrl = await encodeDemoQr(tinDefault, 256);
   assert(typeof tinQrDataUrl === 'string' && tinQrDataUrl.startsWith('data:image/png'), 'TIN DEMO QR encodes to PNG data URL');
@@ -634,8 +631,6 @@ async function main() {
   assert(moved.layouts.taxpayerName.fontSize === original.layouts.taxpayerName.fontSize + 10, 'Taxpayer Name font-size grows alone');
   assert(moved.layouts.fatherName.fontSize === original.layouts.fatherName.fontSize - 5, 'Father Name font-size shrinks alone');
   assert(moved.layouts.motherName.fontSize === original.layouts.motherName.fontSize, 'Mother Name font-size unchanged');
-  assert(moved.layouts.status.fontSize === original.layouts.status.fontSize, 'Status font-size unchanged');
-  assert(moved.layouts.deputyInfo.fontSize === original.layouts.deputyInfo.fontSize, 'Office font-size unchanged');
   // Layout/typography persist through save → restore (project state round-trip).
   const saved = normalizeTinSnapshot({
     layouts: { taxpayerName: { ...moved.layouts.taxpayerName, x: 777, fontSize: 123 } },

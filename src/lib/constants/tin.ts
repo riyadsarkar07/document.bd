@@ -18,8 +18,7 @@ import { TIN_FIELD_KEYS } from '../editor/types';
  * from the reference by OCR box mapping × 1.5.
  *
  * The QR code is regenerated from the current record and placed on the blank
- * bottom-left area of the template. A circle/seal area is rendered over the
- * officer block at the bottom right. DEMO disclosure lives in the app UI and in
+ * bottom-left area of the template. DEMO disclosure lives in the app UI and in
  * the QR scan payload — the template image itself is kept exactly as uploaded.
  */
 
@@ -45,12 +44,8 @@ export const TIN_FIELDS: TinFieldMeta[] = [
   { key: 'motherName', label: "Mother's Name" },
   { key: 'currentAddress', label: 'Current Address', textarea: true },
   { key: 'permanentAddress', label: 'Permanent Address', textarea: true },
-  { key: 'previousTin', label: 'Previous TIN' },
-  { key: 'status', label: 'Status' },
   { key: 'taxCircle', label: 'Tax Circle' },
   { key: 'taxZone', label: 'Tax Zone' },
-  { key: 'deputyInfo', label: 'Office Information', textarea: true },
-  { key: 'sealText', label: 'Circle / Seal', textarea: true },
 ];
 
 export const TIN_ALIGNMENTS: { value: TinAlign; label: string }[] = [
@@ -99,12 +94,6 @@ export const TIN_DEFAULT_LAYOUTS: Record<TinFieldKey, TinLayout> = {
   motherName: layout(565, 1491, 1650, 44, 30),
   currentAddress: layout(620, 1576, 1650, 44, 30, { lineHeight: 1.4 }),
   permanentAddress: layout(685, 1669, 1650, 44, 30, { lineHeight: 1.4 }),
-  previousTin: layout(530, 1763, 700, 44, 30),
-  status: layout(408, 1850, 700, 44, 30),
-  // Officer info — blank strip just above the printed officer block (right side).
-  deputyInfo: layout(1630, 2330, 680, 70, 27, { lineHeight: 1.3 }),
-  // Seal circle — overlaps the printed officer block (bottom right).
-  sealText: layout(1780, 2400, 340, 340, 34, { lineHeight: 1.3, align: 'center' }),
 };
 
 export const TIN_DEFAULTS: TINSnapshot = {
@@ -115,24 +104,35 @@ export const TIN_DEFAULTS: TINSnapshot = {
   motherName: 'Rahila Begum',
   currentAddress: 'House 12, Road 5, Dhanmondi, Dhaka-1205',
   permanentAddress: "Village: Demo Para, Post: Demo, Thana: Teknaf, District: Cox's Bazar",
-  previousTin: '',
-  status: '',
   taxCircle: '019',
   taxZone: 'Gazipur',
-  deputyInfo: '',
-  sealText: '',
   layouts: TIN_DEFAULT_LAYOUTS,
   qrSize: 440,
   qrX: 200,
   qrY: 2680,
 };
 
-/** Merges a (possibly older) saved snapshot so every field has a layout box. */
+/**
+ * Merges a (possibly older) saved snapshot so every field has a layout box.
+ * Layout keys and root fields that no longer exist (removed fields) are
+ * stripped so they can never resurface after refresh, save/reopen or import.
+ */
 export function normalizeTinSnapshot(s: Partial<TINSnapshot>): TINSnapshot {
+  const layouts: Partial<Record<TinFieldKey, TinLayout>> = {};
+  for (const key of TIN_FIELD_KEYS) {
+    layouts[key] = s.layouts?.[key] ?? TIN_DEFAULT_LAYOUTS[key];
+  }
+  const root: Partial<TINSnapshot> = {};
+  for (const key of TIN_FIELD_KEYS) {
+    if (key in s) (root as Record<string, string>)[key] = s[key] as string;
+  }
   return {
     ...TIN_DEFAULTS,
-    ...s,
-    layouts: { ...TIN_DEFAULT_LAYOUTS, ...(s.layouts ?? {}) },
+    ...root,
+    qrSize: s.qrSize ?? TIN_DEFAULTS.qrSize,
+    qrX: s.qrX ?? TIN_DEFAULTS.qrX,
+    qrY: s.qrY ?? TIN_DEFAULTS.qrY,
+    layouts: layouts as Record<TinFieldKey, TinLayout>,
   };
 }
 
@@ -151,10 +151,6 @@ export const TIN_ROW_BOXES: Record<TinFieldKey, { x: number; y: number; w: numbe
   motherName: { x: 565, y: 1491, w: 1650, h: 44 },
   currentAddress: { x: 620, y: 1576, w: 1650, h: 44 },
   permanentAddress: { x: 685, y: 1669, w: 1650, h: 44 },
-  previousTin: { x: 530, y: 1763, w: 700, h: 44 },
-  status: { x: 408, y: 1850, w: 700, h: 44 },
-  deputyInfo: { x: 1630, y: 2330, w: 680, h: 70 },
-  sealText: { x: 1780, y: 2400, w: 340, h: 340 },
 };
 
 export const TIN_LAYOUT_RANGES: Record<
