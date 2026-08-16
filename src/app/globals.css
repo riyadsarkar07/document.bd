@@ -322,41 +322,243 @@ input[type='range']::-moz-range-thumb:hover {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Cyber login theme (login page only — scoped utility classes)
+   Cyber login theme v2 (login page only — scoped utility classes)
    ───────────────────────────────────────────────────────────── */
 
-/* Deep perspective/terminal grid backdrop */
-.cyber-grid {
-  background-image:
-    radial-gradient(ellipse 80% 60% at 50% -10%, rgb(var(--accent) / 0.1), transparent 60%),
-    linear-gradient(rgb(var(--line) / 0.28) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(var(--line) / 0.28) 1px, transparent 1px);
-  background-size:
-    100% 100%,
-    46px 46px,
-    46px 46px;
-  mask-image: radial-gradient(ellipse 75% 70% at 50% 30%, #000 40%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 30%, #000 40%, transparent 100%);
+/* Full-bleed dark canvas base (fixed behind content) */
+.cyber-canvas {
+  background:
+    radial-gradient(ellipse 90% 60% at 50% -10%, rgb(16 26 46 / 0.55), transparent 62%),
+    radial-gradient(ellipse 70% 55% at 50% 110%, rgb(7 20 16 / 0.5), transparent 60%),
+    linear-gradient(180deg, #020407 0%, #030610 45%, #02070a 100%);
 }
 
-/* Very subtle horizontal scanlines */
-.cyber-scanlines {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0px,
-    transparent 3px,
-    rgb(var(--line) / 0.06) 3px,
-    rgb(var(--line) / 0.06) 4px
+/* Oversized technical grid layer — panned via transform (composited) */
+.cyber-grid-layer {
+  position: absolute;
+  inset: -50%;
+  background-image:
+    linear-gradient(rgb(70 88 120 / 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(70 88 120 / 0.2) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(ellipse 72% 62% at 50% 42%, #000 30%, transparent 94%);
+  -webkit-mask-image: radial-gradient(ellipse 72% 62% at 50% 42%, #000 30%, transparent 94%);
+}
+.cyber-grid-pan {
+  animation: cyber-grid-pan 96s linear infinite;
+}
+@keyframes cyber-grid-pan {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(92px, 46px, 0);
+  }
+}
+
+/* Vertical scanner sweep (single faint line traveling downward) */
+.cyber-scan {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 2px;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(52 211 153 / 0.12) 38%,
+    rgb(34 211 238 / 0.16) 58%,
+    transparent
   );
 }
+.cyber-scan-anim {
+  animation: cyber-scan 11s ease-in-out 1.6s infinite;
+}
+@keyframes cyber-scan {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  5% {
+    opacity: 1;
+  }
+  14% {
+    opacity: 1;
+  }
+  20% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 100vh, 0);
+  }
+}
 
-/* Neon glow rings around decorative panels */
-.cyber-ring {
-  border: 1px solid rgb(var(--accent) / 0.22);
-  box-shadow:
-    0 0 0 1px rgb(var(--accent) / 0.08),
-    0 0 24px rgb(var(--accent) / 0.08),
-    inset 0 0 24px rgb(var(--accent) / 0.04);
+/* Tiny floating emerald/cyan particles */
+.cyber-particle {
+  position: absolute;
+  border-radius: 9999px;
+  box-shadow: 0 0 8px currentColor;
+  animation: cyber-float var(--p-dur, 16s) ease-in-out var(--p-delay, 0s) infinite;
+}
+@keyframes cyber-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: var(--p-o, 0.5);
+  }
+  50% {
+    transform: translate3d(10px, -30px, 0);
+    opacity: 0.1;
+  }
+}
+
+/* Soft breathing radial glow behind the login panel */
+.cyber-breath {
+  animation: cyber-breath 7s ease-in-out infinite;
+}
+@keyframes cyber-breath {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08);
+  }
+}
+
+/* Very subtle occasional glitch flicker for decorative elements */
+.cyber-flicker {
+  animation: cyber-flicker 8s steps(1) infinite;
+}
+@keyframes cyber-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  91% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 0.4;
+  }
+  93% {
+    opacity: 0.9;
+  }
+  95% {
+    opacity: 0.55;
+  }
+  96% {
+    opacity: 1;
+  }
+}
+
+/* Concentric security orbit rings + rotating segments + nodes */
+@keyframes cyber-spin-cw {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes cyber-spin-ccw {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+.cyber-spin-cw {
+  animation: cyber-spin-cw 26s linear infinite;
+}
+.cyber-spin-ccw {
+  animation: cyber-spin-ccw 34s linear infinite;
+}
+.cyber-seg {
+  background: conic-gradient(
+    from 0deg,
+    rgb(52 211 153 / 0) 0deg,
+    rgb(52 211 153 / 0.5) 8deg,
+    rgb(52 211 153 / 0) 24deg,
+    rgb(34 211 238 / 0.4) 64deg,
+    rgb(34 211 238 / 0) 80deg,
+    rgb(52 211 153 / 0) 176deg,
+    rgb(52 211 153 / 0.45) 198deg,
+    rgb(52 211 153 / 0) 212deg,
+    rgb(34 211 238 / 0.35) 300deg,
+    rgb(34 211 238 / 0) 316deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 57%, #000 58%, #000 69%, transparent 70%);
+  mask: radial-gradient(circle, transparent 57%, #000 58%, #000 69%, transparent 70%);
+}
+
+/* Entrance sequence — staggered via inline animation-delay */
+.cyber-in {
+  animation: cyber-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.cyber-in-t {
+  animation: cyber-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.cyber-in-p {
+  animation: cyber-panel-in 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes cyber-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes cyber-panel-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* Lock icon glow ignition (delayed past panel entrance) */
+.cyber-lock-glow {
+  animation: cyber-lock-glow 1s ease 0.45s both;
+}
+@keyframes cyber-lock-glow {
+  0% {
+    opacity: 0.7;
+  }
+  60%,
+  100% {
+    opacity: 1;
+    box-shadow:
+      0 0 0 1px rgb(34 211 238 / 0.35),
+      0 0 30px rgb(34 211 238 / 0.28),
+      inset 0 0 18px rgb(34 211 238 / 0.14);
+  }
+}
+
+/* Login panel breathing border glow */
+.cyber-panel-glow {
+  animation: cyber-panel-glow 6s ease-in-out infinite;
+}
+@keyframes cyber-panel-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgb(52 211 153 / 0.08),
+      0 0 34px rgb(52 211 153 / 0.07),
+      0 26px 64px rgb(0 0 0 / 0.55),
+      inset 0 0 34px rgb(52 211 153 / 0.03);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgb(52 211 153 / 0.16),
+      0 0 46px rgb(52 211 153 / 0.13),
+      0 26px 64px rgb(0 0 0 / 0.55),
+      inset 0 0 46px rgb(52 211 153 / 0.06);
+  }
 }
 
 /* Terminal prompt text caret blink */
@@ -372,4 +574,53 @@ input[type='range']::-moz-range-thumb:hover {
 }
 .cyber-caret {
   animation: cyber-caret-blink 1.1s steps(1) infinite;
+}
+
+/* Soft status indicator pulse (active after terminal completes) */
+@keyframes cyber-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+.cyber-pulse {
+  animation: cyber-pulse 1.8s ease-in-out infinite;
+}
+
+/* Desktop mouse-parallax layers (driven by --mx / --my CSS vars) */
+.cyber-parallax-bg {
+  transform: translate3d(calc(var(--mx, 0) * 14px), calc(var(--my, 0) * 14px), 0);
+}
+.cyber-parallax-glow {
+  transform: translate3d(calc(var(--mx, 0) * -7px), calc(var(--my, 0) * -7px), 0);
+}
+.cyber-parallax-orbit {
+  transform: translate3d(calc(-50% + var(--mx, 0) * 11px), calc(-50% + var(--my, 0) * 11px), 0);
+}
+
+/* Reduced motion: force content visible and kill decorative loops */
+@media (prefers-reduced-motion: reduce) {
+  .cyber-in,
+  .cyber-in-t,
+  .cyber-in-p {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .cyber-grid-pan,
+  .cyber-scan-anim,
+  .cyber-particle,
+  .cyber-breath,
+  .cyber-flicker,
+  .cyber-spin-cw,
+  .cyber-spin-ccw,
+  .cyber-lock-glow,
+  .cyber-panel-glow,
+  .cyber-caret,
+  .cyber-pulse {
+    animation: none !important;
+  }
 }
