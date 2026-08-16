@@ -320,3 +320,56 @@ input[type='range']::-moz-range-thumb:hover {
 .grain-disabled::after {
   display: none;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Cyber login theme (login page only — scoped utility classes)
+   ───────────────────────────────────────────────────────────── */
+
+/* Deep perspective/terminal grid backdrop */
+.cyber-grid {
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgb(var(--accent) / 0.1), transparent 60%),
+    linear-gradient(rgb(var(--line) / 0.28) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--line) / 0.28) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    46px 46px,
+    46px 46px;
+  mask-image: radial-gradient(ellipse 75% 70% at 50% 30%, #000 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 30%, #000 40%, transparent 100%);
+}
+
+/* Very subtle horizontal scanlines */
+.cyber-scanlines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 3px,
+    rgb(var(--line) / 0.06) 3px,
+    rgb(var(--line) / 0.06) 4px
+  );
+}
+
+/* Neon glow rings around decorative panels */
+.cyber-ring {
+  border: 1px solid rgb(var(--accent) / 0.22);
+  box-shadow:
+    0 0 0 1px rgb(var(--accent) / 0.08),
+    0 0 24px rgb(var(--accent) / 0.08),
+    inset 0 0 24px rgb(var(--accent) / 0.04);
+}
+
+/* Terminal prompt text caret blink */
+@keyframes cyber-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+.cyber-caret {
+  animation: cyber-caret-blink 1.1s steps(1) infinite;
+}

@@ -10,12 +10,23 @@ const options: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'system', label: 'System', icon: Monitor },
 ];
 
-export function ThemeSwitcher({ compact }: { compact?: boolean }) {
+export function ThemeSwitcher({
+  compact,
+  variant = 'default',
+}: {
+  compact?: boolean;
+  /** Cyber restyle for the login screen; default keeps the classic styling. */
+  variant?: 'default' | 'cyber';
+}) {
   const { theme, setTheme } = useTheme();
+  const cyber = variant === 'cyber';
   return (
     <div
       className={cn(
-        'flex rounded-xl border border-line bg-surface-raised p-1',
+        'flex rounded-xl border p-1',
+        cyber
+          ? 'border-line-strong/60 bg-black/40 backdrop-blur-xl'
+          : 'border-line bg-surface-raised',
         compact && 'scale-90 origin-right',
       )}
     >
@@ -30,8 +41,12 @@ export function ThemeSwitcher({ compact }: { compact?: boolean }) {
             className={cn(
               'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition',
               active
-                ? 'bg-accent text-canvas shadow-glow'
-                : 'text-muted hover:text-primary',
+                ? cyber
+                  ? 'bg-emerald-400/15 text-emerald-300 shadow-[0_0_14px_rgba(52,211,153,0.35)]'
+                  : 'bg-accent text-canvas shadow-glow'
+                : cyber
+                  ? 'text-dimm hover:text-emerald-200'
+                  : 'text-muted hover:text-primary',
             )}
           >
             <Icon className="h-3.5 w-3.5" />

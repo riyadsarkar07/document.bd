@@ -2,7 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'outline' | 'soft';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'outline' | 'soft' | 'cyber';
 type Size = 'sm' | 'md' | 'lg' | 'icon' | 'icon-sm';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -22,6 +22,8 @@ const variants: Record<Variant, string> = {
   danger: 'bg-danger/10 text-danger border border-danger/25 hover:bg-danger/20',
   success: 'bg-success/10 text-success border border-success/25 hover:bg-success/20',
   soft: 'bg-accent/10 text-accent-bright border border-accent/20 hover:bg-accent/15',
+  cyber:
+    'bg-emerald-500 text-black font-bold shadow-[0_0_24px_rgba(52,211,153,0.35)] border border-emerald-400/60 hover:bg-emerald-400 hover:shadow-[0_0_36px_rgba(52,211,153,0.5)] active:brightness-95 transition-all',
 };
 
 const sizes: Record<Size, string> = {
