@@ -12,6 +12,10 @@ interface InspectorPanelProps {
   footer?: ReactNode;
   open?: boolean;
   onToggle?: () => void;
+  /** Extra classes for the mobile bottom sheet (defaults preserve current behaviour). */
+  sheetClassName?: string;
+  /** Extra classes for the mobile sheet's scrollable body (defaults preserve current behaviour). */
+  sheetBodyClassName?: string;
 }
 
 /**
@@ -19,7 +23,16 @@ interface InspectorPanelProps {
  * Desktop: fixed-width collapsible panel that never scrolls the canvas away.
  * Mobile: full-width bottom sheet with its own scroll area.
  */
-export function InspectorPanel({ title, subtitle, children, footer, open = true, onToggle }: InspectorPanelProps) {
+export function InspectorPanel({
+  title,
+  subtitle,
+  children,
+  footer,
+  open = true,
+  onToggle,
+  sheetClassName,
+  sheetBodyClassName,
+}: InspectorPanelProps) {
   return (
     <>
       {/* Desktop panel */}
@@ -54,6 +67,7 @@ export function InspectorPanel({ title, subtitle, children, footer, open = true,
         className={cn(
           'fixed inset-x-0 bottom-0 z-[85] flex flex-col rounded-t-3xl border-t border-line-strong bg-surface shadow-deep transition-transform duration-300 lg:hidden',
           !open && 'translate-y-full',
+          sheetClassName,
         )}
       >
         <div className="flex items-center gap-3 border-b border-line px-4 py-3">
@@ -73,7 +87,14 @@ export function InspectorPanel({ title, subtitle, children, footer, open = true,
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="max-h-[42vh] min-h-[32vh] overflow-y-auto pb-4">{children}</div>
+        <div
+          className={cn(
+            'overflow-y-auto pb-4',
+            sheetBodyClassName ?? 'max-h-[42vh] min-h-[32vh]',
+          )}
+        >
+          {children}
+        </div>
         {footer && <div className="shrink-0 border-t border-line pb-[env(safe-area-inset-bottom)]">{footer}</div>}
       </div>
     </>

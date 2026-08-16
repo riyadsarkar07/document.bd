@@ -411,6 +411,7 @@ function TINEditorInner() {
         subtitle="A4 · 2480×3508 · uploaded template"
         open={editor.inspectorOpen}
         onToggle={editor.toggleInspector}
+        sheetBodyClassName="max-h-[58vh] min-h-[38vh]"
         footer={
           <div className="flex flex-col gap-2 p-4">
             <div className="flex items-start gap-2 rounded-xl border border-danger/25 bg-danger/5 px-3 py-2.5">
