@@ -61,7 +61,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 
 export const USER_STATUS_LABEL: Record<UserStatus, string> = {
   active: 'Active',
-  disabled: 'Disabled',
+  disabled: 'Suspended',
 };
 
 export const ROLE_DESCRIPTION: Record<Role, string> = {

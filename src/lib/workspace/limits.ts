@@ -69,7 +69,7 @@ export async function checkLimit(kind: LimitKind): Promise<LimitCheck> {
   if (!usage) return { ok: true };
 
   if (usage.status === 'disabled') {
-    return { ok: false, message: 'This account is disabled. Contact an administrator.' };
+    return { ok: false, message: 'This account is suspended. Contact an administrator.' };
   }
 
   const max =

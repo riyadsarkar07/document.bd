@@ -40,9 +40,9 @@ interface AdminUserRow extends Profile {
 }
 
 const LIMIT_FIELDS: { key: 'max_projects' | 'max_documents' | 'max_exports'; label: string; usageKey: 'projects' | 'documents' | 'exports' }[] = [
-  { key: 'max_projects', label: 'Maximum Projects', usageKey: 'projects' },
-  { key: 'max_documents', label: 'Maximum Document Generations', usageKey: 'documents' },
-  { key: 'max_exports', label: 'Maximum Exports', usageKey: 'exports' },
+  { key: 'max_projects', label: 'Project Limit', usageKey: 'projects' },
+  { key: 'max_documents', label: 'Document Limit', usageKey: 'documents' },
+  { key: 'max_exports', label: 'Export Limit', usageKey: 'exports' },
 ];
 
 const STATUS_TONE: Record<UserStatus, 'green' | 'red'> = {
@@ -57,7 +57,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<AdminUserRow | null>(null);
-  const [confirm, setConfirm] = useState<{ type: 'disable' | 'reactivate'; target: AdminUserRow } | null>(null);
+  const [confirm, setConfirm] = useState<{ type: 'suspend' | 'reactivate'; target: AdminUserRow } | null>(null);
   const [limitsTarget, setLimitsTarget] = useState<AdminUserRow | null>(null);
   const [limitsForm, setLimitsForm] = useState({ max_projects: '', max_documents: '', max_exports: '' });
   const [savingLimits, setSavingLimits] = useState(false);
@@ -118,11 +118,11 @@ export default function UsersPage() {
     await logActivity({
       user_id: currentUser?.id,
       email: currentUser?.email,
-      action: status === 'disabled' ? 'user.disabled' : 'user.reactivated',
+      action: status === 'disabled' ? 'user.suspended' : 'user.reactivated',
       detail: `${target.email} → ${status}`,
     });
     toast.success(
-      status === 'disabled' ? `${target.email} disabled` : `${target.email} reactivated`,
+      status === 'disabled' ? `${target.email} suspended` : `${target.email} reactivated`,
     );
     setConfirm(null);
     setDetail(null);
@@ -161,7 +161,13 @@ export default function UsersPage() {
 
   const saveLimits = async () => {
     if (!limitsTarget) return;
-    const parse = (v: string) => (v.trim() === '' ? null : Math.max(0, Math.floor(Number(v))));
+    const parse = (v: string) => {
+      const t = v.trim();
+      if (t === '') return null;
+      const n = Number(t);
+      if (!Number.isInteger(n) || n < 0) return Number.NaN;
+      return n;
+    };
     const next = {
       max_projects: parse(limitsForm.max_projects),
       max_documents: parse(limitsForm.max_documents),
@@ -172,7 +178,7 @@ export default function UsersPage() {
       (next.max_documents !== null && !Number.isFinite(next.max_documents)) ||
       (next.max_exports !== null && !Number.isFinite(next.max_exports))
     ) {
-      toast.error('Limits must be whole numbers, or empty for unlimited');
+      toast.error('Limits must be whole numbers (0 or more), or empty for unlimited');
       return;
     }
 
@@ -325,6 +331,11 @@ export default function UsersPage() {
                           <Button size="sm" variant="outline" onClick={() => setDetail(u)}>
                             Manage
                           </Button>
+                          {!isSelf && (
+                            <Button size="sm" variant="outline" onClick={() => openLimits(u)}>
+                              Limits
+                            </Button>
+                          )}
                           {!isSelf &&
                             (disabled ? (
                               <Button
@@ -340,9 +351,9 @@ export default function UsersPage() {
                                 size="sm"
                                 variant="danger"
                                 icon={<Lock className="h-3.5 w-3.5" />}
-                                onClick={() => setConfirm({ type: 'disable', target: u })}
+                                onClick={() => setConfirm({ type: 'suspend', target: u })}
                               >
-                                Disable
+                                Suspend
                               </Button>
                             ))}
                         </div>
@@ -383,9 +394,9 @@ export default function UsersPage() {
                     <Button
                       variant="danger"
                       icon={<Lock className="h-4 w-4" />}
-                      onClick={() => setConfirm({ type: 'disable', target: detail })}
+                      onClick={() => setConfirm({ type: 'suspend', target: detail })}
                     >
-                      Disable Account
+                      Suspend Account
                     </Button>
                   )}
                 </>
@@ -517,19 +528,19 @@ export default function UsersPage() {
         </div>
       </Modal>
 
-      {/* ── Confirmation for disable / reactivate ── */}
+      {/* ── Confirmation for suspend / reactivate ── */}
       <ConfirmDialog
         open={Boolean(confirm)}
         onClose={() => setConfirm(null)}
-        onConfirm={() => confirm && setStatus(confirm.target, confirm.type === 'disable' ? 'disabled' : 'active')}
-        title={confirm?.type === 'disable' ? 'Disable this account?' : 'Reactivate this account?'}
+        onConfirm={() => confirm && setStatus(confirm.target, confirm.type === 'suspend' ? 'disabled' : 'active')}
+        title={confirm?.type === 'suspend' ? 'Suspend this account?' : 'Reactivate this account?'}
         body={
-          confirm?.type === 'disable'
-            ? `${confirm.target.email} will be blocked from Document Studio. Their projects and documents remain intact and can be restored by reactivating.`
+          confirm?.type === 'suspend'
+            ? `${confirm.target.email} will be suspended from Document Studio. Their projects and documents remain intact and can be restored by reactivating.`
             : `${confirm?.target.email} will regain full access to Document Studio with their existing permissions and limits.`
         }
-        confirmLabel={confirm?.type === 'disable' ? 'Disable Account' : 'Reactivate Account'}
-        danger={confirm?.type === 'disable'}
+        confirmLabel={confirm?.type === 'suspend' ? 'Suspend Account' : 'Reactivate Account'}
+        danger={confirm?.type === 'suspend'}
       />
     </div>
   );

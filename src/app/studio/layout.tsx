@@ -46,9 +46,9 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
           <ShieldAlert className="h-8 w-8" />
         </div>
         <div>
-          <h1 className="font-display text-2xl font-bold text-primary">Account disabled</h1>
+          <h1 className="font-display text-2xl font-bold text-primary">Account suspended</h1>
           <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted">
-            This account has been disabled by an administrator. You cannot access Document
+            This account has been suspended by an administrator. You cannot access Document
             Studio until it is reactivated. Your existing documents and projects remain safe.
           </p>
         </div>
