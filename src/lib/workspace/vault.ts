@@ -18,9 +18,9 @@ export async function commitCertificate(
   entry: TMSnapshot,
 ): Promise<{ error: string | null }> {
   const fallbackNumericId = Math.floor(Date.now() / 1000);
+  const trademarkNo = entry.trademarkNo || 'N/A';
   const payload: Record<string, unknown> = {
-    registration_no: fallbackNumericId,
-    trademark_no: entry.trademarkNo || 'N/A',
+    trademark_no: trademarkNo,
     reg_date: entry.regDate || '',
     name: entry.companyName || '',
     owner_name: entry.ownerName || '',
@@ -32,12 +32,37 @@ export async function commitCertificate(
     synced_at: new Date().toISOString(),
   };
   if (entry.logoDataUrl) payload.logo_data_url = entry.logoDataUrl;
-  const { error } = await supabase.from('certificates').insert([payload]);
+
+  // Existing trademark_no → UPDATE the existing certificate row so repeated
+  // Saves never create duplicate rows. New trademark_no → INSERT a fresh one.
+  // The `id` surrogate is not exposed by the production vault schema, so the
+  // trademark_no is used as the natural key.
+  const existing = await supabase
+    .from('certificates')
+    .select('registration_no')
+    .eq('trademark_no', trademarkNo)
+    .limit(1);
+
+  const existingRow = existing.data?.[0];
+  let error: { message: string } | null = null;
+
+  if (existingRow) {
+    if (existingRow.registration_no) payload.registration_no = existingRow.registration_no;
+    const res = await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo);
+    error = res.error;
+  } else {
+    payload.registration_no = fallbackNumericId;
+    const res = await supabase.from('certificates').insert([payload]);
+    error = res.error;
+  }
+
   if (error && entry.logoDataUrl && /logo_data_url/i.test(error.message ?? '')) {
     // logo_data_url column not applied yet — retry without it so the vault
-    // insert still succeeds; the image persists once the migration is run.
+    // write still succeeds; the image persists once the migration is run.
     delete payload.logo_data_url;
-    const retry = await supabase.from('certificates').insert([payload]);
+    const retry = existingRow
+      ? await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo)
+      : await supabase.from('certificates').insert([payload]);
     return { error: retry.error ? retry.error.message : null };
   }
   return { error: error ? error.message : null };
