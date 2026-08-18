@@ -11,6 +11,16 @@ export interface StoreResult<T> {
   error: string | null;
 }
 
+/**
+ * True when Supabase rejected the write because of an RLS / server-side
+ * enforcement rule (e.g. disabled account, per-user limit). In those cases
+ * the local fallback MUST NOT run, or it would bypass enforcement.
+ */
+function isEnforcementError(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  return err.code === '42501' || /row-level security|violates row-level|new row violates/i.test(err.message ?? '');
+}
+
 const LS_TEMPLATES = 'studio.templates';
 const LS_PROJECTS = 'studio.projects';
 const LS_ACTIVITY = 'studio.activity';
@@ -91,6 +101,9 @@ export async function saveProject(proj: ProjectRecord): Promise<StoreResult<Proj
     .select()
     .maybeSingle();
   if (error) {
+    if (isEnforcementError(error)) {
+      return { data: null, source: 'supabase', error: error.message };
+    }
     const local = readLocal<ProjectRecord[]>(LS_PROJECTS, []);
     const idx = local.findIndex((p) => p.id === proj.id);
     if (idx >= 0) local[idx] = { ...proj, updated_at: new Date().toISOString() };
@@ -113,12 +126,16 @@ export async function deleteProject(id: string): Promise<StoreResult<null>> {
 /* ────────────────────────── Activity ────────────────────────── */
 
 export async function logActivity(record: ActivityRecord): Promise<void> {
-  await supabase.from('activity_logs').insert({
+  const { error } = await supabase.from('activity_logs').insert({
     user_id: record.user_id,
     email: record.email,
     action: record.action,
     detail: record.detail,
   });
+  if (error) {
+    // Do not mirror enforcement-blocked actions into the local log either.
+    if (isEnforcementError(error)) return;
+  }
   const local = readLocal<ActivityRecord[]>(LS_ACTIVITY, []);
   writeLocal(LS_ACTIVITY, [
     { ...record, created_at: new Date().toISOString() },

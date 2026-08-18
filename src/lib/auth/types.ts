@@ -1,5 +1,7 @@
 export type Role = 'admin' | 'editor' | 'viewer';
 
+export type UserStatus = 'active' | 'disabled';
+
 export type DocKind = 'tm' | 'nid' | 'tin';
 
 export const DOC_KIND_LABEL: Record<DocKind, string> = {
@@ -13,6 +15,11 @@ export interface Profile {
   email: string;
   full_name?: string | null;
   role: Role;
+  status?: UserStatus;
+  max_projects?: number | null;
+  max_documents?: number | null;
+  max_exports?: number | null;
+  created_at?: string;
 }
 
 export interface ActivityRecord {
@@ -50,6 +57,11 @@ export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Admin',
   editor: 'Editor',
   viewer: 'Viewer',
+};
+
+export const USER_STATUS_LABEL: Record<UserStatus, string> = {
+  active: 'Active',
+  disabled: 'Disabled',
 };
 
 export const ROLE_DESCRIPTION: Record<Role, string> = {

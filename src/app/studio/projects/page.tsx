@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { CreditCard, FileText, FolderKanban, FolderOpen, Landmark, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { listProjects, saveProject, deleteProject } from '@/lib/workspace/store';
+import { checkLimit } from '@/lib/workspace/limits';
 import { DOC_KIND_LABEL, type ProjectRecord } from '@/lib/auth/types';
 import { TM_DEFAULTS } from '@/lib/constants/tm';
 import { NID_DEFAULTS } from '@/lib/constants/nid';
@@ -56,6 +57,11 @@ export default function ProjectsPage() {
   };
 
   const create = async () => {
+    const limit = await checkLimit('project');
+    if (!limit.ok) {
+      toast.error(limit.message ?? 'Project limit reached.');
+      return;
+    }
     const state =
       modal.kind === 'tm'
         ? ({ ...TM_DEFAULTS } as unknown as Record<string, unknown>)
@@ -70,6 +76,10 @@ export default function ProjectsPage() {
     };
     const res = await saveProject(proj);
     setModal({ open: false, kind: modal.kind });
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
     toast.success(res.source === 'local' ? 'Project saved locally' : 'Project created');
     await refresh();
   };

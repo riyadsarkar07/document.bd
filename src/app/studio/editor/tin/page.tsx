@@ -31,6 +31,7 @@ import { loadDataUrlImage, loadImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { encodeDemoQr, buildTinQrPayload } from '@/lib/tinQr';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
+import { checkLimit } from '@/lib/workspace/limits';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useToast } from '@/lib/toast/toast-provider';
 import { EditorToolbar } from '@/components/editor/editor-toolbar';
@@ -294,6 +295,11 @@ function TINEditorInner() {
   );
 
   const exportJpg = useCallback(async () => {
+    const limit = await checkLimit('export');
+    if (!limit.ok) {
+      toast.error(limit.message ?? 'Export limit reached.');
+      return;
+    }
     const canvas = document.createElement('canvas');
     renderTINDocument(canvas, presentRef.current, qrImgRef.current, 1, bgImgRef.current);
     const link = document.createElement('a');
@@ -306,6 +312,11 @@ function TINEditorInner() {
   }, [user, toast]);
 
   const exportPdf = useCallback(async () => {
+    const limit = await checkLimit('export');
+    if (!limit.ok) {
+      toast.error(limit.message ?? 'Export limit reached.');
+      return;
+    }
     const canvas = document.createElement('canvas');
     renderTINDocument(canvas, presentRef.current, qrImgRef.current, 1, bgImgRef.current);
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: 'a4' });
@@ -343,12 +354,26 @@ function TINEditorInner() {
       toast.error('Sign in to save projects');
       return;
     }
-    await saveProject({
+    const projectLimit = await checkLimit('project');
+    if (!projectLimit.ok) {
+      toast.error(projectLimit.message ?? 'Project limit reached.');
+      return;
+    }
+    const documentLimit = await checkLimit('document');
+    if (!documentLimit.ok) {
+      toast.error(documentLimit.message ?? 'Document generation limit reached.');
+      return;
+    }
+    const res = await saveProject({
       name: `TIN ${present.tinNo || 'Record'} (DEMO)`,
       kind: 'tin',
       state: { ...present } as unknown as Record<string, unknown>,
       owner_id: user.id,
     });
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
     toast.success('Project saved');
     void logActivity({ user_id: user?.id, email: user?.email, action: 'project.save', detail: `TIN ${present.tinNo}` });
     // eslint-disable-next-line react-hooks/exhaustive-deps

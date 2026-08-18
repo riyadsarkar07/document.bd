@@ -11,7 +11,8 @@ import {
 } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
-import type { Profile, Role } from '@/lib/auth/types';
+import type { Profile, Role, UserStatus } from '@/lib/auth/types';
+import { isAdminUserId } from '@/lib/auth/admin';
 
 interface AuthState {
   user: User | null;
@@ -51,6 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: data.email || email,
         full_name: data.full_name,
         role: (data.role as Role) || 'viewer',
+        status: (data.status as UserStatus) || 'active',
+        max_projects: data.max_projects != null ? Number(data.max_projects) : null,
+        max_documents: data.max_documents != null ? Number(data.max_documents) : null,
+        max_exports: data.max_exports != null ? Number(data.max_exports) : null,
+        created_at: data.created_at,
       });
       return;
     }
@@ -58,18 +64,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // No profile row yet — attempt to create one (RLS permitting).
     if (error) {
       // Table missing or no permission: default to viewer.
-      setProfile({ id: userId, email, role: 'viewer' });
+      setProfile({ id: userId, email, role: 'viewer', status: 'active' });
       return;
     }
 
+    const bootstrapRole: Role = isAdminUserId(userId) ? 'admin' : 'viewer';
+
     const { data: inserted, error: insertError } = await supabase
       .from('profiles')
-      .insert({ id: userId, email, role: 'viewer' })
+      .insert({ id: userId, email, role: bootstrapRole, status: 'active' })
       .select()
       .maybeSingle();
 
     if (insertError || !inserted) {
-      setProfile({ id: userId, email, role: 'viewer' });
+      setProfile({ id: userId, email, role: bootstrapRole, status: 'active' });
       return;
     }
     setProfile({
@@ -77,6 +85,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: inserted.email || email,
       full_name: inserted.full_name,
       role: (inserted.role as Role) || 'viewer',
+      status: (inserted.status as UserStatus) || 'active',
+      max_projects: inserted.max_projects != null ? Number(inserted.max_projects) : null,
+      max_documents: inserted.max_documents != null ? Number(inserted.max_documents) : null,
+      max_exports: inserted.max_exports != null ? Number(inserted.max_exports) : null,
+      created_at: inserted.created_at,
     });
   }, []);
 

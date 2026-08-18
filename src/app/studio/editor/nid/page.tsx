@@ -10,6 +10,7 @@ import { renderNIDCard } from '@/lib/renderers/nidRenderer';
 import { loadImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
+import { checkLimit } from '@/lib/workspace/limits';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useToast } from '@/lib/toast/toast-provider';
 import { EditorToolbar } from '@/components/editor/editor-toolbar';
@@ -153,6 +154,11 @@ function NIDEditorInner() {
   }, []);
 
   const exportJpg = useCallback(async () => {
+    const limit = await checkLimit('export');
+    if (!limit.ok) {
+      toast.error(limit.message ?? 'Export limit reached.');
+      return;
+    }
     const bg = await loadImage(NID_BACKGROUND);
     const canvas = document.createElement('canvas');
     renderNIDCard(canvas, presentRef.current, bg, photoImageRef.current, 1);
@@ -195,12 +201,26 @@ function NIDEditorInner() {
       toast.error('Sign in to save projects');
       return;
     }
-    await saveProject({
+    const projectLimit = await checkLimit('project');
+    if (!projectLimit.ok) {
+      toast.error(projectLimit.message ?? 'Project limit reached.');
+      return;
+    }
+    const documentLimit = await checkLimit('document');
+    if (!documentLimit.ok) {
+      toast.error(documentLimit.message ?? 'Document generation limit reached.');
+      return;
+    }
+    const res = await saveProject({
       name: `NID ${present.idNo || 'Card'}`,
       kind: 'nid',
       state: { ...present } as unknown as Record<string, unknown>,
       owner_id: user.id,
     });
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
     toast.success('Project saved');
     void logActivity({ user_id: user?.id, email: user?.email, action: 'project.save', detail: `NID ${present.idNo}` });
     // eslint-disable-next-line react-hooks/exhaustive-deps

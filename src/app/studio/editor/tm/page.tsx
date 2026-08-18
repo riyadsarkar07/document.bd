@@ -19,6 +19,7 @@ import { loadImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { commitCertificate } from '@/lib/workspace/vault';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
+import { checkLimit } from '@/lib/workspace/limits';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useToast } from '@/lib/toast/toast-provider';
 import { EditorToolbar } from '@/components/editor/editor-toolbar';
@@ -169,6 +170,11 @@ function TMEditorInner() {
   }, []);
 
   const exportJpg = useCallback(async () => {
+    const limit = await checkLimit('export');
+    if (!limit.ok) {
+      toast.error(limit.message ?? 'Export limit reached.');
+      return;
+    }
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
     const canvas = document.createElement('canvas');
@@ -190,6 +196,11 @@ function TMEditorInner() {
   }, [user, toast, setStatus]);
 
   const exportPdf = useCallback(async () => {
+    const limit = await checkLimit('export');
+    if (!limit.ok) {
+      toast.error(limit.message ?? 'Export limit reached.');
+      return;
+    }
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
     const canvas = document.createElement('canvas');
@@ -254,12 +265,26 @@ function TMEditorInner() {
       toast.error('Sign in to save projects');
       return;
     }
-    await saveProject({
+    const projectLimit = await checkLimit('project');
+    if (!projectLimit.ok) {
+      toast.error(projectLimit.message ?? 'Project limit reached.');
+      return;
+    }
+    const documentLimit = await checkLimit('document');
+    if (!documentLimit.ok) {
+      toast.error(documentLimit.message ?? 'Document generation limit reached.');
+      return;
+    }
+    const res = await saveProject({
       name: `TM ${present.trademarkNo || 'Certificate'}`,
       kind: 'tm',
       state: { ...present } as unknown as Record<string, unknown>,
       owner_id: user.id,
     });
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
     toast.success('Project saved');
     void logActivity({ user_id: user?.id, email: user?.email, action: 'project.save', detail: `TM ${present.trademarkNo}` });
     // eslint-disable-next-line react-hooks/exhaustive-deps

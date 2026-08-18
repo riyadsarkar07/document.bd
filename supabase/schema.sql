@@ -1,50 +1,47 @@
 -- ═══════════════════════════════════════════════════════════════════════
--- Document Studio — Supabase Schema
+-- Document Studio — Supabase Schema (idempotent, ordered migration)
 -- Run this in the Supabase SQL editor to enable the admin system.
+--
+-- ORDER MATTERS: everything is laid out so that a referenced object
+-- always exists before it is used.
+--   STEP 1 — Required schema/columns   (tables + new columns + RLS enabled)
+--   STEP 2 — indexes / constraints
+--   STEP 3 — helper functions / RPCs   (validated against STEP 1 columns)
+--   STEP 4 — RLS policies              (validated against STEP 3 functions)
+--   STEP 5 — Admin bootstrap / update  (existing admin UUID profile)
+--
+-- Safe to re-run: columns use `add column if not exists`, policies are
+-- dropped before being recreated, functions use `create or replace`, and
+-- indexes use `create index if not exists`.
 -- The original `certificates` table is preserved as-is.
 -- ═══════════════════════════════════════════════════════════════════════
 
+-- ═══════════════════════════════════════════════════════════════════════
+-- STEP 1 — Required schema / columns
+-- ═══════════════════════════════════════════════════════════════════════
+
 -- ────────────────────────── profiles ──────────────────────────
--- Maps auth.users -> role (admin / editor / viewer)
+-- Maps auth.users -> role (admin / editor / viewer), account status and limits.
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   email text,
   full_name text,
   role text not null default 'viewer' check (role in ('admin', 'editor', 'viewer')),
+  status text not null default 'active' check (status in ('active', 'disabled')),
+  max_projects int,
+  max_documents int,
+  max_exports int,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+-- Upgrade existing databases that predate the admin system.
+alter table public.profiles add column if not exists status text not null default 'active' check (status in ('active', 'disabled'));
+alter table public.profiles add column if not exists max_projects int;
+alter table public.profiles add column if not exists max_documents int;
+alter table public.profiles add column if not exists max_exports int;
+
 alter table public.profiles enable row level security;
-
--- Anyone signed in can read profiles (needed for user listing)
-create policy "profiles_select_own" on public.profiles
-  for select using (auth.uid() = id);
-
--- Users can read the whole directory (self-service listing)
-create policy "profiles_select_directory" on public.profiles
-  for select using (auth.role() = 'authenticated');
-
--- A user can insert their own profile row on first sign-in
-create policy "profiles_insert_own" on public.profiles
-  for insert with check (auth.uid() = id);
-
--- Admins can update roles (admin determined via profiles.role)
-create policy "profiles_admin_update" on public.profiles
-  for update using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid() and p.role = 'admin'
-    )
-  );
-
-create policy "profiles_admin_delete" on public.profiles
-  for delete using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid() and p.role = 'admin'
-    )
-  );
 
 -- ────────────────────────── templates ──────────────────────────
 create table if not exists public.templates (
@@ -59,25 +56,7 @@ create table if not exists public.templates (
   updated_at timestamptz not null default now()
 );
 
--- Upgrade older databases whose check constraint only allowed ('tm','nid')
-do $$
-begin
-  alter table public.templates drop constraint if exists templates_kind_check;
-  alter table public.templates add constraint templates_kind_check
-    check (kind in ('tm', 'nid', 'tin'));
-exception when others then
-  raise notice 'templates_kind_check upgrade skipped: %', sqlerrm;
-end $$;
-
 alter table public.templates enable row level security;
-
-create policy "templates_read" on public.templates
-  for select using (auth.role() = 'authenticated');
-
-create policy "templates_write" on public.templates
-  for all using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor'))
-  );
 
 -- ────────────────────────── projects ──────────────────────────
 create table if not exists public.projects (
@@ -90,23 +69,7 @@ create table if not exists public.projects (
   updated_at timestamptz not null default now()
 );
 
--- Upgrade older databases whose check constraint only allowed ('tm','nid')
-do $$
-begin
-  alter table public.projects drop constraint if exists projects_kind_check;
-  alter table public.projects add constraint projects_kind_check
-    check (kind in ('tm', 'nid', 'tin'));
-exception when others then
-  raise notice 'projects_kind_check upgrade skipped: %', sqlerrm;
-end $$;
-
 alter table public.projects enable row level security;
-
-create policy "projects_read_own" on public.projects
-  for select using (auth.uid() = owner_id);
-
-create policy "projects_write_own" on public.projects
-  for all using (auth.uid() = owner_id);
 
 -- ────────────────────────── activity_logs ──────────────────────────
 create table if not exists public.activity_logs (
@@ -120,15 +83,245 @@ create table if not exists public.activity_logs (
 
 alter table public.activity_logs enable row level security;
 
--- Signed-in users can write logs
+-- ═══════════════════════════════════════════════════════════════════════
+-- STEP 2 — indexes / constraints
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- Upgrade older databases whose check constraint only allowed ('tm','nid')
+-- so both templates and projects accept 'tin' (newest document kind).
+do $$
+begin
+  alter table public.templates drop constraint if exists templates_kind_check;
+  alter table public.templates add constraint templates_kind_check
+    check (kind in ('tm', 'nid', 'tin'));
+exception when others then
+  raise notice 'templates_kind_check upgrade skipped: %', sqlerrm;
+end $$;
+
+do $$
+begin
+  alter table public.projects drop constraint if exists projects_kind_check;
+  alter table public.projects add constraint projects_kind_check
+    check (kind in ('tm', 'nid', 'tin'));
+exception when others then
+  raise notice 'projects_kind_check upgrade skipped: %', sqlerrm;
+end $$;
+
+create index if not exists profiles_role_idx on public.profiles (role);
+create index if not exists profiles_status_idx on public.profiles (status);
+create index if not exists activity_logs_created_idx on public.activity_logs (created_at desc);
+create index if not exists activity_logs_action_idx on public.activity_logs (action);
+create index if not exists templates_kind_idx on public.templates (kind);
+create index if not exists projects_owner_idx on public.projects (owner_id);
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- STEP 3 — helper functions / RPCs
+-- All columns referenced below were created in STEP 1.
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- Is the current request authenticated as an active admin?
+create or replace function public.is_admin()
+returns boolean
+language sql stable security definer
+as $$
+  select coalesce(
+    (select p.role = 'admin' and p.status = 'active' from public.profiles p where p.id = auth.uid()),
+    false
+  );
+$$;
+
+-- Is this user account in the active state? (used to gate data access)
+create or replace function public.is_active_user(uid uuid)
+returns boolean
+language sql stable security definer
+as $$
+  select coalesce((select p.status = 'active' from public.profiles p where p.id = uid), true);
+$$;
+
+-- May this user create a new project row (enforces max_projects)?
+create or replace function public.can_create_project(uid uuid)
+returns boolean
+language sql stable security definer
+as $$
+  select coalesce((
+    select p.status = 'active'
+      and (p.max_projects is null or p.max_projects > (select count(*) from public.projects pr where pr.owner_id = uid))
+    from public.profiles p
+    where p.id = uid
+  ), true);
+$$;
+
+-- May this user record an activity action (enforces max_documents / max_exports)?
+create or replace function public.can_log_action(uid uuid, action text)
+returns boolean
+language sql stable security definer
+as $$
+  select coalesce((
+    select
+      case
+        when action like 'export.%' then
+          p.max_exports is null
+            or p.max_exports > (select count(*) from public.activity_logs a where a.user_id = uid and a.action like 'export.%')
+        when action like 'save.%' or action = 'project.save' then
+          p.max_documents is null
+            or p.max_documents > (select count(*) from public.activity_logs a where a.user_id = uid and (a.action like 'save.%' or a.action = 'project.save'))
+        else true
+      end
+    from public.profiles p
+    where p.id = uid
+  ), true);
+$$;
+
+-- Current user's own usage + configured limits (RPC: my_usage)
+create or replace function public.my_usage()
+returns table (
+  projects bigint,
+  documents bigint,
+  exports bigint,
+  max_projects int,
+  max_documents int,
+  max_exports int,
+  status text
+)
+language sql stable security definer
+as $$
+  select
+    (select count(*) from public.projects pr where pr.owner_id = auth.uid()),
+    (select count(*) from public.activity_logs a where a.user_id = auth.uid() and (a.action like 'save.%' or a.action = 'project.save')),
+    (select count(*) from public.activity_logs a where a.user_id = auth.uid() and a.action like 'export.%'),
+    p.max_projects,
+    p.max_documents,
+    p.max_exports,
+    p.status
+  from public.profiles p
+  where p.id = auth.uid();
+$$;
+
+-- Per-user usage for the admin panel (RPC: admin_user_usage, admin only)
+create or replace function public.admin_user_usage()
+returns table (
+  user_id uuid,
+  projects bigint,
+  documents bigint,
+  exports bigint
+)
+language sql stable security definer
+as $$
+  select
+    p.id,
+    (select count(*) from public.projects pr where pr.owner_id = p.id),
+    (select count(*) from public.activity_logs a where a.user_id = p.id and (a.action like 'save.%' or a.action = 'project.save')),
+    (select count(*) from public.activity_logs a where a.user_id = p.id and a.action like 'export.%')
+  from public.profiles p
+  where public.is_admin();
+$$;
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- STEP 4 — RLS policies
+-- All functions referenced below were created in STEP 3.
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- ────────────────────────── profiles ──────────────────────────
+
+-- Users can read their own profile (needed for auth/profile bootstrap)
+drop policy if exists "profiles_select_own" on public.profiles;
+create policy "profiles_select_own" on public.profiles
+  for select using (auth.uid() = id);
+
+-- Only admins can read the full user directory (user management).
+-- The old open directory policy is removed so the directory is never
+-- exposed to non-admin users.
+drop policy if exists "profiles_select_directory" on public.profiles;
+drop policy if exists "profiles_admin_select" on public.profiles;
+create policy "profiles_admin_select" on public.profiles
+  for select using (public.is_admin());
+
+-- A user can insert their own profile row on first sign-in.
+-- Non-admin users may only self-register as 'viewer'; the allowlisted admin
+-- UUID may self-register as 'admin'. This prevents role self-escalation.
+drop policy if exists "profiles_insert_own" on public.profiles;
+create policy "profiles_insert_own" on public.profiles
+  for insert with check (
+    auth.uid() = id
+    and status = 'active'
+    and (
+      role = 'viewer'
+      or (id = 'c2b13e27-3845-48e6-ad41-07a398ea9d60' and role = 'admin')
+    )
+  );
+
+-- Admins can update any other profile (roles, status, limits) but never
+-- their own account (prevents self-disable / self-demotion).
+drop policy if exists "profiles_admin_update" on public.profiles;
+create policy "profiles_admin_update" on public.profiles
+  for update using (
+    public.is_admin() and id <> auth.uid()
+  ) with check (
+    public.is_admin() and id <> auth.uid()
+  );
+
+-- Admins can remove a profile row but never their own.
+drop policy if exists "profiles_admin_delete" on public.profiles;
+create policy "profiles_admin_delete" on public.profiles
+  for delete using (public.is_admin() and id <> auth.uid());
+
+-- ────────────────────────── templates ──────────────────────────
+
+-- Signed-in, active users can read templates
+drop policy if exists "templates_read" on public.templates;
+create policy "templates_read" on public.templates
+  for select using (auth.role() = 'authenticated' and public.is_active_user(auth.uid()));
+
+-- Active admins/editors can write templates
+drop policy if exists "templates_write" on public.templates;
+create policy "templates_write" on public.templates
+  for all using (
+    public.is_active_user(auth.uid())
+    and exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor'))
+  );
+
+-- ────────────────────────── projects ──────────────────────────
+
+-- Active users can read/update/delete their own projects; new project
+-- creation is gated by max_projects server-side.
+drop policy if exists "projects_read_own" on public.projects;
+drop policy if exists "projects_write_own" on public.projects;
+drop policy if exists "projects_select" on public.projects;
+drop policy if exists "projects_insert" on public.projects;
+drop policy if exists "projects_update" on public.projects;
+drop policy if exists "projects_delete" on public.projects;
+drop policy if exists "projects_read_active_own" on public.projects;
+drop policy if exists "projects_insert_own" on public.projects;
+drop policy if exists "projects_update_own" on public.projects;
+drop policy if exists "projects_delete_own" on public.projects;
+create policy "projects_read_active_own" on public.projects
+  for select using (auth.uid() = owner_id and public.is_active_user(auth.uid()));
+create policy "projects_insert_own" on public.projects
+  for insert with check (auth.uid() = owner_id and public.can_create_project(auth.uid()));
+create policy "projects_update_own" on public.projects
+  for update using (auth.uid() = owner_id and public.is_active_user(auth.uid()));
+create policy "projects_delete_own" on public.projects
+  for delete using (auth.uid() = owner_id and public.is_active_user(auth.uid()));
+
+-- ────────────────────────── activity_logs ──────────────────────────
+
+-- Active users can write logs; export/save actions are gated by limits.
+drop policy if exists "activity_logs_insert" on public.activity_logs;
 create policy "activity_logs_insert" on public.activity_logs
-  for insert with check (auth.role() = 'authenticated');
+  for insert with check (
+    auth.role() = 'authenticated'
+    and public.is_active_user(auth.uid())
+    and public.can_log_action(auth.uid(), action)
+  );
 
 -- Admins can read the full audit trail
+drop policy if exists "activity_logs_admin_read" on public.activity_logs;
 create policy "activity_logs_admin_read" on public.activity_logs
-  for select using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-  );
+  for select using (public.is_admin());
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- STEP 5 — Admin bootstrap / update for the existing UUID
+-- ═══════════════════════════════════════════════════════════════════════
 
 -- ────────────────────────── certificates (preserved) ──────────────────────────
 -- The original vault table. Columns must match the legacy writer exactly.
@@ -151,8 +344,22 @@ create policy "activity_logs_admin_read" on public.activity_logs
 -- policies used by the original application (RLS off or permissive) so the vault
 -- still works.
 
--- ────────────────────────── indexes ──────────────────────────
-create index if not exists profiles_role_idx on public.profiles (role);
-create index if not exists activity_logs_created_idx on public.activity_logs (created_at desc);
-create index if not exists templates_kind_idx on public.templates (kind);
-create index if not exists projects_owner_idx on public.projects (owner_id);
+-- Recognize the authorized admin account (UUID allowlist).
+-- If the auth user already has a profile, promote it to admin/active.
+-- If the auth user does not exist yet, the profile is created as admin on
+-- first sign-in (the insert policy allowlists this UUID for role='admin').
+do $$
+begin
+  update public.profiles
+     set role = 'admin', status = 'active', email = 'riyadsarkar1243@gmail.com'
+   where id = 'c2b13e27-3845-48e6-ad41-07a398ea9d60';
+
+  if not found then
+    if exists (select 1 from auth.users where id = 'c2b13e27-3845-48e6-ad41-07a398ea9d60') then
+      insert into public.profiles (id, email, role, status)
+      values ('c2b13e27-3845-48e6-ad41-07a398ea9d60', 'riyadsarkar1243@gmail.com', 'admin', 'active');
+    else
+      raise notice 'Admin auth user does not exist yet — profile will be created as admin on first sign-in';
+    end if;
+  end if;
+end $$;
