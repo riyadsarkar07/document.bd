@@ -337,12 +337,17 @@ create policy "activity_logs_admin_read" on public.activity_logs
 --   app_date text,
 --   details text,
 --   sealed_date text,
---   synced_at timestamptz not null default now()
+--   synced_at timestamptz not null default now(),
+--   logo_data_url text
 -- );
 --
 -- Note: if you recreate this table you must restore the anon insert/select/delete
 -- policies used by the original application (RLS off or permissive) so the vault
 -- still works.
+
+-- Persist the uploaded logo image with vault records so History can restore it.
+-- `if exists` guards environments where the legacy vault table is absent.
+alter table if exists public.certificates add column if not exists logo_data_url text;
 
 -- Recognize the authorized admin account (UUID allowlist).
 -- If the auth user already has a profile, promote it to admin/active.

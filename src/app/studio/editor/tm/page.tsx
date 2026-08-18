@@ -15,7 +15,7 @@ import { useDocumentEditor } from '@/lib/editor/use-document-editor';
 import { TM_DEFAULTS, TM_SECTIONS, TM_BACKGROUND, TM_SIGNATURE, TM_TEXT_FIELDS } from '@/lib/constants/tm';
 import type { TMSnapshot } from '@/lib/editor/types';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
-import { loadImage } from '@/lib/images';
+import { loadImage, loadDataUrlImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { commitCertificate } from '@/lib/workspace/vault';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
@@ -248,17 +248,44 @@ function TMEditorInner() {
     (file: File) => {
       const reader = new FileReader();
       reader.onload = (e) => {
+        const dataUrl = String(e.target?.result);
         const img = new Image();
         img.onload = () => {
           setLogoImage(img);
+          // Persist the image inside the snapshot so it survives History /
+          // project saves instead of living only in transient component state.
+          setField('logoDataUrl', dataUrl);
           toast.success('Logo asset registered');
         };
-        img.src = String(e.target?.result);
+        img.src = dataUrl;
       };
       reader.readAsDataURL(file);
     },
-    [toast],
+    [toast, setField],
   );
+
+  // Rehydrate the logo image from the persisted snapshot. This covers every
+  // restore path — History/Projects opening into the editor, template apply,
+  // and autosave reload after a refresh. Missing/invalid data is ignored so
+  // legacy text-only documents keep working.
+  useEffect(() => {
+    const dataUrl = present.logoDataUrl;
+    if (!dataUrl) {
+      if (logoImageRef.current) setLogoImage(null);
+      return;
+    }
+    if (logoImageRef.current?.src === dataUrl) return;
+    let cancelled = false;
+    loadDataUrlImage(dataUrl).then((img) => {
+      if (cancelled) return;
+      if (img) setLogoImage(img);
+      else if (logoImageRef.current?.src !== dataUrl) setLogoImage(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [present.logoDataUrl]);
 
   const saveAsProject = useCallback(async () => {
     if (!user) {

@@ -18,7 +18,7 @@ export async function commitCertificate(
   entry: TMSnapshot,
 ): Promise<{ error: string | null }> {
   const fallbackNumericId = Math.floor(Date.now() / 1000);
-  const payload = {
+  const payload: Record<string, unknown> = {
     registration_no: fallbackNumericId,
     trademark_no: entry.trademarkNo || 'N/A',
     reg_date: entry.regDate || '',
@@ -31,7 +31,15 @@ export async function commitCertificate(
     sealed_date: entry.sealedDate || '',
     synced_at: new Date().toISOString(),
   };
+  if (entry.logoDataUrl) payload.logo_data_url = entry.logoDataUrl;
   const { error } = await supabase.from('certificates').insert([payload]);
+  if (error && entry.logoDataUrl && /logo_data_url/i.test(error.message ?? '')) {
+    // logo_data_url column not applied yet — retry without it so the vault
+    // insert still succeeds; the image persists once the migration is run.
+    delete payload.logo_data_url;
+    const retry = await supabase.from('certificates').insert([payload]);
+    return { error: retry.error ? retry.error.message : null };
+  }
   return { error: error ? error.message : null };
 }
 
@@ -78,7 +86,7 @@ export async function loadVault(): Promise<{ records: VaultRecord[]; error: stri
     signX: TM_DEFAULTS.signX,
     signY: TM_DEFAULTS.signY,
     signSize: TM_DEFAULTS.signSize,
-    logoDataUrl: null,
+    logoDataUrl: row.logo_data_url || null,
     timestamp: row.synced_at ? formatTimestamp(new Date(row.synced_at)) : '—',
   })) as VaultRecord[];
 

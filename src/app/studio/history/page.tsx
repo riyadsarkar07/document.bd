@@ -5,7 +5,7 @@ import { ArrowLeft, Download, ExternalLink, History, Trash2 } from 'lucide-react
 import Link from 'next/link';
 import { loadVault, deleteVaultRecord, liveVerifyUrl, type VaultRecord } from '@/lib/workspace/vault';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
-import { loadImage } from '@/lib/images';
+import { loadImage, loadDataUrlImage } from '@/lib/images';
 import { TM_BACKGROUND, TM_SIGNATURE } from '@/lib/constants/tm';
 import { Card, PageHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -45,8 +45,9 @@ export default function HistoryPage() {
     setPreviewImg(null);
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
+    const logo = record.logoDataUrl ? await loadDataUrlImage(record.logoDataUrl) : null;
     const canvas = document.createElement('canvas');
-    renderTMCertificate(canvas, record, bg, null, sign);
+    renderTMCertificate(canvas, record, bg, logo, sign);
     setPreviewImg(canvas.toDataURL('image/jpeg', 0.96));
   };
 
@@ -54,8 +55,9 @@ export default function HistoryPage() {
     toast.success('Preparing download…');
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
+    const logo = record.logoDataUrl ? await loadDataUrlImage(record.logoDataUrl) : null;
     const canvas = document.createElement('canvas');
-    renderTMCertificate(canvas, record, bg, null, sign);
+    renderTMCertificate(canvas, record, bg, logo, sign);
     const link = document.createElement('a');
     link.download = `Archive-TM-${record.trademarkNo || 'cert'}.jpg`;
     link.href = canvas.toDataURL('image/jpeg', 0.96);
