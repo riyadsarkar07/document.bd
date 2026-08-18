@@ -8,6 +8,10 @@ import type { TMSnapshot } from '@/lib/editor/types';
 export interface VaultRecord extends TMSnapshot {
   id?: string | number;
   timestamp: string;
+  /** UUID of the authenticated user who created/exported the record. */
+  createdBy?: string | null;
+  /** Resolved display email for `createdBy` (null when unknown / not visible). */
+  creatorEmail?: string | null;
 }
 
 /**
@@ -16,6 +20,7 @@ export interface VaultRecord extends TMSnapshot {
  */
 export async function commitCertificate(
   entry: TMSnapshot,
+  createdBy?: string | null,
 ): Promise<{ error: string | null }> {
   const fallbackNumericId = Math.floor(Date.now() / 1000);
   const trademarkNo = entry.trademarkNo || 'N/A';
@@ -44,28 +49,69 @@ export async function commitCertificate(
     .limit(1);
 
   const existingRow = existing.data?.[0];
-  let error: { message: string } | null = null;
 
+  // Insert path carries the creator; update path preserves the original one.
+  if (createdBy) payload.created_by = createdBy;
+
+  let result: { error: { message: string } | null };
   if (existingRow) {
     if (existingRow.registration_no) payload.registration_no = existingRow.registration_no;
-    const res = await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo);
-    error = res.error;
+    delete payload.created_by;
+    result = await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo);
   } else {
     payload.registration_no = fallbackNumericId;
-    const res = await supabase.from('certificates').insert([payload]);
-    error = res.error;
+    result = await supabase.from('certificates').insert([payload]);
   }
 
-  if (error && entry.logoDataUrl && /logo_data_url/i.test(error.message ?? '')) {
-    // logo_data_url column not applied yet — retry without it so the vault
-    // write still succeeds; the image persists once the migration is run.
-    delete payload.logo_data_url;
-    const retry = existingRow
+  // Retry without any column the schema does not have yet (e.g. created_by or
+  // logo_data_url before its migration is applied) so the vault write still
+  // succeeds; the creator id / image persists once the migration is run.
+  let attempts = 0;
+  while (result.error && attempts < 3) {
+    const msg = result.error.message ?? '';
+    const drops: string[] = [];
+    if (/created_by/i.test(msg)) drops.push('created_by');
+    if (/logo_data_url/i.test(msg)) drops.push('logo_data_url');
+    if (drops.length === 0) break;
+    for (const key of drops) delete payload[key];
+    result = existingRow
       ? await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo)
       : await supabase.from('certificates').insert([payload]);
-    return { error: retry.error ? retry.error.message : null };
+    attempts += 1;
   }
-  return { error: error ? error.message : null };
+  return { error: result.error ? result.error.message : null };
+}
+
+/**
+ * Resolve each vault record's creator id to a display email.
+ *
+ * Admins can read any profile (RLS `profiles_admin_select`), so every creator
+ * email is resolved from the `profiles` table. Non-admins can only read their
+ * own profile — those records show their own session email and everything else
+ * stays null (rendered as "—"), so emails are never leaked to other roles.
+ */
+export async function resolveCreatorEmails(
+  records: VaultRecord[],
+  opts: { currentUserId?: string | null; currentUserEmail?: string | null; role?: string | null },
+): Promise<VaultRecord[]> {
+  const ids = Array.from(new Set(records.map((r) => r.createdBy).filter((id): id is string => Boolean(id))));
+  const map = new Map<string, string>();
+
+  if (opts.role === 'admin' && ids.length) {
+    const { data, error } = await supabase.from('profiles').select('id, email').in('id', ids);
+    if (!error && data) {
+      for (const p of data) {
+        if (p.id && p.email) map.set(String(p.id), String(p.email));
+      }
+    }
+  } else if (opts.currentUserId && opts.currentUserEmail) {
+    map.set(opts.currentUserId, opts.currentUserEmail);
+  }
+
+  return records.map((r) => ({
+    ...r,
+    creatorEmail: r.createdBy && map.get(r.createdBy) ? map.get(r.createdBy)! : null,
+  }));
 }
 
 export async function loadVault(): Promise<{ records: VaultRecord[]; error: string | null }> {
@@ -112,6 +158,7 @@ export async function loadVault(): Promise<{ records: VaultRecord[]; error: stri
     signY: TM_DEFAULTS.signY,
     signSize: TM_DEFAULTS.signSize,
     logoDataUrl: row.logo_data_url || null,
+    createdBy: row.created_by || null,
     timestamp: row.synced_at ? formatTimestamp(new Date(row.synced_at)) : '—',
   })) as VaultRecord[];
 

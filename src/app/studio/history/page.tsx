@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Download, ExternalLink, History, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import { loadVault, deleteVaultRecord, liveVerifyUrl, type VaultRecord } from '@/lib/workspace/vault';
+import { loadVault, deleteVaultRecord, liveVerifyUrl, resolveCreatorEmails, type VaultRecord } from '@/lib/workspace/vault';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
 import { loadImage, loadDataUrlImage } from '@/lib/images';
 import { TM_BACKGROUND, TM_SIGNATURE } from '@/lib/constants/tm';
+import { useAuth } from '@/lib/auth/auth-context';
 import { Card, PageHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +18,7 @@ import { cn } from '@/lib/utils';
 
 export default function HistoryPage() {
   const toast = useToast();
+  const { user, profile } = useAuth();
   const [records, setRecords] = useState<VaultRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,11 +32,16 @@ export default function HistoryPage() {
       setError(res.error);
       setRecords([]);
     } else {
-      setRecords(res.records);
+      const resolved = await resolveCreatorEmails(res.records, {
+        currentUserId: user?.id,
+        currentUserEmail: user?.email ?? profile?.email ?? null,
+        role: profile?.role ?? null,
+      });
+      setRecords(resolved);
       setError(null);
     }
     setLoading(false);
-  }, []);
+  }, [user, profile]);
 
   useEffect(() => {
     void refresh();
@@ -112,7 +119,7 @@ export default function HistoryPage() {
       ) : (
         <Card className="overflow-hidden p-0" bodyClassName="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-[13px]">
+            <table className="w-full min-w-[1000px] text-[13px]">
               <thead>
                 <tr className="border-b border-line bg-surface-raised text-left text-[10.5px] font-bold uppercase tracking-wider text-dimm">
                   <th className="px-4 py-3">#</th>
@@ -121,6 +128,7 @@ export default function HistoryPage() {
                   <th className="px-4 py-3">Owner</th>
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Archived</th>
+                  <th className="px-4 py-3">Created By</th>
                   <th className="px-4 py-3">Live</th>
                   <th className="px-4 py-3">Operations</th>
                 </tr>
@@ -146,6 +154,14 @@ export default function HistoryPage() {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">
                         {r.timestamp}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className="block max-w-[150px] truncate text-muted sm:max-w-none sm:overflow-visible sm:whitespace-normal sm:break-words"
+                          title={r.creatorEmail ?? undefined}
+                        >
+                          {r.creatorEmail || '—'}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         {url ? (

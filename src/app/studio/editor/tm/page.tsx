@@ -184,7 +184,7 @@ function TMEditorInner() {
     link.href = canvas.toDataURL('image/jpeg', 0.96);
     link.click();
     setStatus('Saving to Cloud Vault…');
-    const res = await commitCertificate(presentRef.current);
+    const res = await commitCertificate(presentRef.current, user?.id);
     if (res.error) {
       setStatus('Sync error.');
       toast.error(`Vault error: ${res.error}`);
@@ -224,7 +224,7 @@ function TMEditorInner() {
     pdf.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', xO, yO, rW, rH);
     pdf.save(`Certificate-TM-${presentRef.current.trademarkNo || 'export'}.pdf`);
     setStatus('Saving to Cloud Vault…');
-    const res = await commitCertificate(presentRef.current);
+    const res = await commitCertificate(presentRef.current, user?.id);
     if (res.error) {
       setStatus('Sync error.');
       toast.error(`Vault error: ${res.error}`);

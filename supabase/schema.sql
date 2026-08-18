@@ -349,6 +349,12 @@ create policy "activity_logs_admin_read" on public.activity_logs
 -- `if exists` guards environments where the legacy vault table is absent.
 alter table if exists public.certificates add column if not exists logo_data_url text;
 
+-- Track which user created/exported each vault record so the History view can
+-- show the real creator's email (profiles.email). Legacy rows stay NULL and
+-- render as "—". `on delete set null` keeps History readable if a user is removed.
+alter table if exists public.certificates add column if not exists created_by uuid references auth.users (id) on delete set null;
+create index if not exists certificates_created_by_idx on public.certificates (created_by);
+
 -- Recognize the authorized admin account (UUID allowlist).
 -- If the auth user already has a profile, promote it to admin/active.
 -- If the auth user does not exist yet, the profile is created as admin on
