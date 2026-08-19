@@ -21,9 +21,24 @@ function isEnforcementError(err: { code?: string; message?: string } | null): bo
   return err.code === '42501' || /row-level security|violates row-level|new row violates/i.test(err.message ?? '');
 }
 
-const LS_TEMPLATES = 'studio.templates';
-const LS_PROJECTS = 'studio.projects';
-const LS_ACTIVITY = 'studio.activity';
+const LS_TEMPLATES_BASE = 'studio.templates';
+const LS_PROJECTS_BASE = 'studio.projects';
+const LS_ACTIVITY_BASE = 'studio.activity';
+
+/**
+ * localStorage cache keys are scoped to the authenticated user so one user's
+ * cached projects/templates/activity never surface in another user's session.
+ * Falls back to `anon` when no session is available.
+ */
+export async function getScopedStorageKey(base: string): Promise<string> {
+  try {
+    const { data } = await supabase.auth.getUser();
+    if (data?.user?.id) return `${base}.${data.user.id}`;
+  } catch {
+    // fall through to anon scope
+  }
+  return `${base}.anon`;
+}
 
 function readLocal<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -47,7 +62,8 @@ function writeLocal<T>(key: string, value: T): void {
 /* ────────────────────────── Templates ────────────────────────── */
 
 export async function listTemplates(): Promise<StoreResult<TemplateRecord[]>> {
-  const local = readLocal<TemplateRecord[]>(LS_TEMPLATES, []);
+  const key = await getScopedStorageKey(LS_TEMPLATES_BASE);
+  const local = readLocal<TemplateRecord[]>(key, []);
   const { data, error } = await supabase
     .from('templates')
     .select('*')
@@ -63,11 +79,12 @@ export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<Tem
     .select()
     .maybeSingle();
   if (error) {
-    const local = readLocal<TemplateRecord[]>(LS_TEMPLATES, []);
+    const key = await getScopedStorageKey(LS_TEMPLATES_BASE);
+    const local = readLocal<TemplateRecord[]>(key, []);
     const idx = local.findIndex((t) => t.id === tpl.id);
     if (idx >= 0) local[idx] = { ...tpl, updated_at: new Date().toISOString() };
     else local.unshift({ ...tpl, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
-    writeLocal(LS_TEMPLATES, local);
+    writeLocal(key, local);
     return { data: tpl, source: 'local', error: null };
   }
   return { data: data as TemplateRecord, source: 'supabase', error: null };
@@ -76,8 +93,9 @@ export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<Tem
 export async function deleteTemplate(id: string): Promise<StoreResult<null>> {
   const { error } = await supabase.from('templates').delete().eq('id', id);
   if (error) {
-    const local = readLocal<TemplateRecord[]>(LS_TEMPLATES, []).filter((t) => t.id !== id);
-    writeLocal(LS_TEMPLATES, local);
+    const key = await getScopedStorageKey(LS_TEMPLATES_BASE);
+    const local = readLocal<TemplateRecord[]>(key, []).filter((t) => t.id !== id);
+    writeLocal(key, local);
   }
   return { data: null, source: 'supabase', error: error ? error.message : null };
 }
@@ -85,7 +103,8 @@ export async function deleteTemplate(id: string): Promise<StoreResult<null>> {
 /* ────────────────────────── Projects ────────────────────────── */
 
 export async function listProjects(): Promise<StoreResult<ProjectRecord[]>> {
-  const local = readLocal<ProjectRecord[]>(LS_PROJECTS, []);
+  const key = await getScopedStorageKey(LS_PROJECTS_BASE);
+  const local = readLocal<ProjectRecord[]>(key, []);
   const { data, error } = await supabase
     .from('projects')
     .select('*')
@@ -104,11 +123,12 @@ export async function saveProject(proj: ProjectRecord): Promise<StoreResult<Proj
     if (isEnforcementError(error)) {
       return { data: null, source: 'supabase', error: error.message };
     }
-    const local = readLocal<ProjectRecord[]>(LS_PROJECTS, []);
+    const key = await getScopedStorageKey(LS_PROJECTS_BASE);
+    const local = readLocal<ProjectRecord[]>(key, []);
     const idx = local.findIndex((p) => p.id === proj.id);
     if (idx >= 0) local[idx] = { ...proj, updated_at: new Date().toISOString() };
     else local.unshift({ ...proj, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
-    writeLocal(LS_PROJECTS, local);
+    writeLocal(key, local);
     return { data: proj, source: 'local', error: null };
   }
   return { data: data as ProjectRecord, source: 'supabase', error: null };
@@ -117,8 +137,9 @@ export async function saveProject(proj: ProjectRecord): Promise<StoreResult<Proj
 export async function deleteProject(id: string): Promise<StoreResult<null>> {
   const { error } = await supabase.from('projects').delete().eq('id', id);
   if (error) {
-    const local = readLocal<ProjectRecord[]>(LS_PROJECTS, []).filter((p) => p.id !== id);
-    writeLocal(LS_PROJECTS, local);
+    const key = await getScopedStorageKey(LS_PROJECTS_BASE);
+    const local = readLocal<ProjectRecord[]>(key, []).filter((p) => p.id !== id);
+    writeLocal(key, local);
   }
   return { data: null, source: 'supabase', error: error ? error.message : null };
 }
@@ -136,15 +157,17 @@ export async function logActivity(record: ActivityRecord): Promise<void> {
     // Do not mirror enforcement-blocked actions into the local log either.
     if (isEnforcementError(error)) return;
   }
-  const local = readLocal<ActivityRecord[]>(LS_ACTIVITY, []);
-  writeLocal(LS_ACTIVITY, [
+  const key = await getScopedStorageKey(LS_ACTIVITY_BASE);
+  const local = readLocal<ActivityRecord[]>(key, []);
+  writeLocal(key, [
     { ...record, created_at: new Date().toISOString() },
     ...local.slice(0, 199),
   ]);
 }
 
 export async function listActivity(): Promise<StoreResult<ActivityRecord[]>> {
-  const local = readLocal<ActivityRecord[]>(LS_ACTIVITY, []);
+  const key = await getScopedStorageKey(LS_ACTIVITY_BASE);
+  const local = readLocal<ActivityRecord[]>(key, []);
   const { data, error } = await supabase
     .from('activity_logs')
     .select('*')

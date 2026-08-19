@@ -18,7 +18,7 @@ import { Card, StatCard } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { loadVault } from '@/lib/workspace/vault';
-import { listTemplates, listProjects } from '@/lib/workspace/store';
+import { listTemplates, listProjects, getScopedStorageKey } from '@/lib/workspace/store';
 import { timeAgo } from '@/lib/utils';
 import type { ActivityRecord } from '@/lib/auth/types';
 
@@ -43,7 +43,8 @@ export default function DashboardPage() {
         lastSync: vault.records[0]?.timestamp ?? null,
       });
       try {
-        const local = JSON.parse(window.localStorage.getItem('studio.activity') || '[]') as ActivityRecord[];
+        const activityKey = await getScopedStorageKey('studio.activity');
+        const local = JSON.parse(window.localStorage.getItem(activityKey) || '[]') as ActivityRecord[];
         setActivity(local.slice(0, 5));
       } catch {
         setActivity([]);

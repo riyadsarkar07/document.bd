@@ -45,7 +45,7 @@ function NIDEditorInner() {
   const editor = useDocumentEditor<NIDSnapshot>({
     kind: 'nid',
     defaults: NID_DEFAULTS,
-    autosaveKey: 'studio.autosave.nid',
+    autosaveKey: `studio.autosave.nid.${user?.id ?? 'anon'}`,
     loadExternal: () => externalCacheRef.current,
   });
   const externalCacheRef = useRef<NIDSnapshot | null>(null);

@@ -88,7 +88,7 @@ function TINEditorInner() {
   const editor = useDocumentEditor<TINSnapshot>({
     kind: 'tin',
     defaults: TIN_DEFAULTS,
-    autosaveKey: 'studio.autosave.tin',
+    autosaveKey: `studio.autosave.tin.${user?.id ?? 'anon'}`,
     loadExternal: () => externalCacheRef.current,
     normalize: (s) => normalizeTinSnapshot(s as Partial<TINSnapshot>),
   });

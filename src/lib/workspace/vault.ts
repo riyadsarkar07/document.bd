@@ -44,19 +44,21 @@ export async function commitCertificate(
   // trademark_no is used as the natural key.
   const existing = await supabase
     .from('certificates')
-    .select('registration_no')
+    .select('registration_no, created_by')
     .eq('trademark_no', trademarkNo)
     .limit(1);
 
   const existingRow = existing.data?.[0];
 
-  // Insert path carries the creator; update path preserves the original one.
+  // Insert path carries the creator; update path preserves the original one
+  // UNLESS the existing (legacy) row has no creator yet — then adopt the
+  // current user so re-saving the default/legacy TM number records who saved it.
   if (createdBy) payload.created_by = createdBy;
 
   let result: { error: { message: string } | null };
   if (existingRow) {
     if (existingRow.registration_no) payload.registration_no = existingRow.registration_no;
-    delete payload.created_by;
+    if (existingRow.created_by) delete payload.created_by;
     result = await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo);
   } else {
     payload.registration_no = fallbackNumericId;
@@ -97,6 +99,12 @@ export async function resolveCreatorEmails(
   const ids = Array.from(new Set(records.map((r) => r.createdBy).filter((id): id is string => Boolean(id))));
   const map = new Map<string, string>();
 
+  // Always know the current user's own email (from the session) so their own
+  // records resolve even before/without a profiles row.
+  if (opts.currentUserId && opts.currentUserEmail) map.set(opts.currentUserId, opts.currentUserEmail);
+
+  // Admins can read any profile (RLS `profiles_admin_select`), so every other
+  // creator email is resolved from the `profiles` table (authoritative).
   if (opts.role === 'admin' && ids.length) {
     const { data, error } = await supabase.from('profiles').select('id, email').in('id', ids);
     if (!error && data) {
@@ -104,8 +112,6 @@ export async function resolveCreatorEmails(
         if (p.id && p.email) map.set(String(p.id), String(p.email));
       }
     }
-  } else if (opts.currentUserId && opts.currentUserEmail) {
-    map.set(opts.currentUserId, opts.currentUserEmail);
   }
 
   return records.map((r) => ({

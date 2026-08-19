@@ -63,7 +63,7 @@ function TMEditorInner() {
   const editor = useDocumentEditor<TMSnapshot>({
     kind: 'tm',
     defaults: TM_DEFAULTS,
-    autosaveKey: 'studio.autosave.tm',
+    autosaveKey: `studio.autosave.tm.${user?.id ?? 'anon'}`,
     loadExternal,
   });
 
