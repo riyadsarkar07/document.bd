@@ -73,10 +73,11 @@ export default function HistoryPage() {
   };
 
   const remove = async () => {
-    if (!deleteTarget?.id) return;
-    const res = await deleteVaultRecord(deleteTarget.id);
+    const trademarkNo = deleteTarget?.trademarkNo;
+    if (!trademarkNo) return;
+    const res = await deleteVaultRecord(trademarkNo);
     if (res.error) toast.error(res.error);
-    else toast.info('Record deleted from vault');
+    else toast.success('Record deleted from vault');
     setDeleteTarget(null);
     await refresh();
   };
@@ -138,7 +139,7 @@ export default function HistoryPage() {
                   const url = liveVerifyUrl(r.trademarkNo);
                   return (
                     <tr
-                      key={r.id ?? i}
+                      key={r.trademarkNo || i}
                       className={cn('border-b border-line transition hover:bg-accent/5', i % 2 === 1 && 'bg-surface-raised/40')}
                     >
                       <td className="px-4 py-3 font-mono text-[11px] text-dimm">#{i + 1}</td>

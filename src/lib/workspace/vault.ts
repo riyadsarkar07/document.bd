@@ -6,7 +6,6 @@ import { formatTimestamp } from '@/lib/utils';
 import type { TMSnapshot } from '@/lib/editor/types';
 
 export interface VaultRecord extends TMSnapshot {
-  id?: string | number;
   timestamp: string;
   /** UUID of the authenticated user who created/exported the record. */
   createdBy?: string | null;
@@ -139,7 +138,6 @@ export async function loadVault(): Promise<{ records: VaultRecord[]; error: stri
   if (error) return { records: [], error: error.message };
 
   const records = (data || []).map((row) => ({
-    id: row.id || '',
     trademarkNo: row.trademark_no || '',
     regDate: row.reg_date || '',
     appDate: row.app_date || '',
@@ -182,11 +180,30 @@ export async function loadVault(): Promise<{ records: VaultRecord[]; error: stri
   return { records, error: null };
 }
 
+/**
+ * Delete a vault certificate row.
+ *
+ * The production `certificates` table has NO `id` column (registration_no is
+ * the primary key, trademark_no has a unique constraint), so `trademark_no` is
+ * used as the delete key. The `certificates_delete_own` RLS policy scopes the
+ * delete to the current user's own records (`created_by = auth.uid()`, active
+ * account) while admins may delete any record, so a caller can only ever
+ * remove a row that the History list is allowed to show them.
+ */
 export async function deleteVaultRecord(
-  id: string | number,
+  trademarkNo: string,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.from('certificates').delete().eq('id', id);
-  return { error: error ? error.message : null };
+  if (!trademarkNo) return { error: 'Missing Trademark No. — cannot delete the record.' };
+  const { data, error } = await supabase
+    .from('certificates')
+    .delete()
+    .eq('trademark_no', trademarkNo)
+    .select('trademark_no');
+  if (error) return { error: error.message };
+  if (!data?.length) {
+    return { error: 'Record not found or you do not have permission to delete it.' };
+  }
+  return { error: null };
 }
 
 /** Live verification link for a trademark number (preserved from original). */
