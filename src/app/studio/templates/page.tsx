@@ -71,6 +71,7 @@ export default function TemplatesPage() {
       description: description.trim(),
       state,
       created_by: user?.email,
+      owner_id: user?.id,
     };
     const res = await saveTemplate(tpl);
     setModal({ open: false, kind: modal.kind });

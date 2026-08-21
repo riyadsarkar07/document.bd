@@ -73,9 +73,13 @@ export async function listTemplates(): Promise<StoreResult<TemplateRecord[]>> {
 }
 
 export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<TemplateRecord | null>> {
+  // Templates are always attributed to the current user so RLS ownership holds
+  // even if a caller forgets to set owner_id.
+  const { data: authData } = await supabase.auth.getUser();
+  const ownerId = authData?.user?.id ?? tpl.owner_id;
   const { data, error } = await supabase
     .from('templates')
-    .upsert({ ...tpl, updated_at: new Date().toISOString() })
+    .upsert({ ...tpl, owner_id: ownerId, updated_at: new Date().toISOString() })
     .select()
     .maybeSingle();
   if (error) {

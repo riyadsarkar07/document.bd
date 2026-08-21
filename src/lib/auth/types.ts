@@ -39,6 +39,7 @@ export interface TemplateRecord {
   state: Record<string, unknown>;
   thumbnail?: string | null;
   created_by?: string;
+  owner_id?: string;
   created_at?: string;
   updated_at?: string;
 }

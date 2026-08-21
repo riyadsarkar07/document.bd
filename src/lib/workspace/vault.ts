@@ -65,6 +65,17 @@ export async function commitCertificate(
     result = await supabase.from('certificates').insert([payload]);
   }
 
+  // A unique-violation on trademark_no means another account (or a legacy
+  // record) already owns this number. Under RLS the row is invisible to the
+  // caller, so surface a clear message instead of the raw Postgres error.
+  if (
+    result.error &&
+    /duplicate key value violates unique constraint/i.test(result.error.message ?? '') &&
+    /trademark_no/i.test(result.error.message ?? '')
+  ) {
+    return { error: `TM No. ${trademarkNo} is already archived in the vault. Use a different Trademark No. to save your own record.` };
+  }
+
   // Retry without any column the schema does not have yet (e.g. created_by or
   // logo_data_url before its migration is applied) so the vault write still
   // succeeds; the creator id / image persists once the migration is run.

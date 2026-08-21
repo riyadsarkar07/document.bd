@@ -13,7 +13,8 @@
 -- Safe to re-run: columns use `add column if not exists`, policies are
 -- dropped before being recreated, functions use `create or replace`, and
 -- indexes use `create index if not exists`.
--- The original `certificates` table is preserved as-is.
+-- The original `certificates` table schema is preserved as-is; STEP 4 adds
+-- per-user RLS isolation to the vault so users only see their own records.
 -- ═══════════════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -52,11 +53,16 @@ create table if not exists public.templates (
   state jsonb not null default '{}'::jsonb,
   thumbnail text,
   created_by text,
+  owner_id uuid references auth.users (id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table public.templates enable row level security;
+
+-- Upgrade older databases that predate per-user template ownership so the
+-- RLS "own template" policies below can match on owner_id.
+alter table public.templates add column if not exists owner_id uuid references auth.users (id) on delete set null;
 
 -- ────────────────────────── projects ──────────────────────────
 create table if not exists public.projects (
@@ -112,6 +118,7 @@ create index if not exists profiles_status_idx on public.profiles (status);
 create index if not exists activity_logs_created_idx on public.activity_logs (created_at desc);
 create index if not exists activity_logs_action_idx on public.activity_logs (action);
 create index if not exists templates_kind_idx on public.templates (kind);
+create index if not exists templates_owner_idx on public.templates (owner_id);
 create index if not exists projects_owner_idx on public.projects (owner_id);
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -267,23 +274,50 @@ create policy "profiles_admin_delete" on public.profiles
 
 -- ────────────────────────── templates ──────────────────────────
 
--- Signed-in, active users can read templates
+-- Active users can read their OWN templates; admins can read every template.
+-- The previous "any active user reads all templates" policy is removed so one
+-- user's private templates never surface for another user.
 drop policy if exists "templates_read" on public.templates;
-create policy "templates_read" on public.templates
-  for select using (auth.role() = 'authenticated' and public.is_active_user(auth.uid()));
-
--- Active admins/editors can write templates
 drop policy if exists "templates_write" on public.templates;
-create policy "templates_write" on public.templates
-  for all using (
+create policy "templates_select_own" on public.templates
+  for select using (
+    (owner_id = auth.uid() and public.is_active_user(auth.uid()))
+    or public.is_admin()
+  );
+
+-- Active admins/editors can create templates, always attributed to themselves.
+drop policy if exists "templates_insert_own" on public.templates;
+create policy "templates_insert_own" on public.templates
+  for insert with check (
     public.is_active_user(auth.uid())
+    and (owner_id = auth.uid() or public.is_admin())
     and exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor'))
+  );
+
+-- Active admins/editors can update their own templates; admins can update any.
+drop policy if exists "templates_update_own" on public.templates;
+create policy "templates_update_own" on public.templates
+  for update using (
+    (owner_id = auth.uid() and public.is_active_user(auth.uid()))
+    or public.is_admin()
+  ) with check (
+    public.is_active_user(auth.uid())
+    and (owner_id = auth.uid() or public.is_admin())
+    and exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor'))
+  );
+
+-- Active users can delete their own templates; admins can delete any.
+drop policy if exists "templates_delete_own" on public.templates;
+create policy "templates_delete_own" on public.templates
+  for delete using (
+    (owner_id = auth.uid() and public.is_active_user(auth.uid()))
+    or public.is_admin()
   );
 
 -- ────────────────────────── projects ──────────────────────────
 
--- Active users can read/update/delete their own projects; new project
--- creation is gated by max_projects server-side.
+-- Active users can read/update/delete their OWN projects (admins can access
+-- every project); new project creation is gated by max_projects server-side.
 drop policy if exists "projects_read_own" on public.projects;
 drop policy if exists "projects_write_own" on public.projects;
 drop policy if exists "projects_select" on public.projects;
@@ -295,29 +329,107 @@ drop policy if exists "projects_insert_own" on public.projects;
 drop policy if exists "projects_update_own" on public.projects;
 drop policy if exists "projects_delete_own" on public.projects;
 create policy "projects_read_active_own" on public.projects
-  for select using (auth.uid() = owner_id and public.is_active_user(auth.uid()));
+  for select using ((auth.uid() = owner_id and public.is_active_user(auth.uid())) or public.is_admin());
 create policy "projects_insert_own" on public.projects
-  for insert with check (auth.uid() = owner_id and public.can_create_project(auth.uid()));
+  for insert with check (auth.uid() = owner_id and (public.can_create_project(auth.uid()) or public.is_admin()));
 create policy "projects_update_own" on public.projects
-  for update using (auth.uid() = owner_id and public.is_active_user(auth.uid()));
+  for update using ((auth.uid() = owner_id and public.is_active_user(auth.uid())) or public.is_admin());
 create policy "projects_delete_own" on public.projects
-  for delete using (auth.uid() = owner_id and public.is_active_user(auth.uid()));
+  for delete using ((auth.uid() = owner_id and public.is_active_user(auth.uid())) or public.is_admin());
 
 -- ────────────────────────── activity_logs ──────────────────────────
 
--- Active users can write logs; export/save actions are gated by limits.
+-- Active users can write logs about themselves; export/save actions are gated
+-- by limits. user_id is locked to the caller so nobody can log activity as
+-- another user through a direct API request.
 drop policy if exists "activity_logs_insert" on public.activity_logs;
 create policy "activity_logs_insert" on public.activity_logs
   for insert with check (
     auth.role() = 'authenticated'
     and public.is_active_user(auth.uid())
+    and user_id = auth.uid()
     and public.can_log_action(auth.uid(), action)
   );
+
+-- Active users can read their own activity only.
+drop policy if exists "activity_logs_select_own" on public.activity_logs;
+create policy "activity_logs_select_own" on public.activity_logs
+  for select using (user_id = auth.uid() and public.is_active_user(auth.uid()));
 
 -- Admins can read the full audit trail
 drop policy if exists "activity_logs_admin_read" on public.activity_logs;
 create policy "activity_logs_admin_read" on public.activity_logs
   for select using (public.is_admin());
+
+-- ────────────────────────── certificates (cloud vault) ──────────────────────────
+-- The vault was originally readable/writable by everyone (legacy permissive
+-- policies). It is now locked to per-user records: normal users can only see
+-- and manage certificates they created (created_by = auth.uid()); admins can
+-- see and manage everything. Legacy rows with created_by NULL become invisible
+-- to normal users, so no certificate leaks across accounts.
+--
+-- Guarded by a table-existence check because some environments do not create
+-- the legacy vault table at all (schema.sql uses `alter table if exists` for it).
+do $$
+declare
+  pol record;
+begin
+  if to_regclass('public.certificates') is null then
+    raise notice 'certificates table absent — vault RLS skipped';
+    return;
+  end if;
+
+  alter table public.certificates enable row level security;
+
+  -- Drop every pre-existing certificate policy (unknown legacy / permissive /
+  -- anon rules) so the per-user rules below are the only authority on the table.
+  for pol in
+    select policyname from pg_policies
+    where schemaname = 'public' and tablename = 'certificates'
+  loop
+    execute format('drop policy if exists %I on public.certificates', pol.policyname);
+  end loop;
+
+  -- Revoke legacy anon access; the app writes through authenticated sessions.
+  execute 'revoke all on table public.certificates from anon';
+  execute 'grant select, insert, update, delete on table public.certificates to authenticated';
+
+  execute $sql$
+    create policy "certificates_select_own" on public.certificates
+    for select using (
+      (created_by = auth.uid() and public.is_active_user(auth.uid()))
+      or public.is_admin()
+    )
+  $sql$;
+
+  execute $sql$
+    create policy "certificates_insert_own" on public.certificates
+    for insert with check (
+      auth.role() = 'authenticated'
+      and public.is_active_user(auth.uid())
+      and (created_by = auth.uid() or public.is_admin())
+    )
+  $sql$;
+
+  execute $sql$
+    create policy "certificates_update_own" on public.certificates
+    for update using (
+      (created_by = auth.uid() and public.is_active_user(auth.uid()))
+      or public.is_admin()
+    ) with check (
+      (created_by = auth.uid() and public.is_active_user(auth.uid()))
+      or public.is_admin()
+    )
+  $sql$;
+
+  execute $sql$
+    create policy "certificates_delete_own" on public.certificates
+    for delete using (
+      (created_by = auth.uid() and public.is_active_user(auth.uid()))
+      or public.is_admin()
+    )
+  $sql$;
+end $$;
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- STEP 5 — Admin bootstrap / update for the existing UUID
@@ -341,9 +453,8 @@ create policy "activity_logs_admin_read" on public.activity_logs
 --   logo_data_url text
 -- );
 --
--- Note: if you recreate this table you must restore the anon insert/select/delete
--- policies used by the original application (RLS off or permissive) so the vault
--- still works.
+-- Note: if you recreate this table you must restore the per-user RLS policies
+-- defined in STEP 4 (own-or-admin) so the isolated vault keeps working.
 
 -- Persist the uploaded logo image with vault records so History can restore it.
 -- `if exists` guards environments where the legacy vault table is absent.
