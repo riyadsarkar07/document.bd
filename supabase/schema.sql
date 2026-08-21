@@ -279,6 +279,7 @@ create policy "profiles_admin_delete" on public.profiles
 -- user's private templates never surface for another user.
 drop policy if exists "templates_read" on public.templates;
 drop policy if exists "templates_write" on public.templates;
+drop policy if exists "templates_select_own" on public.templates;
 create policy "templates_select_own" on public.templates
   for select using (
     (owner_id = auth.uid() and public.is_active_user(auth.uid()))
@@ -464,7 +465,15 @@ alter table if exists public.certificates add column if not exists logo_data_url
 -- show the real creator's email (profiles.email). Legacy rows stay NULL and
 -- render as "—". `on delete set null` keeps History readable if a user is removed.
 alter table if exists public.certificates add column if not exists created_by uuid references auth.users (id) on delete set null;
-create index if not exists certificates_created_by_idx on public.certificates (created_by);
+
+-- Index only applies to databases that actually have the legacy vault table
+-- (some fresh environments do not create it, so the columns above use `if exists`).
+do $$
+begin
+  if to_regclass('public.certificates') is not null then
+    create index if not exists certificates_created_by_idx on public.certificates (created_by);
+  end if;
+end $$;
 
 -- Recognize the authorized admin account (UUID allowlist).
 -- If the auth user already has a profile, promote it to admin/active.
