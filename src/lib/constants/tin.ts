@@ -82,22 +82,21 @@ const layout = (
  */
 export const TIN_DEFAULT_LAYOUTS: Record<TinFieldKey, TinLayout> = {
   // Header TIN value — right after the printed "TIN:" label.
-  tinNo: layout(1140, 880, 1050, 45, 34, { fontWeight: 'bold' }),
+  tinNo: layout(1140, 874, 1050, 45, 68, { fontWeight: 'bold' }),
   // Name rendered inline inside "This is to Certify that __ is a Registered…".
-  taxpayerName: layout(445, 1066, 630, 44, 32),
-  // "1) Name :" row in the Taxpayer's Particulars list — the value sits right
-  // after the printed label (label right edge ≈ x663, value box starts after it).
-  name: layout(680, 1238, 1650, 44, 30),
+  taxpayerName: layout(645, 1068, 630, 44, 50, { fontWeight: 'bold' }),
+  // "1) Name :" row in the Taxpayer's Particulars list.
+  name: layout(417, 1312, 1650, 44, 44, { fontWeight: 'bold' }),
   // Inline sentence — "Taxes Circle-__," (blank gap between the printed label and comma).
-  taxCircle: layout(778, 1136, 92, 40, 28),
+  taxCircle: layout(789, 1136, 92, 40, 45),
   // Inline sentence — "Taxes Zone __".
-  taxZone: layout(1115, 1136, 235, 40, 28),
+  taxZone: layout(1132, 1136, 235, 40, 45),
   // "Date : __" line.
   dob: layout(335, 2097, 540, 42, 30),
-  fatherName: layout(555, 1398, 1650, 44, 30),
-  motherName: layout(565, 1491, 1650, 44, 30),
-  currentAddress: layout(620, 1576, 1650, 44, 30, { lineHeight: 1.4 }),
-  permanentAddress: layout(685, 1669, 1650, 44, 30, { lineHeight: 1.4 }),
+  fatherName: layout(565, 1401, 1650, 44, 44, { fontWeight: 'bold' }),
+  motherName: layout(566, 1488, 1650, 44, 44, { fontWeight: 'bold' }),
+  currentAddress: layout(633, 1576, 1650, 44, 45, { fontWeight: 'bold', lineHeight: 1.4 }),
+  permanentAddress: layout(692, 1669, 1650, 44, 45, { fontWeight: 'bold', lineHeight: 1.4 }),
 };
 
 export const TIN_DEFAULTS: TINSnapshot = {
@@ -112,9 +111,9 @@ export const TIN_DEFAULTS: TINSnapshot = {
   taxCircle: '019',
   taxZone: 'Gazipur',
   layouts: TIN_DEFAULT_LAYOUTS,
-  qrSize: 440,
-  qrX: 200,
-  qrY: 2680,
+  qrSize: 656,
+  qrX: 910,
+  qrY: 2196,
 };
 
 /**
@@ -172,9 +171,9 @@ export const TIN_LAYOUT_RANGES: Record<
 };
 
 export const TIN_QR_SLIDERS: SliderSpec[] = [
-  { key: 'qrSize', label: 'QR Size', min: 80, max: 1200, default: 440, mono: true },
-  { key: 'qrX', label: 'QR X', min: 0, max: 2480, default: 200, mono: true },
-  { key: 'qrY', label: 'QR Y', min: 0, max: 3508, default: 2680, mono: true },
+  { key: 'qrSize', label: 'QR Size', min: 80, max: 1200, default: 656, mono: true },
+  { key: 'qrX', label: 'QR X', min: 0, max: 2480, default: 910, mono: true },
+  { key: 'qrY', label: 'QR Y', min: 0, max: 3508, default: 2196, mono: true },
 ];
 
 export function tinTextValue(snap: TINSnapshot, key: TinFieldKey): string {
