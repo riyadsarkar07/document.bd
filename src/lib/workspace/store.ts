@@ -1,6 +1,7 @@
 'use client';
 
 import { supabase } from '@/lib/supabase/client';
+import { logAudit } from '@/lib/workspace/audit';
 import type { ActivityRecord, ProjectRecord, TemplateRecord } from '@/lib/auth/types';
 
 export type DataSource = 'supabase' | 'local';
@@ -91,15 +92,24 @@ export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<Tem
     writeLocal(key, local);
     return { data: tpl, source: 'local', error: null };
   }
+  void logAudit({
+    action: 'template.saved',
+    targetType: 'template',
+    targetId: data?.id ?? tpl.id,
+    metadata: { name: tpl.name, kind: tpl.kind },
+  });
   return { data: data as TemplateRecord, source: 'supabase', error: null };
 }
 
 export async function deleteTemplate(id: string): Promise<StoreResult<null>> {
-  const { error } = await supabase.from('templates').delete().eq('id', id);
+  const { data, error } = await supabase.from('templates').delete().eq('id', id).select('name');
   if (error) {
     const key = await getScopedStorageKey(LS_TEMPLATES_BASE);
     const local = readLocal<TemplateRecord[]>(key, []).filter((t) => t.id !== id);
     writeLocal(key, local);
+  }
+  if (!error) {
+    void logAudit({ action: 'template.deleted', targetType: 'template', targetId: id, metadata: { name: data?.[0]?.name ?? '' } });
   }
   return { data: null, source: 'supabase', error: error ? error.message : null };
 }
@@ -135,15 +145,24 @@ export async function saveProject(proj: ProjectRecord): Promise<StoreResult<Proj
     writeLocal(key, local);
     return { data: proj, source: 'local', error: null };
   }
+  void logAudit({
+    action: 'project.saved',
+    targetType: 'project',
+    targetId: data?.id ?? proj.id,
+    metadata: { name: proj.name, kind: proj.kind },
+  });
   return { data: data as ProjectRecord, source: 'supabase', error: null };
 }
 
 export async function deleteProject(id: string): Promise<StoreResult<null>> {
-  const { error } = await supabase.from('projects').delete().eq('id', id);
+  const { data, error } = await supabase.from('projects').delete().eq('id', id).select('name');
   if (error) {
     const key = await getScopedStorageKey(LS_PROJECTS_BASE);
     const local = readLocal<ProjectRecord[]>(key, []).filter((p) => p.id !== id);
     writeLocal(key, local);
+  }
+  if (!error) {
+    void logAudit({ action: 'project.deleted', targetType: 'project', targetId: id, metadata: { name: data?.[0]?.name ?? '' } });
   }
   return { data: null, source: 'supabase', error: error ? error.message : null };
 }
@@ -169,14 +188,12 @@ export async function logActivity(record: ActivityRecord): Promise<void> {
   ]);
 }
 
-export async function listActivity(): Promise<StoreResult<ActivityRecord[]>> {
+export async function listActivity(opts?: { userId?: string }): Promise<StoreResult<ActivityRecord[]>> {
   const key = await getScopedStorageKey(LS_ACTIVITY_BASE);
   const local = readLocal<ActivityRecord[]>(key, []);
-  const { data, error } = await supabase
-    .from('activity_logs')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(200);
+  let query = supabase.from('activity_logs').select('*');
+  if (opts?.userId) query = query.eq('user_id', opts.userId);
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(200);
   if (error || !data?.length) {
     return { data: local.length ? local : [], source: local.length ? 'local' : 'supabase', error: null };
   }

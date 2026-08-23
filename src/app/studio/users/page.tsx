@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import {
   Lock,
   PencilLine,
+  Search,
   ShieldAlert,
   Unlock,
   Users,
@@ -24,20 +26,25 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
-import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { FieldLabel, Input } from '@/components/ui/input';
+import { Pagination } from '@/components/ui/pagination';
+import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { useToast } from '@/lib/toast/toast-provider';
-import { cn } from '@/lib/utils';
+import { cn, timeAgo } from '@/lib/utils';
 
 interface UserUsage {
   projects: number;
   documents: number;
   exports: number;
+  lastActivity?: string | null;
 }
 
 interface AdminUserRow extends Profile {
   usage?: UserUsage;
+  certificateCount?: number;
 }
+
+const PAGE_SIZE = 20;
 
 const LIMIT_FIELDS: { key: 'max_projects' | 'max_documents' | 'max_exports'; label: string; usageKey: 'projects' | 'documents' | 'exports' }[] = [
   { key: 'max_projects', label: 'Project Limit', usageKey: 'projects' },
@@ -61,12 +68,22 @@ export default function UsersPage() {
   const [limitsTarget, setLimitsTarget] = useState<AdminUserRow | null>(null);
   const [limitsForm, setLimitsForm] = useState({ max_projects: '', max_documents: '', max_exports: '' });
   const [savingLimits, setSavingLimits] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const [profilesRes, usageRes] = await Promise.all([
-      supabase.from('profiles').select('*').order('created_at'),
+
+    let profileQuery = supabase.from('profiles').select('*', { count: 'exact' }).order('created_at');
+    const search = searchTerm.trim();
+    if (search) profileQuery = profileQuery.ilike('email', `%${search}%`);
+    profileQuery = profileQuery.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+
+    const [profilesRes, usageRes, certsRes] = await Promise.all([
+      profileQuery,
       supabase.rpc('admin_user_usage'),
+      supabase.rpc('admin_certificate_counts'),
     ]);
 
     if (profilesRes.error) {
@@ -83,7 +100,15 @@ export default function UsersPage() {
           projects: Number(row.projects ?? 0),
           documents: Number(row.documents ?? 0),
           exports: Number(row.exports ?? 0),
+          lastActivity: row.last_activity ?? null,
         });
+      }
+    }
+
+    const certMap = new Map<string, number>();
+    if (!certsRes.error && Array.isArray(certsRes.data)) {
+      for (const row of certsRes.data) {
+        certMap.set(row.user_id, Number(row.total ?? 0));
       }
     }
 
@@ -98,12 +123,14 @@ export default function UsersPage() {
       max_exports: p.max_exports != null ? Number(p.max_exports) : null,
       created_at: p.created_at,
       usage: usageMap.get(p.id),
+      certificateCount: certMap.get(p.id),
     }));
 
     setUsers(rows);
+    setTotal(profilesRes.count ?? rows.length);
     setError(null);
     setLoading(false);
-  }, []);
+  }, [searchTerm, page]);
 
   useEffect(() => {
     void refresh();
@@ -228,8 +255,23 @@ export default function UsersPage() {
         title="User Management"
         subtitle="View accounts, manage status and set per-user limits"
         icon={<Users className="h-5 w-5" />}
-        actions={<Badge tone="violet">{users.length} users</Badge>}
+        actions={<Badge tone="violet">{total} users</Badge>}
       />
+
+      <div className="mb-5">
+        <div className="relative max-w-sm">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <Input
+            placeholder="Search by email…"
+            className="pl-10"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+      </div>
 
       {error ? (
         <EmptyState
@@ -241,25 +283,36 @@ export default function UsersPage() {
       ) : loading ? (
         <div className="py-16 text-center text-sm text-dimm">Loading users…</div>
       ) : users.length === 0 ? (
-        <EmptyState
-          icon={<Users className="h-8 w-8" />}
-          title="No users yet"
-          description="Registered users will appear here."
-        />
+        searchTerm.trim() ? (
+          <EmptyState
+            icon={<Users className="h-8 w-8" />}
+            title="No matching users"
+            description="No accounts match the current search."
+          />
+        ) : (
+          <EmptyState
+            icon={<Users className="h-8 w-8" />}
+            title="No users yet"
+            description="Registered users will appear here."
+          />
+        )
       ) : (
-        <Card className="overflow-hidden p-0" bodyClassName="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] text-[13px]">
-              <thead>
-                <tr className="border-b border-line bg-surface-raised text-left text-[10.5px] font-bold uppercase tracking-wider text-dimm">
-                  <th className="px-4 py-3">User</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Joined</th>
-                  <th className="px-4 py-3">Usage / Limits</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
+        <>
+          <Card className="overflow-hidden p-0" bodyClassName="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1180px] text-[13px]">
+                <thead>
+                  <tr className="border-b border-line bg-surface-raised text-left text-[10.5px] font-bold uppercase tracking-wider text-dimm">
+                    <th className="px-4 py-3">User</th>
+                    <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Joined</th>
+                    <th className="px-4 py-3">Certificates</th>
+                    <th className="px-4 py-3">Usage / Limits</th>
+                    <th className="px-4 py-3">Last Activity</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
               <tbody>
                 {users.map((u) => {
                   const isSelf = u.id === currentUser?.id;
@@ -284,6 +337,21 @@ export default function UsersPage() {
                             </div>
                             <div className="truncate font-mono text-[10px] text-dimm" title={u.id}>
                               {u.id}
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-1.5">
+                              <Link
+                                href={`/studio/history?createdBy=${u.id}`}
+                                className="text-[10.5px] font-semibold text-accent-bright hover:underline"
+                              >
+                                History
+                              </Link>
+                              <span className="text-dimm">·</span>
+                              <Link
+                                href={`/studio/activity?user=${u.id}`}
+                                className="text-[10.5px] font-semibold text-accent-bright hover:underline"
+                              >
+                                Activity
+                              </Link>
                             </div>
                           </div>
                         </div>
@@ -312,19 +380,45 @@ export default function UsersPage() {
                       <td className="px-4 py-3 font-mono text-[11px] text-dimm">
                         {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
                       </td>
-                      <td className="px-4 py-3 font-mono text-[10.5px] leading-relaxed text-dimm">
-                        <div>
-                          P <span className="text-muted">{u.usage?.projects ?? '—'}</span>/
-                          {fmtLimit(u.max_projects)}
-                        </div>
-                        <div>
-                          D <span className="text-muted">{u.usage?.documents ?? '—'}</span>/
-                          {fmtLimit(u.max_documents)}
-                        </div>
-                        <div>
-                          E <span className="text-muted">{u.usage?.exports ?? '—'}</span>/
-                          {fmtLimit(u.max_exports)}
-                        </div>
+                      <td className="px-4 py-3">
+                        <Badge tone="blue">{u.certificateCount ?? '—'}</Badge>
+                      </td>
+                      <td className="min-w-[170px] px-4 py-3">
+                        {LIMIT_FIELDS.map((f) => {
+                          const usage = u.usage?.[f.usageKey];
+                          const max = u[f.key];
+                          const reached = usage !== undefined && max != null && usage >= max;
+                          const pct =
+                            usage !== undefined && max != null && max > 0
+                              ? Math.min(100, Math.round((usage / max) * 100))
+                              : null;
+                          const short = f.usageKey === 'projects' ? 'P' : f.usageKey === 'documents' ? 'D' : 'E';
+                          return (
+                            <div key={f.key} className="mb-1.5 last:mb-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono text-[10.5px] text-dimm">
+                                  {short} <span className="text-muted">{usage ?? '—'}</span>/{fmtLimit(max)}
+                                </span>
+                                {pct != null && (
+                                  <span className={cn('font-mono text-[9.5px]', reached ? 'text-danger' : 'text-dimm')}>
+                                    {pct}%
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-surface-elevated">
+                                {pct != null && (
+                                  <div
+                                    className={cn('h-full rounded-full transition-all', reached ? 'bg-danger' : 'bg-accent')}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-dimm">
+                        {u.usage?.lastActivity ? timeAgo(u.usage.lastActivity) : '—'}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">
@@ -365,6 +459,8 @@ export default function UsersPage() {
             </table>
           </div>
         </Card>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} className="mt-4" />
+        </>
       )}
 
       {/* ── User detail modal ── */}

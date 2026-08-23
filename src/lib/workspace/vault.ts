@@ -3,6 +3,7 @@
 import { supabase } from '@/lib/supabase/client';
 import { TM_DEFAULTS } from '@/lib/constants/tm';
 import { formatTimestamp } from '@/lib/utils';
+import { logAudit } from '@/lib/workspace/audit';
 import type { TMSnapshot } from '@/lib/editor/types';
 
 export interface VaultRecord extends TMSnapshot {
@@ -11,6 +12,72 @@ export interface VaultRecord extends TMSnapshot {
   createdBy?: string | null;
   /** Resolved display email for `createdBy` (null when unknown / not visible). */
   creatorEmail?: string | null;
+}
+
+/** Raw `certificates` row columns the vault reads (kept optional because the
+ * legacy table may predate `created_by`, `deleted_at` etc.). */
+interface VaultRow {
+  trademark_no?: string | null;
+  reg_date?: string | null;
+  app_date?: string | null;
+  name?: string | null;
+  owner_name?: string | null;
+  address?: string | null;
+  company_type?: string | null;
+  details?: string | null;
+  sealed_date?: string | null;
+  logo_data_url?: string | null;
+  created_by?: string | null;
+  synced_at?: string | null;
+  deleted_at?: string | null;
+}
+
+function mapVaultRow(row: VaultRow): VaultRecord {
+  return {
+    trademarkNo: row.trademark_no || '',
+    regDate: row.reg_date || '',
+    appDate: row.app_date || '',
+    companyName: row.name || '',
+    ownerName: row.owner_name || '',
+    address: row.address || '',
+    compType: row.company_type || '',
+    openingText: TM_DEFAULTS.openingText,
+    middleTextArial: TM_DEFAULTS.middleTextArial,
+    goodsDesc: row.details || '',
+    sealedTextPhrase: TM_DEFAULTS.sealedTextPhrase,
+    sealedDate: row.sealed_date || '',
+    logoText: row.name || '',
+    arialSize: TM_DEFAULTS.arialSize,
+    corsivSize: TM_DEFAULTS.corsivSize,
+    sealSize: TM_DEFAULTS.sealSize,
+    blueDateSize: TM_DEFAULTS.blueDateSize,
+    tmX: TM_DEFAULTS.tmX,
+    tmY: TM_DEFAULTS.tmY,
+    dateX: TM_DEFAULTS.dateX,
+    dateY: TM_DEFAULTS.dateY,
+    paraY: TM_DEFAULTS.paraY,
+    logoY: TM_DEFAULTS.logoY,
+    logoSize: TM_DEFAULTS.logoSize,
+    sealX: TM_DEFAULTS.sealX,
+    sealY: TM_DEFAULTS.sealY,
+    blueX: TM_DEFAULTS.blueX,
+    blueY: TM_DEFAULTS.blueY,
+    logoTextSize: TM_DEFAULTS.logoTextSize,
+    logoTextX: TM_DEFAULTS.logoTextX,
+    logoTextY: TM_DEFAULTS.logoTextY,
+    signX: TM_DEFAULTS.signX,
+    signY: TM_DEFAULTS.signY,
+    signSize: TM_DEFAULTS.signSize,
+    logoDataUrl: row.logo_data_url || null,
+    createdBy: row.created_by || null,
+    timestamp: row.synced_at ? formatTimestamp(new Date(row.synced_at)) : '—',
+  } as VaultRecord;
+}
+
+/** True when Postgres rejected the query for a `deleted_at` column that the
+ * deployment does not have yet (migration pending). */
+function isMissingDeletedAt(err: { message?: string } | null): boolean {
+  return /column .*deleted_at.*does not exist/i.test(err?.message ?? '');
 }
 
 /**
@@ -34,6 +101,8 @@ export async function commitCertificate(
     details: entry.goodsDesc || '',
     sealed_date: entry.sealedDate || '',
     synced_at: new Date().toISOString(),
+    // Re-saving a trashed record brings it back into the active vault.
+    deleted_at: null,
   };
   if (entry.logoDataUrl) payload.logo_data_url = entry.logoDataUrl;
 
@@ -75,15 +144,16 @@ export async function commitCertificate(
     return { error: `TM No. ${trademarkNo} is already archived in the vault. Use a different Trademark No. to save your own record.` };
   }
 
-  // Retry without any column the schema does not have yet (e.g. created_by or
-  // logo_data_url before its migration is applied) so the vault write still
-  // succeeds; the creator id / image persists once the migration is run.
+  // Retry without any column the schema does not have yet (e.g. created_by,
+  // logo_data_url, deleted_at before its migration is applied) so the vault
+  // write still succeeds; the extra data persists once the migration is run.
   let attempts = 0;
   while (result.error && attempts < 3) {
     const msg = result.error.message ?? '';
     const drops: string[] = [];
     if (/created_by/i.test(msg)) drops.push('created_by');
     if (/logo_data_url/i.test(msg)) drops.push('logo_data_url');
+    if (/deleted_at/i.test(msg)) drops.push('deleted_at');
     if (drops.length === 0) break;
     for (const key of drops) delete payload[key];
     result = existingRow
@@ -91,6 +161,16 @@ export async function commitCertificate(
       : await supabase.from('certificates').insert([payload]);
     attempts += 1;
   }
+
+  if (!result.error) {
+    void logAudit({
+      action: 'vault.saved',
+      targetType: 'certificate',
+      targetId: trademarkNo,
+      metadata: { name: entry.companyName || '', owner: entry.ownerName || '' },
+    });
+  }
+
   return { error: result.error ? result.error.message : null };
 }
 
@@ -130,79 +210,161 @@ export async function resolveCreatorEmails(
   }));
 }
 
+export interface VaultListQuery {
+  search?: string;
+  company?: string;
+  owner?: string;
+  type?: string;
+  createdBy?: string | null;
+  /** Inclusive lower bound on the archive date (`YYYY-MM-DD`). */
+  dateFrom?: string;
+  /** Inclusive upper bound on the archive date (`YYYY-MM-DD`). */
+  dateTo?: string;
+  /** `active` (default) hides trashed records; `trashed` shows only them. */
+  status?: 'active' | 'trashed';
+  page?: number;
+  pageSize?: number;
+}
+
+export interface VaultListResult {
+  records: VaultRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  error: string | null;
+}
+
+/**
+ * List vault records with search / filters / trash scope and server-side
+ * pagination. If the `deleted_at` migration has not been applied yet the
+ * trash filter is skipped so the vault keeps working.
+ */
+export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultListResult> {
+  const page = Math.max(1, q.page ?? 1);
+  const pageSize = Math.min(200, Math.max(1, q.pageSize ?? 50));
+  const status = q.status ?? 'active';
+
+  const build = (withTrash: boolean) => {
+    let query = supabase.from('certificates').select('*', { count: 'exact' });
+    if (withTrash) {
+      query = status === 'trashed' ? query.not('deleted_at', 'is', null) : query.is('deleted_at', null);
+    }
+    const search = q.search?.trim();
+    if (search) {
+      query = query.or(`trademark_no.ilike.%${search}%,name.ilike.%${search}%,owner_name.ilike.%${search}%`);
+    }
+    if (q.company?.trim()) query = query.ilike('name', `%${q.company.trim()}%`);
+    if (q.owner?.trim()) query = query.ilike('owner_name', `%${q.owner.trim()}%`);
+    if (q.type?.trim()) query = query.ilike('company_type', `%${q.type.trim()}%`);
+    if (q.createdBy) query = query.eq('created_by', q.createdBy);
+    if (q.dateFrom) query = query.gte('synced_at', new Date(`${q.dateFrom}T00:00:00`).toISOString());
+    if (q.dateTo) query = query.lte('synced_at', new Date(`${q.dateTo}T23:59:59.999`).toISOString());
+    return query.order('synced_at', { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1);
+  };
+
+  let { data, error, count } = await build(true);
+  if (error && isMissingDeletedAt(error)) {
+    const fallback = await build(false);
+    data = fallback.data;
+    error = fallback.error;
+    count = fallback.count;
+  }
+
+  if (error) return { records: [], total: 0, page, pageSize, error: error.message };
+  const records = (data ?? []).map(mapVaultRow);
+  return { records, total: count ?? records.length, page, pageSize, error: null };
+}
+
+/**
+ * Legacy loader used by the studio dashboard and NID/TIN editors. Same active
+ * (non-trashed) view as `listVaultRecords` with no pagination.
+ */
 export async function loadVault(): Promise<{ records: VaultRecord[]; error: string | null }> {
-  const { data, error } = await supabase
-    .from('certificates')
-    .select('*')
-    .order('synced_at', { ascending: false });
+  const build = (withTrash: boolean) => {
+    let query = supabase.from('certificates').select('*');
+    if (withTrash) query = query.is('deleted_at', null);
+    return query.order('synced_at', { ascending: false });
+  };
+
+  let { data, error } = await build(true);
+  if (error && isMissingDeletedAt(error)) {
+    const fallback = await build(false);
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   if (error) return { records: [], error: error.message };
-
-  const records = (data || []).map((row) => ({
-    trademarkNo: row.trademark_no || '',
-    regDate: row.reg_date || '',
-    appDate: row.app_date || '',
-    companyName: row.name || '',
-    ownerName: row.owner_name || '',
-    address: row.address || '',
-    compType: row.company_type || '',
-    openingText: TM_DEFAULTS.openingText,
-    middleTextArial: TM_DEFAULTS.middleTextArial,
-    goodsDesc: row.details || '',
-    sealedTextPhrase: TM_DEFAULTS.sealedTextPhrase,
-    sealedDate: row.sealed_date || '',
-    logoText: row.name || '',
-    arialSize: TM_DEFAULTS.arialSize,
-    corsivSize: TM_DEFAULTS.corsivSize,
-    sealSize: TM_DEFAULTS.sealSize,
-    blueDateSize: TM_DEFAULTS.blueDateSize,
-    tmX: TM_DEFAULTS.tmX,
-    tmY: TM_DEFAULTS.tmY,
-    dateX: TM_DEFAULTS.dateX,
-    dateY: TM_DEFAULTS.dateY,
-    paraY: TM_DEFAULTS.paraY,
-    logoY: TM_DEFAULTS.logoY,
-    logoSize: TM_DEFAULTS.logoSize,
-    sealX: TM_DEFAULTS.sealX,
-    sealY: TM_DEFAULTS.sealY,
-    blueX: TM_DEFAULTS.blueX,
-    blueY: TM_DEFAULTS.blueY,
-    logoTextSize: TM_DEFAULTS.logoTextSize,
-    logoTextX: TM_DEFAULTS.logoTextX,
-    logoTextY: TM_DEFAULTS.logoTextY,
-    signX: TM_DEFAULTS.signX,
-    signY: TM_DEFAULTS.signY,
-    signSize: TM_DEFAULTS.signSize,
-    logoDataUrl: row.logo_data_url || null,
-    createdBy: row.created_by || null,
-    timestamp: row.synced_at ? formatTimestamp(new Date(row.synced_at)) : '—',
-  })) as VaultRecord[];
-
+  const records = (data || []).map(mapVaultRow);
   return { records, error: null };
 }
 
 /**
- * Delete a vault certificate row.
- *
- * The production `certificates` table has NO `id` column (registration_no is
- * the primary key, trademark_no has a unique constraint), so `trademark_no` is
- * used as the delete key. The `certificates_delete_own` RLS policy scopes the
- * delete to the current user's own records (`created_by = auth.uid()`, active
- * account) while admins may delete any record, so a caller can only ever
- * remove a row that the History list is allowed to show them.
+ * Distinct vault creators for the "Created By" owner filter. Relies on the
+ * admin `profiles` read policy; non-admin callers receive an empty list.
  */
-export async function deleteVaultRecord(
-  trademarkNo: string,
-): Promise<{ error: string | null }> {
+export async function listVaultOwnerOptions(): Promise<{
+  options: { id: string; email: string }[];
+  error: string | null;
+}> {
+  const { data, error } = await supabase.from('profiles').select('id, email');
+  if (error) return { options: [], error: error.message };
+  const options = (data ?? [])
+    .filter((p): p is { id: string; email: string } => Boolean(p.id && p.email))
+    .map((p) => ({ id: String(p.id), email: String(p.email) }))
+    .sort((a, b) => a.email.localeCompare(b.email));
+  return { options, error: null };
+}
+
+/** Soft-delete a vault record (move to Trash). Re-save restores it. */
+export async function trashVaultRecord(trademarkNo: string): Promise<{ error: string | null }> {
+  if (!trademarkNo) return { error: 'Missing Trademark No. — cannot trash the record.' };
+  const { data, error } = await supabase
+    .from('certificates')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('trademark_no', trademarkNo)
+    .is('deleted_at', null)
+    .select('trademark_no');
+  if (error) return { error: error.message };
+  if (!data?.length) return { error: 'Record not found or already in the trash.' };
+  void logAudit({ action: 'vault.trashed', targetType: 'certificate', targetId: trademarkNo });
+  return { error: null };
+}
+
+/** Restore a soft-deleted vault record back to the active view. */
+export async function restoreVaultRecord(trademarkNo: string): Promise<{ error: string | null }> {
+  if (!trademarkNo) return { error: 'Missing Trademark No. — cannot restore the record.' };
+  const { data, error } = await supabase
+    .from('certificates')
+    .update({ deleted_at: null })
+    .eq('trademark_no', trademarkNo)
+    .not('deleted_at', 'is', null)
+    .select('trademark_no');
+  if (error) return { error: error.message };
+  if (!data?.length) return { error: 'Record not found or not in the trash.' };
+  void logAudit({ action: 'vault.restored', targetType: 'certificate', targetId: trademarkNo });
+  return { error: null };
+}
+
+/**
+ * Permanently delete a vault record — only allowed from the Trash view
+ * (the row must already be soft-deleted). The `certificates_delete_own` RLS
+ * policy scopes the delete to the current user's own records (active account)
+ * while admins may delete any record, so a caller can only ever remove a row
+ * that the History list is allowed to show them.
+ */
+export async function permanentDeleteVaultRecord(trademarkNo: string): Promise<{ error: string | null }> {
   if (!trademarkNo) return { error: 'Missing Trademark No. — cannot delete the record.' };
   const { data, error } = await supabase
     .from('certificates')
     .delete()
     .eq('trademark_no', trademarkNo)
+    .not('deleted_at', 'is', null)
     .select('trademark_no');
   if (error) return { error: error.message };
   if (!data?.length) {
-    return { error: 'Record not found or you do not have permission to delete it.' };
+    return { error: 'Record not found or it is not in the trash yet.' };
   }
+  void logAudit({ action: 'vault.deleted', targetType: 'certificate', targetId: trademarkNo });
   return { error: null };
 }
 
