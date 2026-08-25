@@ -19,7 +19,7 @@ export const TM_DEFAULTS: TMSnapshot = {
   middleTextArial: 'in class 41 under No.',
   goodsDesc:
     'in respect of online news publishing; digital journalism; media broadcasting; news reporting; photography; video production; social media news services and all other media services included in class-41.',
-  sealedTextPhrase: 'Sealed at my direction this .....day of......Month........',
+  sealedTextPhrase: 'Sealed at my direction this day of Month',
   sealedDate: '10 JUL 2024',
   logoText: '',
   arialSize: 50,
