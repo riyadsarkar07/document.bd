@@ -27,7 +27,11 @@ export function renderTMCertificate(
   const H = bgImg ? bgImg.naturalHeight : 1650;
   canvas.width = Math.round(W * scale);
   canvas.height = Math.round(H * scale);
-  if (scale !== 1) ctx.scale(scale, scale);
+  if (scale !== 1) {
+    ctx.scale(scale, scale);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+  }
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
   if (bgImg) {

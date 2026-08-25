@@ -31,6 +31,11 @@ import { PropertySlider } from '@/components/editor/property-slider';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 
+// Export renders at double resolution (4746×7016 ≈ 600 DPI at A4) so the
+// downloaded certificate stays sharp when zoomed or printed. Logical
+// certificate coordinates and aspect ratio are unchanged (renderer scale).
+const TM_EXPORT_SCALE = 2;
+
 export default function TMEditorPage() {
   return (
     <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-dimm">Loading editor…</div>}>
@@ -178,7 +183,7 @@ function TMEditorInner() {
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
     const canvas = document.createElement('canvas');
-    renderTMCertificate(canvas, presentRef.current, bg, logoImageRef.current, sign, 1);
+    renderTMCertificate(canvas, presentRef.current, bg, logoImageRef.current, sign, TM_EXPORT_SCALE);
     const link = document.createElement('a');
     link.download = `Certificate-TM-${presentRef.current.trademarkNo || 'export'}.jpg`;
     link.href = canvas.toDataURL('image/jpeg', 0.96);
@@ -204,7 +209,7 @@ function TMEditorInner() {
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
     const canvas = document.createElement('canvas');
-    renderTMCertificate(canvas, presentRef.current, bg, logoImageRef.current, sign, 1);
+    renderTMCertificate(canvas, presentRef.current, bg, logoImageRef.current, sign, TM_EXPORT_SCALE);
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: 'a4' });
     const pW = pdf.internal.pageSize.getWidth();
     const pH = pdf.internal.pageSize.getHeight();
