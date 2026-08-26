@@ -347,10 +347,11 @@ export async function restoreVaultRecord(trademarkNo: string): Promise<{ error: 
 
 /**
  * Permanently delete a vault record — only allowed from the Trash view
- * (the row must already be soft-deleted). The `certificates_delete_own` RLS
- * policy scopes the delete to the current user's own records (active account)
- * while admins may delete any record, so a caller can only ever remove a row
- * that the History list is allowed to show them.
+ * (the row must already be soft-deleted) and ADMIN-ONLY. The
+ * `certificates_delete_admin` RLS policy rejects the hard DELETE for every
+ * non-admin caller, so a normal user can only ever soft-delete (trash) or
+ * restore their own records — never destroy them. Admins may permanently
+ * delete any trashed record.
  */
 export async function permanentDeleteVaultRecord(trademarkNo: string): Promise<{ error: string | null }> {
   if (!trademarkNo) return { error: 'Missing Trademark No. — cannot delete the record.' };
@@ -362,7 +363,7 @@ export async function permanentDeleteVaultRecord(trademarkNo: string): Promise<{
     .select('trademark_no');
   if (error) return { error: error.message };
   if (!data?.length) {
-    return { error: 'Record not found or it is not in the trash yet.' };
+    return { error: 'Record not found, already removed, or only admins can permanently delete vault records.' };
   }
   void logAudit({ action: 'vault.deleted', targetType: 'certificate', targetId: trademarkNo });
   return { error: null };

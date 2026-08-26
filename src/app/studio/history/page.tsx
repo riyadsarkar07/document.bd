@@ -383,9 +383,11 @@ export default function HistoryPage() {
                                 <Button size="sm" variant="success" icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => setRestoreTarget(r)}>
                                   Restore
                                 </Button>
-                                <Button size="sm" variant="danger" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => setPurgeTarget(r)}>
-                                  Delete
-                                </Button>
+                                {isAdmin && (
+                                  <Button size="sm" variant="danger" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => setPurgeTarget(r)}>
+                                    Delete
+                                  </Button>
+                                )}
                               </>
                             ) : (
                               <>

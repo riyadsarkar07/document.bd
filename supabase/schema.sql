@@ -438,6 +438,11 @@ create policy "audit_logs_admin_read" on public.audit_logs
 -- see and manage everything. Legacy rows with created_by NULL become invisible
 -- to normal users, so no certificate leaks across accounts.
 --
+-- Trash / restore are soft operations (UPDATE on `deleted_at`) and are allowed
+-- for the record owner (or any admin). Permanent delete is a hard DELETE and is
+-- ADMIN-ONLY (policy `certificates_delete_admin` below), so a normal user can
+-- never destroy vault rows — even their own.
+--
 -- Guarded by a table-existence check because some environments do not create
 -- the legacy vault table at all (schema.sql uses `alter table if exists` for it).
 do $$
@@ -492,12 +497,14 @@ begin
     )
   $sql$;
 
+  -- Permanent (hard) delete is ADMIN-ONLY. Trash / restore are UPDATEs on
+  -- `deleted_at` (handled by the update policy above), so owners can still
+  -- soft-delete and restore their own records; only a hard DELETE that removes
+  -- the row is restricted to admins. This stops normal users from destroying
+  -- their own vault history while the admin audit trail stays authoritative.
   execute $sql$
-    create policy "certificates_delete_own" on public.certificates
-    for delete using (
-      (created_by = auth.uid() and public.is_active_user(auth.uid()))
-      or public.is_admin()
-    )
+    create policy "certificates_delete_admin" on public.certificates
+    for delete using (public.is_admin())
   $sql$;
 end $$;
 
