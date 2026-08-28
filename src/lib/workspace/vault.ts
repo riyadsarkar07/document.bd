@@ -4,7 +4,11 @@ import { supabase } from '@/lib/supabase/client';
 import { TM_DEFAULTS } from '@/lib/constants/tm';
 import { formatTimestamp } from '@/lib/utils';
 import { logAudit } from '@/lib/workspace/audit';
+import { VERIFY_BASE_URL } from '@/lib/verify-base';
 import type { TMSnapshot } from '@/lib/editor/types';
+
+/** Publication state of a vault record against the public verification portal. */
+export type PublishStatus = 'published' | 'pending' | 'failed' | 'unpublished';
 
 export interface VaultRecord extends TMSnapshot {
   timestamp: string;
@@ -12,6 +16,14 @@ export interface VaultRecord extends TMSnapshot {
   createdBy?: string | null;
   /** Resolved display email for `createdBy` (null when unknown / not visible). */
   creatorEmail?: string | null;
+  /** Publish pipeline state (undefined = never published). */
+  publishStatus?: PublishStatus | null;
+  /** When the record was last confirmed live on the portal. */
+  publishedAt?: string | null;
+  /** Last GitHub commit SHA that published/unpublished the record. */
+  publishCommitSha?: string | null;
+  /** Human-readable error from the last failed publish attempt. */
+  publishError?: string | null;
 }
 
 /** Raw `certificates` row columns the vault reads (kept optional because the
@@ -30,6 +42,10 @@ interface VaultRow {
   created_by?: string | null;
   synced_at?: string | null;
   deleted_at?: string | null;
+  publish_status?: string | null;
+  published_at?: string | null;
+  publish_commit_sha?: string | null;
+  publish_error?: string | null;
 }
 
 function mapVaultRow(row: VaultRow): VaultRecord {
@@ -71,6 +87,10 @@ function mapVaultRow(row: VaultRow): VaultRecord {
     logoDataUrl: row.logo_data_url || null,
     createdBy: row.created_by || null,
     timestamp: row.synced_at ? formatTimestamp(new Date(row.synced_at)) : '—',
+    publishStatus: (row.publish_status as PublishStatus) || null,
+    publishedAt: row.published_at ? formatTimestamp(new Date(row.published_at)) : null,
+    publishCommitSha: row.publish_commit_sha || null,
+    publishError: row.publish_error || null,
   } as VaultRecord;
 }
 
@@ -372,7 +392,5 @@ export async function permanentDeleteVaultRecord(trademarkNo: string): Promise<{
 /** Live verification link for a trademark number (preserved from original). */
 export function liveVerifyUrl(trademarkNo: string): string | null {
   const tm = trademarkNo.replace(/^Trademark\s*No\.\s*/i, '').trim();
-  return tm
-    ? `https://dpdt-govbd-trademek-database.vercel.app/verify?reg_no=${encodeURIComponent(tm)}`
-    : null;
+  return tm ? `${VERIFY_BASE_URL}/verify?reg_no=${encodeURIComponent(tm)}` : null;
 }

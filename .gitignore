@@ -30,3 +30,4 @@ next-env.d.ts
 /scripts/.render-*
 .vercel
 .env*
+!.env.example

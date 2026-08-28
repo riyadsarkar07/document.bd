@@ -6,6 +6,7 @@ import {
   FileDown,
   Loader2,
   Redo2,
+  Rocket,
   RotateCcw,
   Save,
   Undo2,
@@ -26,6 +27,7 @@ interface EditorToolbarProps {
   onExportPdf?: () => void;
   onPreview: () => void;
   onSaveProject?: () => void;
+  onPublish?: () => void;
   status?: string;
   lastSavedAt?: string | null;
   className?: string;
@@ -43,6 +45,7 @@ export function EditorToolbar({
   onExportPdf,
   onPreview,
   onSaveProject,
+  onPublish,
   status,
   lastSavedAt,
   className,
@@ -109,6 +112,13 @@ export function EditorToolbar({
       )}
 
       <div className="mx-1 h-5 w-px bg-line" />
+
+      {onPublish && (
+        <Button variant="cyber" size="sm" onClick={onPublish}>
+          <Rocket className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Publish</span>
+        </Button>
+      )}
 
       <Button variant="success" size="sm" onClick={onExportJpg}>
         <Download className="h-3.5 w-3.5" />

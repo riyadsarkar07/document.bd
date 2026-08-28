@@ -124,4 +124,9 @@ export const AUDIT_ACTIONS: { value: string; label: string }[] = [
   { value: 'project.deleted', label: 'Project · deleted' },
   { value: 'template.saved', label: 'Template · saved' },
   { value: 'template.deleted', label: 'Template · deleted' },
+  { value: 'publish.started', label: 'Publish · attempt started' },
+  { value: 'publish.success', label: 'Publish · published to portal' },
+  { value: 'publish.pending', label: 'Publish · committed, awaiting deploy' },
+  { value: 'publish.failed', label: 'Publish · failed' },
+  { value: 'publish.unpublished', label: 'Publish · removed from portal' },
 ];

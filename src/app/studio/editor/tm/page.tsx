@@ -22,6 +22,7 @@ import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/wor
 import { checkLimit } from '@/lib/workspace/limits';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useToast } from '@/lib/toast/toast-provider';
+import { apiPublish } from '@/lib/publish/publish-client';
 import { EditorToolbar } from '@/components/editor/editor-toolbar';
 import { EditorViewport } from '@/components/editor/editor-viewport';
 import { InspectorPanel } from '@/components/editor/inspector-panel';
@@ -36,6 +37,11 @@ import { Button } from '@/components/ui/button';
 // certificate coordinates and aspect ratio are unchanged (renderer scale).
 const TM_EXPORT_SCALE = 2;
 
+// The public verification portal receives a separate, web-optimized JPG.
+// Full-resolution export/download is untouched.
+const TM_PUBLISH_SCALE = 1;
+const TM_PUBLISH_QUALITY = 0.9;
+
 export default function TMEditorPage() {
   return (
     <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-dimm">Loading editor…</div>}>
@@ -46,7 +52,7 @@ export default function TMEditorPage() {
 
 function TMEditorInner() {
   const searchParams = useSearchParams();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const toast = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [logoImage, setLogoImage] = useState<HTMLImageElement | null>(null);
@@ -54,6 +60,8 @@ function TMEditorInner() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const canPublish = profile?.role === 'admin' || profile?.role === 'editor';
 
   const loadExternal = useCallback(() => {
     const projectId = searchParams.get('project');
@@ -322,6 +330,56 @@ function TMEditorInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [present, user, toast]);
 
+  const publishCertificate = useCallback(async () => {
+    if (!user) {
+      toast.error('Sign in to publish');
+      return;
+    }
+    if (!canPublish) {
+      toast.error('Only authorized admins/editors can publish.');
+      return;
+    }
+    const tmNo = String(presentRef.current.trademarkNo || '').trim();
+    if (!tmNo) {
+      toast.error('Enter a Trademark No. before publishing.');
+      return;
+    }
+    setBusy(true);
+    setStatus('Saving to Cloud Vault…');
+    const vault = await commitCertificate(presentRef.current, user.id);
+    if (vault.error) {
+      setBusy(false);
+      setStatus('Publish aborted — vault error');
+      toast.error(`Vault error: ${vault.error}`);
+      return;
+    }
+    setStatus('Rendering web-optimized certificate…');
+    const bg = await loadImage(TM_BACKGROUND);
+    const sign = await loadImage(TM_SIGNATURE);
+    const canvas = document.createElement('canvas');
+    renderTMCertificate(canvas, presentRef.current, bg, logoImageRef.current, sign, TM_PUBLISH_SCALE);
+    const imageDataUrl = canvas.toDataURL('image/jpeg', TM_PUBLISH_QUALITY);
+    setStatus('Publishing to verification portal…');
+    const result = await apiPublish({
+      regNo: tmNo,
+      name: presentRef.current.companyName,
+      applicationDate: presentRef.current.appDate,
+      authority: 'Department of Patents, Designs & Trademarks',
+      imageDataUrl,
+    });
+    setBusy(false);
+    if (result.ok) {
+      const live = result.status === 'published';
+      toast.success(live ? 'Published to the public verification portal' : 'Committed to GitHub — awaiting deployment');
+      setStatus(`Published · ${result.status} · ${(result.sha ?? '').slice(0, 7) || ''}`);
+      void logActivity({ user_id: user?.id, email: user?.email, action: 'publish.ui', detail: `TM ${tmNo}` });
+    } else {
+      setStatus('Publish failed');
+      toast.error(`Publish failed: ${result.error ?? 'unknown error'}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canPublish, toast, setBusy, setStatus, user]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -337,6 +395,7 @@ function TMEditorInner() {
           onExportPdf={exportPdf}
           onPreview={preview}
           onSaveProject={saveAsProject}
+          onPublish={canPublish ? publishCertificate : undefined}
           status={`${editor.status}${fontsLoaded ? '' : ' · fonts loading'}`}
         />
         <EditorViewport

@@ -546,6 +546,17 @@ alter table if exists public.certificates add column if not exists created_by uu
 -- a timestamp = record moved to Trash (hidden from normal views, restorable).
 alter table if exists public.certificates add column if not exists deleted_at timestamptz;
 
+-- Publish pipeline state for the public verification portal
+-- (dpdt-govbd-main). NULL publish_status = never published.
+--   'published'  -> committed to GitHub AND confirmed live on Vercel
+--   'pending'    -> committed to GitHub but not yet confirmed on the live site
+--   'failed'     -> the publish attempt failed (GitHub/validation), record intact
+--   'unpublished'-> removed from the portal (vault record retained for republish)
+alter table if exists public.certificates add column if not exists publish_status text;
+alter table if exists public.certificates add column if not exists published_at timestamptz;
+alter table if exists public.certificates add column if not exists publish_commit_sha text;
+alter table if exists public.certificates add column if not exists publish_error text;
+
 -- Index only applies to databases that actually have the legacy vault table
 -- (some fresh environments do not create it, so the columns above use `if exists`).
 do $$

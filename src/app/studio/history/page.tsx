@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Download, ExternalLink, History, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, Download, ExternalLink, History, Rocket, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import {
   listVaultRecords,
@@ -12,7 +12,13 @@ import {
   liveVerifyUrl,
   resolveCreatorEmails,
   type VaultRecord,
+  type PublishStatus,
 } from '@/lib/workspace/vault';
+import {
+  apiPublish,
+  apiPreflight,
+  type PreflightResult,
+} from '@/lib/publish/publish-client';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
 import { loadImage, loadDataUrlImage } from '@/lib/images';
 import { TM_BACKGROUND, TM_SIGNATURE } from '@/lib/constants/tm';
@@ -34,6 +40,7 @@ export default function HistoryPage() {
   const toast = useToast();
   const { user, profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
+  const canPublish = isAdmin || profile?.role === 'editor';
 
   const [records, setRecords] = useState<VaultRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +50,11 @@ export default function HistoryPage() {
   const [trashTarget, setTrashTarget] = useState<VaultRecord | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<VaultRecord | null>(null);
   const [purgeTarget, setPurgeTarget] = useState<VaultRecord | null>(null);
+  const [unpublishTarget, setUnpublishTarget] = useState<VaultRecord | null>(null);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [preflightOpen, setPreflightOpen] = useState(false);
+  const [preflightBusy, setPreflightBusy] = useState(false);
+  const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
 
   const [view, setView] = useState<'active' | 'trashed'>('active');
   const [search, setSearch] = useState('');
@@ -162,6 +174,111 @@ export default function HistoryPage() {
     await refresh();
   };
 
+  const renderRecordJpg = async (record: VaultRecord): Promise<string | null> => {
+    const bg = await loadImage(TM_BACKGROUND);
+    const sign = await loadImage(TM_SIGNATURE);
+    const logo = record.logoDataUrl ? await loadDataUrlImage(record.logoDataUrl) : null;
+    const canvas = document.createElement('canvas');
+    renderTMCertificate(canvas, record, bg, logo, sign);
+    return canvas.toDataURL('image/jpeg', 0.9);
+  };
+
+  const publishRecord = async (record: VaultRecord) => {
+    if (!canPublish) {
+      toast.error('Only authorized admins/editors can publish.');
+      return;
+    }
+    if (!record.trademarkNo) {
+      toast.error('This record has no Trademark No. — cannot publish.');
+      return;
+    }
+    setPublishBusy(true);
+    toast.info(`Publishing TM ${record.trademarkNo}…`);
+    const imageDataUrl = await renderRecordJpg(record);
+    if (!imageDataUrl) {
+      setPublishBusy(false);
+      toast.error('Could not render the certificate for publishing.');
+      return;
+    }
+    const result = await apiPublish({
+      regNo: record.trademarkNo,
+      name: record.companyName,
+      applicationDate: record.appDate,
+      imageDataUrl,
+    });
+    setPublishBusy(false);
+    if (result.ok) {
+      toast.success(result.status === 'published' ? 'Published to the public verification portal' : 'Committed to GitHub — awaiting deployment');
+    } else {
+      toast.error(`Publish failed: ${result.error ?? 'unknown error'}`);
+    }
+    await refresh();
+  };
+
+  const unpublishRecord = async (record: VaultRecord) => {
+    if (!canPublish) return;
+    setPublishBusy(true);
+    toast.info(`Removing TM ${record.trademarkNo} from the portal…`);
+    const result = await apiPublish({ regNo: record.trademarkNo, action: 'unpublish' });
+    setPublishBusy(false);
+    if (result.ok) {
+      toast.success('Record removed from the public portal (vault copy kept)');
+    } else {
+      toast.error(`Unpublish failed: ${result.error ?? 'unknown error'}`);
+    }
+    setUnpublishTarget(null);
+    await refresh();
+  };
+
+  const runPreflight = async () => {
+    if (!canPublish) {
+      toast.error('Only authorized admins/editors can run the preflight check.');
+      return;
+    }
+    setPreflightBusy(true);
+    setPreflightResult(null);
+    setPreflightOpen(true);
+    const result = await apiPreflight();
+    setPreflightResult(result);
+    setPreflightBusy(false);
+    if (result.ok) {
+      toast.success('Preflight passed — ready to publish');
+    } else if (result.checks?.length) {
+      toast.error('Preflight found issues — review the report');
+    } else if (result.error) {
+      toast.error(`Preflight failed: ${result.error}`);
+    }
+  };
+
+  const publishStatusBadge = (status: PublishStatus | null | undefined) => {
+    switch (status) {
+      case 'published':
+        return (
+          <Badge tone="green" dot>
+            Published
+          </Badge>
+        );
+      case 'pending':
+        return (
+          <Badge tone="warning" dot>
+            Pending
+          </Badge>
+        );
+      case 'failed':
+        return (
+          <Badge tone="red" dot>
+            Failed
+          </Badge>
+        );
+      case 'unpublished':
+        return (
+          <Badge tone="muted">Unpublished</Badge>
+        );
+      default:
+        return <span className="font-mono text-[11px] italic text-dimm">—</span>;
+    }
+  };
+
   const hasFilters = Boolean(search.trim() || company.trim() || owner.trim() || type.trim() || dateFrom || dateTo || createdBy);
 
   const ownerSelectOptions = [{ value: '', label: 'Created By — all users' }, ...ownerOptions.map((o) => ({ value: o.id, label: o.email }))];
@@ -173,11 +290,23 @@ export default function HistoryPage() {
         subtitle="Cloud Vault — archived certificate exports backed by Supabase"
         icon={<History className="h-5 w-5" />}
         actions={
-          <Link href="/studio/editor/tm">
-            <Button variant="ghost" icon={<ArrowLeft className="h-4 w-4" />}>
-              Back to Editor
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            {canPublish && (
+              <Button
+                variant="ghost"
+                icon={<ShieldCheck className="h-4 w-4" />}
+                disabled={preflightBusy}
+                onClick={runPreflight}
+              >
+                Preflight
+              </Button>
+            )}
+            <Link href="/studio/editor/tm">
+              <Button variant="ghost" icon={<ArrowLeft className="h-4 w-4" />}>
+                Back to Editor
+              </Button>
+            </Link>
+          </div>
         }
       />
 
@@ -324,6 +453,7 @@ export default function HistoryPage() {
                     <th className="px-4 py-3">Archived</th>
                     <th className="px-4 py-3">Created By</th>
                     <th className="px-4 py-3">Live</th>
+                    <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Operations</th>
                   </tr>
                 </thead>
@@ -373,6 +503,13 @@ export default function HistoryPage() {
                             <span className="font-mono text-[11px] italic text-dimm">No TM No.</span>
                           )}
                         </td>
+                        <td className="px-4 py-3">
+                          {r.publishStatus === 'failed' && r.publishError ? (
+                            <span title={r.publishError}>{publishStatusBadge(r.publishStatus)}</span>
+                          ) : (
+                            publishStatusBadge(r.publishStatus)
+                          )}
+                        </td>
                         <td className="whitespace-nowrap px-4 py-3">
                           <div className="flex gap-1.5">
                             <Button size="sm" variant="outline" onClick={() => openPreview(r)}>
@@ -391,6 +528,30 @@ export default function HistoryPage() {
                               </>
                             ) : (
                               <>
+                                {canPublish && (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="soft"
+                                      icon={<Rocket className="h-3.5 w-3.5" />}
+                                      disabled={publishBusy}
+                                      onClick={() => publishRecord(r)}
+                                    >
+                                      {r.publishStatus === 'published' ? 'Republish' : 'Publish'}
+                                    </Button>
+                                    {r.publishStatus && r.publishStatus !== 'unpublished' && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        icon={<Ban className="h-3.5 w-3.5" />}
+                                        disabled={publishBusy}
+                                        onClick={() => setUnpublishTarget(r)}
+                                      >
+                                        Unpublish
+                                      </Button>
+                                    )}
+                                  </>
+                                )}
                                 <Button size="sm" variant="success" onClick={() => downloadRecord(r)}>
                                   <Download className="h-3.5 w-3.5" />
                                 </Button>
@@ -464,6 +625,76 @@ export default function HistoryPage() {
         body={`TM No. "${purgeTarget?.trademarkNo}" (${purgeTarget?.companyName}) will be permanently removed from the vault. This cannot be undone.`}
         confirmLabel="Delete Permanently"
       />
+
+      <ConfirmDialog
+        open={Boolean(unpublishTarget)}
+        onClose={() => setUnpublishTarget(null)}
+        onConfirm={() => unpublishTarget && unpublishRecord(unpublishTarget)}
+        title="Unpublish from the portal?"
+        body={`TM No. "${unpublishTarget?.trademarkNo}" (${unpublishTarget?.companyName}) will be removed from the public verification portal (data.json + certificate image). The vault copy stays intact so it can be republished later.`}
+        confirmLabel="Unpublish"
+        danger={false}
+      />
+
+      <Modal
+        open={preflightOpen}
+        onClose={() => setPreflightOpen(false)}
+        title="Publish pipeline preflight"
+        meta={
+          preflightResult?.target
+            ? `${preflightResult.target.owner}/${preflightResult.target.repo}@${preflightResult.target.branch}`
+            : undefined
+        }
+        maxWidth="max-w-2xl"
+        footer={
+          preflightResult?.ok ? (
+            <Button variant="success" onClick={() => setPreflightOpen(false)}>
+              Ready to publish
+            </Button>
+          ) : (
+            <Button onClick={() => setPreflightOpen(false)}>Close</Button>
+          )
+        }
+      >
+        {preflightBusy ? (
+          <div className="py-16 text-center text-sm text-dimm">Running checks…</div>
+        ) : preflightResult?.error && !preflightResult.checks?.length ? (
+          <div className="py-8 text-center text-sm text-danger">{preflightResult.error}</div>
+        ) : (
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-raised px-3 py-2 text-[11.5px] text-muted">
+              <span>
+                Checked as <span className="font-semibold text-primary">{preflightResult?.caller?.email ?? '—'}</span>
+              </span>
+              <span>
+                Role <span className="font-semibold text-accent-bright">{preflightResult?.caller?.role ?? '—'}</span>
+              </span>
+            </div>
+            {(preflightResult?.checks ?? []).map((check) => (
+              <div
+                key={check.name}
+                className={cn(
+                  'flex items-start gap-3 rounded-xl border px-3.5 py-2.5',
+                  check.ok ? 'border-emerald-500/25 bg-emerald-500/5' : 'border-danger/30 bg-danger/5',
+                )}
+              >
+                <span
+                  className={cn(
+                    'mt-0.5 h-4 w-4 shrink-0 rounded-full text-center text-[10px] font-bold leading-4',
+                    check.ok ? 'bg-emerald-500/20 text-emerald-400' : 'bg-danger/20 text-danger',
+                  )}
+                >
+                  {check.ok ? '✓' : '✕'}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-primary">{check.name}</p>
+                  <p className="mt-0.5 text-[11.5px] leading-snug text-muted">{check.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
