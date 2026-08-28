@@ -12,7 +12,7 @@ import {
   Type,
 } from 'lucide-react';
 import { useDocumentEditor } from '@/lib/editor/use-document-editor';
-import { TM_DEFAULTS, TM_SECTIONS, TM_BACKGROUND, TM_SIGNATURE, TM_TEXT_FIELDS } from '@/lib/constants/tm';
+import { TM_DEFAULTS, TM_SECTIONS, TM_BACKGROUND, TM_SIGNATURE, TM_TEXT_FIELDS, TM_EXPORT_SCALE } from '@/lib/constants/tm';
 import type { TMSnapshot } from '@/lib/editor/types';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
 import { loadImage, loadDataUrlImage } from '@/lib/images';
@@ -32,16 +32,10 @@ import { PropertySlider } from '@/components/editor/property-slider';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 
-// Export renders at double resolution (4746×7016 ≈ 600 DPI at A4) so the
-// downloaded certificate stays sharp when zoomed or printed. Logical
-// certificate coordinates and aspect ratio are unchanged (renderer scale).
-const TM_EXPORT_SCALE = 2;
-
 // The public verification portal receives a separate, web-optimized JPG.
 // Full-resolution export/download is untouched.
 const TM_PUBLISH_SCALE = 1;
 const TM_PUBLISH_QUALITY = 0.9;
-
 export default function TMEditorPage() {
   return (
     <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-dimm">Loading editor…</div>}>

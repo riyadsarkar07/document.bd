@@ -137,6 +137,15 @@ export const TM_SECTIONS: InspectorSection[] = [
 export const TM_BACKGROUND = '/assets/cert-bangladesh.png';
 export const TM_SIGNATURE = '/assets/sign remove.png';
 
+/**
+ * Export/preview renders at double resolution (4746×7016 ≈ 600 DPI at A4) so
+ * downloaded certificates stay sharp when zoomed or printed. Logical
+ * certificate coordinates and aspect ratio are unchanged (renderer scale).
+ * History preview + download use the same scale so the reconstructed image
+ * matches the originally exported certificate pixel-for-pixel.
+ */
+export const TM_EXPORT_SCALE = 2;
+
 /** Keys treated as plain string inputs on the certificate. */
 export const TM_TEXT_FIELDS: { key: keyof TMSnapshot; label: string; textarea?: boolean }[] = [
   { key: 'trademarkNo', label: 'Trademark No.' },

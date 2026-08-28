@@ -62,7 +62,11 @@ function mapVaultRow(row: VaultRow): VaultRecord {
     goodsDesc: row.details || '',
     sealedTextPhrase: TM_DEFAULTS.sealedTextPhrase,
     sealedDate: row.sealed_date || '',
-    logoText: row.name || '',
+    // `logoText` is not persisted in the vault row. Deriving it from the
+    // company name would inject a duplicate text box beside the embedded
+    // logo that was never part of the exported certificate (exports use the
+    // empty default), so it stays empty to match the original JPG exactly.
+    logoText: '',
     arialSize: TM_DEFAULTS.arialSize,
     corsivSize: TM_DEFAULTS.corsivSize,
     sealSize: TM_DEFAULTS.sealSize,

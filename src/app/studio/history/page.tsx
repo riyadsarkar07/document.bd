@@ -21,7 +21,7 @@ import {
 } from '@/lib/publish/publish-client';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
 import { loadImage, loadDataUrlImage } from '@/lib/images';
-import { TM_BACKGROUND, TM_SIGNATURE } from '@/lib/constants/tm';
+import { TM_BACKGROUND, TM_SIGNATURE, TM_EXPORT_SCALE } from '@/lib/constants/tm';
 import { useAuth } from '@/lib/auth/auth-context';
 import { Card, PageHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -126,7 +126,7 @@ export default function HistoryPage() {
     const sign = await loadImage(TM_SIGNATURE);
     const logo = record.logoDataUrl ? await loadDataUrlImage(record.logoDataUrl) : null;
     const canvas = document.createElement('canvas');
-    renderTMCertificate(canvas, record, bg, logo, sign);
+    renderTMCertificate(canvas, record, bg, logo, sign, TM_EXPORT_SCALE);
     setPreviewImg(canvas.toDataURL('image/jpeg', 0.96));
   };
 
@@ -136,7 +136,7 @@ export default function HistoryPage() {
     const sign = await loadImage(TM_SIGNATURE);
     const logo = record.logoDataUrl ? await loadDataUrlImage(record.logoDataUrl) : null;
     const canvas = document.createElement('canvas');
-    renderTMCertificate(canvas, record, bg, logo, sign);
+    renderTMCertificate(canvas, record, bg, logo, sign, TM_EXPORT_SCALE);
     const link = document.createElement('a');
     link.download = `Archive-TM-${record.trademarkNo || 'cert'}.jpg`;
     link.href = canvas.toDataURL('image/jpeg', 0.96);
@@ -578,11 +578,9 @@ export default function HistoryPage() {
         open={Boolean(preview)}
         onClose={() => setPreview(null)}
         title={`TM No. ${preview?.trademarkNo ?? ''}`}
-        meta={`${preview?.companyName} · ${preview?.ownerName} · ${preview?.timestamp}`}
         maxWidth="max-w-3xl"
         footer={
-          <div className="flex w-full items-center justify-between">
-            <span className="font-mono text-[11px] text-dimm">Archived: {preview?.timestamp}</span>
+          <div className="flex w-full items-center justify-end">
             <Button variant="success" onClick={() => preview && downloadRecord(preview)}>
               <Download className="h-4 w-4" /> Download JPG
             </Button>
@@ -591,7 +589,7 @@ export default function HistoryPage() {
       >
         {previewImg ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={previewImg} alt={`TM ${preview?.trademarkNo} preview`} className="mx-auto max-h-[70vh] w-auto rounded-md shadow-deep" />
+          <img src={previewImg} alt={`Certificate TM ${preview?.trademarkNo ?? ''}`} className="mx-auto max-h-[70vh] w-auto rounded-md shadow-deep" />
         ) : (
           <div className="py-20 text-center text-sm text-dimm">Rendering preview…</div>
         )}
