@@ -70,3 +70,42 @@ export async function authorize(
     caller: { sb, userId: user.id, email: user.email ?? '', role },
   };
 }
+
+/**
+ * User-side publish authorization: lets an ACTIVE non-admin user publish their
+ * OWN purchased/eligible certificates. Eligibility comes from the admin-set
+ * `profiles.can_self_publish` flag. Ownership is enforced separately in the
+ * route (`assertOwnership`) — this only proves the caller may self-publish at all.
+ *
+ * Admin/editor callers never reach this path (they already pass `authorize`),
+ * so the admin/editor publish flow is unchanged.
+ */
+export async function authorizeUserPublish(
+  token: string | null,
+): Promise<{ ok: true; caller: Caller } | { ok: false; status: number; error: string }> {
+  if (!token) return { ok: false, status: 401, error: 'Missing authorization token.' };
+  const sb = authedClient(token);
+  const {
+    data: { user },
+    error,
+  } = await sb.auth.getUser();
+  if (error || !user) return { ok: false, status: 401, error: 'Invalid or expired session.' };
+
+  const { data: profile } = await sb
+    .from('profiles')
+    .select('role, status, can_self_publish')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profile?.status !== 'active') {
+    return { ok: false, status: 403, error: 'This account is suspended.' };
+  }
+  if (!profile?.can_self_publish) {
+    return { ok: false, status: 403, error: 'Your account is not eligible to publish certificates. Contact an administrator.' };
+  }
+
+  return {
+    ok: true,
+    caller: { sb, userId: user.id, email: user.email ?? '', role: profile.role ?? 'viewer' },
+  };
+}

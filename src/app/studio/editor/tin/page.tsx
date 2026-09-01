@@ -300,6 +300,11 @@ function TINEditorInner() {
       toast.error(limit.message ?? 'Export limit reached.');
       return;
     }
+    const generationLimit = await checkLimit('generation');
+    if (!generationLimit.ok) {
+      toast.error(generationLimit.message ?? 'Generation limit reached.');
+      return;
+    }
     const canvas = document.createElement('canvas');
     renderTINDocument(canvas, presentRef.current, qrImgRef.current, 1, bgImgRef.current);
     const link = document.createElement('a');
@@ -315,6 +320,11 @@ function TINEditorInner() {
     const limit = await checkLimit('export');
     if (!limit.ok) {
       toast.error(limit.message ?? 'Export limit reached.');
+      return;
+    }
+    const generationLimit = await checkLimit('generation');
+    if (!generationLimit.ok) {
+      toast.error(generationLimit.message ?? 'Generation limit reached.');
       return;
     }
     const canvas = document.createElement('canvas');

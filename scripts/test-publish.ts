@@ -21,6 +21,8 @@ import {
 } from '../src/lib/publish/schema';
 import { withRecord, withoutRecord } from '../src/lib/publish/data';
 import { githubEnv } from '../src/lib/publish/github';
+import { hasToolAccess, canSelfPublish } from '../src/lib/workspace/access';
+import { isGenerationLimited, generationPeriodLabel } from '../src/lib/workspace/limits';
 
 const ROOT = process.cwd();
 
@@ -144,6 +146,31 @@ function main() {
   assert(env.token === 'ghp_test_only' && env.owner === 'riyadsarkar07' && env.repo === 'dpdt-govbd-main', 'env resolved from process.env + defaults');
   if (savedToken === undefined) delete process.env.GITHUB_TOKEN;
   else process.env.GITHUB_TOKEN = savedToken;
+
+  console.log('\n[6] per-user tool access (mirrors schema.sql has_tool_access)\n');
+  assert(hasToolAccess(null, 'tm') === false, 'no profile -> no access');
+  assert(hasToolAccess({ role: 'admin', allowed_tools: ['nid'] }, 'tm') === true, 'admin bypasses the allowlist');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'tm') === true, 'null allowlist -> all tools');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['nid'] }, 'nid') === true, 'allowed scope passes');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['nid'] }, 'tm') === false, 'blocked scope fails');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: [] }, 'tm') === false, 'empty allowlist -> no tools');
+  assert(hasToolAccess({ role: 'editor', allowed_tools: ['tm', 'history'] }, 'projects') === false, 'editor is gated by the allowlist too');
+
+  console.log('\n[7] user self-publish eligibility (mirrors profiles.can_self_publish)\n');
+  assert(canSelfPublish({ role: 'viewer', can_self_publish: true }) === true, 'purchased viewer can self-publish');
+  assert(canSelfPublish({ role: 'viewer', can_self_publish: false }) === false, 'non-purchased viewer cannot');
+  assert(canSelfPublish(null) === false, 'no profile cannot self-publish');
+
+  console.log('\n[8] generation limits (mirrors schema.sql can_generate)\n');
+  assert(isGenerationLimited({ genPeriod: 'unlimited', genLimit: 5, generations: 9 }) === false, 'unlimited period ignores the cap');
+  assert(isGenerationLimited({ genPeriod: 'daily', genLimit: null, generations: 9 }) === false, 'null cap -> unlimited');
+  assert(isGenerationLimited({ genPeriod: 'daily', genLimit: 5, generations: 4 }) === false, 'under the cap -> allowed');
+  assert(isGenerationLimited({ genPeriod: 'daily', genLimit: 5, generations: 5 }) === true, 'at the cap -> blocked');
+  assert(isGenerationLimited({ genPeriod: 'weekly', genLimit: 2, generations: 3 }) === true, 'over the weekly cap -> blocked');
+  assert(generationPeriodLabel('daily') === 'day', 'period label maps daily');
+  assert(generationPeriodLabel('weekly') === 'week', 'period label maps weekly');
+  assert(generationPeriodLabel('monthly') === 'month', 'period label maps monthly');
+  assert(generationPeriodLabel(null) === 'period', 'period label falls back');
 
   console.log(`\n${failures === 0 ? '✓ ALL PUBLISH CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);

@@ -23,6 +23,7 @@ import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
 import { loadImage, loadDataUrlImage } from '@/lib/images';
 import { TM_BACKGROUND, TM_SIGNATURE, TM_EXPORT_SCALE } from '@/lib/constants/tm';
 import { useAuth } from '@/lib/auth/auth-context';
+import { canSelfPublish } from '@/lib/workspace/access';
 import { Card, PageHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +42,7 @@ export default function HistoryPage() {
   const { user, profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
   const canPublish = isAdmin || profile?.role === 'editor';
+  const userCanSelfPublish = canSelfPublish(profile);
 
   const [records, setRecords] = useState<VaultRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -184,8 +186,9 @@ export default function HistoryPage() {
   };
 
   const publishRecord = async (record: VaultRecord) => {
-    if (!canPublish) {
-      toast.error('Only authorized admins/editors can publish.');
+    const ownRecord = record.createdBy === user?.id;
+    if (!canPublish && !(userCanSelfPublish && ownRecord)) {
+      toast.error(userCanSelfPublish ? 'You can only publish your own certificates.' : 'Only authorized admins/editors can publish.');
       return;
     }
     if (!record.trademarkNo) {
@@ -216,7 +219,8 @@ export default function HistoryPage() {
   };
 
   const unpublishRecord = async (record: VaultRecord) => {
-    if (!canPublish) return;
+    const ownRecord = record.createdBy === user?.id;
+    if (!canPublish && !(userCanSelfPublish && ownRecord)) return;
     setPublishBusy(true);
     toast.info(`Removing TM ${record.trademarkNo} from the portal…`);
     const result = await apiPublish({ regNo: record.trademarkNo, action: 'unpublish' });
@@ -461,6 +465,8 @@ export default function HistoryPage() {
                   {records.map((r, i) => {
                     const url = liveVerifyUrl(r.trademarkNo);
                     const rowNum = (page - 1) * PAGE_SIZE + i + 1;
+                    const isOwn = Boolean(user?.id && r.createdBy === user.id);
+                    const canPublishRow = canPublish || (userCanSelfPublish && isOwn);
                     return (
                       <tr
                         key={r.trademarkNo || `${view}-${i}`}
@@ -528,7 +534,7 @@ export default function HistoryPage() {
                               </>
                             ) : (
                               <>
-                                {canPublish && (
+                                {canPublishRow && (
                                   <>
                                     <Button
                                       size="sm"

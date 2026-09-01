@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/auth-context';
 import { canManageUsers, ROLE_LABEL } from '@/lib/auth/types';
+import { hasToolAccess, type ToolScope } from '@/lib/workspace/access';
 import { Brand } from '@/components/layout/brand';
 
 interface NavItem {
@@ -27,19 +28,20 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   admin?: boolean;
+  scope?: ToolScope;
   section?: string;
 }
 
 const NAV: NavItem[] = [
-  { href: '/studio', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/studio/editor/tm', label: 'TM Certificate', icon: FileText, section: 'Studio' },
-  { href: '/studio/editor/nid', label: 'NID Card', icon: CreditCard },
-  { href: '/studio/editor/tin', label: 'TIN Record', icon: Landmark },
-  { href: '/studio/templates', label: 'Templates', icon: Shapes },
-  { href: '/studio/projects', label: 'Projects', icon: FolderKanban },
-  { href: '/studio/history', label: 'History', icon: History },
-  { href: '/studio/assets', label: 'Assets', icon: Package, section: 'Workspace' },
-  { href: '/studio/settings', label: 'Settings', icon: Settings },
+  { href: '/studio', label: 'Dashboard', icon: LayoutDashboard, scope: 'dashboard' },
+  { href: '/studio/editor/tm', label: 'TM Certificate', icon: FileText, scope: 'tm', section: 'Studio' },
+  { href: '/studio/editor/nid', label: 'NID Card', icon: CreditCard, scope: 'nid' },
+  { href: '/studio/editor/tin', label: 'TIN Record', icon: Landmark, scope: 'tin' },
+  { href: '/studio/templates', label: 'Templates', icon: Shapes, scope: 'templates' },
+  { href: '/studio/projects', label: 'Projects', icon: FolderKanban, scope: 'projects' },
+  { href: '/studio/history', label: 'History', icon: History, scope: 'history' },
+  { href: '/studio/assets', label: 'Assets', icon: Package, scope: 'assets', section: 'Workspace' },
+  { href: '/studio/settings', label: 'Settings', icon: Settings, scope: 'settings' },
   { href: '/studio/users', label: 'Users', icon: Users, admin: true },
   { href: '/studio/activity', label: 'Activity Logs', icon: Activity, admin: true },
 ];
@@ -54,7 +56,7 @@ function groupBy<T>(items: T[], key: (item: T) => string | undefined) {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { role } = useAuth();
+  const { role, profile } = useAuth();
   const groups = groupBy(NAV, (n) => n.section);
 
   return (
@@ -65,7 +67,9 @@ export function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto px-3 py-5">
         {Object.entries(groups).map(([section, items]) => {
-          const visible = items.filter((item) => !item.admin || canManageUsers(role));
+          const visible = items.filter(
+            (item) => (!item.admin || canManageUsers(role)) && (!item.scope || hasToolAccess(profile, item.scope)),
+          );
           if (!visible.length) return null;
           return (
             <div key={section} className="mb-6">

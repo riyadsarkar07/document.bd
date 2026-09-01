@@ -56,6 +56,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         max_projects: data.max_projects != null ? Number(data.max_projects) : null,
         max_documents: data.max_documents != null ? Number(data.max_documents) : null,
         max_exports: data.max_exports != null ? Number(data.max_exports) : null,
+        allowed_tools: Array.isArray(data.allowed_tools) ? (data.allowed_tools as string[]) : null,
+        gen_period: typeof data.gen_period === 'string' ? data.gen_period : null,
+        gen_limit: data.gen_limit != null ? Number(data.gen_limit) : null,
+        can_self_publish: Boolean(data.can_self_publish),
         created_at: data.created_at,
       });
       return;
@@ -89,6 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       max_projects: inserted.max_projects != null ? Number(inserted.max_projects) : null,
       max_documents: inserted.max_documents != null ? Number(inserted.max_documents) : null,
       max_exports: inserted.max_exports != null ? Number(inserted.max_exports) : null,
+      allowed_tools: Array.isArray(inserted.allowed_tools) ? (inserted.allowed_tools as string[]) : null,
+      gen_period: typeof inserted.gen_period === 'string' ? inserted.gen_period : null,
+      gen_limit: inserted.gen_limit != null ? Number(inserted.gen_limit) : null,
+      can_self_publish: Boolean(inserted.can_self_publish),
       created_at: inserted.created_at,
     });
   }, []);

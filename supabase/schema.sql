@@ -42,6 +42,21 @@ alter table public.profiles add column if not exists max_projects int;
 alter table public.profiles add column if not exists max_documents int;
 alter table public.profiles add column if not exists max_exports int;
 
+-- ────────────────────────── profiles — tool access & generation limits ──────────────────────────
+-- Per-user tool/page access + generation limits (admin-managed). All columns
+-- default to the "no restriction" state so existing users keep full access:
+--   allowed_tools   explicit list of tool scopes the user may use; NULL = all tools.
+--   gen_period      rolling window for the generation cap ('daily'/'weekly'/'monthly');
+--                   'unlimited' (default) disables the period cap regardless of gen_limit.
+--   gen_limit       max generations (certificate exports) inside the window; NULL = unlimited.
+--   can_self_publish  the user has purchased/paid and may publish their OWN vault
+--                     records to the public verification portal (server-enforced).
+alter table public.profiles add column if not exists allowed_tools text[];
+alter table public.profiles add column if not exists gen_period text not null default 'unlimited'
+  check (gen_period in ('daily', 'weekly', 'monthly', 'unlimited'));
+alter table public.profiles add column if not exists gen_limit int;
+alter table public.profiles add column if not exists can_self_publish boolean not null default false;
+
 alter table public.profiles enable row level security;
 
 -- ────────────────────────── templates ──────────────────────────
@@ -167,6 +182,76 @@ as $$
   select coalesce((select p.status = 'active' from public.profiles p where p.id = uid), true);
 $$;
 
+-- Map a generation/save activity action to the tool scope it belongs to
+-- ('tm' / 'nid' / 'tin' / 'projects'). Returns NULL for actions that are not
+-- tool-bound (e.g. 'publish.ui').
+create or replace function public.action_scope(action text)
+returns text
+language sql immutable
+as $$
+  select case
+    when action like 'export.tm.%' or action like 'save.tm.%' then 'tm'
+    when action like 'export.nid.%' or action like 'save.nid.%' then 'nid'
+    when action like 'export.tin.%' or action like 'save.tin.%' then 'tin'
+    when action = 'project.save' then 'projects'
+    else null
+  end;
+$$;
+
+-- May this user use the given tool scope? Admins always pass; a NULL
+-- allowed_tools (unset) grants every tool for backward compatibility.
+create or replace function public.has_tool_access(uid uuid, scope text)
+returns boolean
+language sql stable security definer
+as $$
+  select coalesce((
+    select
+      p.status = 'active'
+      and (p.role = 'admin' or p.allowed_tools is null or coalesce(scope = any(p.allowed_tools), false))
+    from public.profiles p
+    where p.id = uid
+  ), false);
+$$;
+
+-- Number of generations (certificate exports) logged by the user inside the
+-- rolling window for `period`. Any period other than daily/weekly/monthly
+-- returns the lifetime count (used when the cap is disabled).
+create or replace function public.generation_count_in_period(uid uuid, period text)
+returns bigint
+language sql stable security definer
+as $$
+  select count(*) from public.activity_logs a
+  where a.user_id = uid
+    and a.action like 'export.%'
+    and case period
+      when 'daily' then a.created_at >= now() - interval '1 day'
+      when 'weekly' then a.created_at >= now() - interval '1 week'
+      when 'monthly' then a.created_at >= now() - interval '1 month'
+      else true
+    end;
+$$;
+
+-- May this user generate a certificate right now? Enforces the per-user
+-- generation cap (gen_limit over the rolling gen_period window). Admins and
+-- 'unlimited' periods are always allowed.
+create or replace function public.can_generate(uid uuid)
+returns boolean
+language sql stable security definer
+as $$
+  select coalesce((
+    select
+      p.status = 'active'
+      and (
+        p.role = 'admin'
+        or p.gen_period = 'unlimited'
+        or p.gen_limit is null
+        or p.gen_limit > public.generation_count_in_period(uid, p.gen_period)
+      )
+    from public.profiles p
+    where p.id = uid
+  ), true);
+$$;
+
 -- May this user create a new project row (enforces max_projects)?
 create or replace function public.can_create_project(uid uuid)
 returns boolean
@@ -180,7 +265,12 @@ as $$
   ), true);
 $$;
 
--- May this user record an activity action (enforces max_documents / max_exports)?
+-- May this user record an activity action?
+--   export.*   -> max_exports (lifetime) AND generation cap (gen_limit over the
+--                rolling gen_period window) AND access to the exporting tool.
+--   save.*     -> max_documents (lifetime) AND access to the saving tool.
+-- Tool access + generation limits are enforced HERE (server-side RLS gate),
+-- not only in the UI.
 create or replace function public.can_log_action(uid uuid, action text)
 returns boolean
 language sql stable security definer
@@ -189,11 +279,14 @@ as $$
     select
       case
         when action like 'export.%' then
-          p.max_exports is null
-            or p.max_exports > (select count(*) from public.activity_logs a where a.user_id = uid and a.action like 'export.%')
+          (p.max_exports is null
+            or p.max_exports > (select count(*) from public.activity_logs a where a.user_id = uid and a.action like 'export.%'))
+          and public.can_generate(uid)
+          and public.has_tool_access(uid, coalesce(public.action_scope(action), 'tm'))
         when action like 'save.%' or action = 'project.save' then
-          p.max_documents is null
-            or p.max_documents > (select count(*) from public.activity_logs a where a.user_id = uid and (a.action like 'save.%' or a.action = 'project.save'))
+          (p.max_documents is null
+            or p.max_documents > (select count(*) from public.activity_logs a where a.user_id = uid and (a.action like 'save.%' or a.action = 'project.save')))
+          and public.has_tool_access(uid, coalesce(public.action_scope(action), 'tm'))
         else true
       end
     from public.profiles p
@@ -202,14 +295,24 @@ as $$
 $$;
 
 -- Current user's own usage + configured limits (RPC: my_usage)
+-- PostgreSQL forbids changing a function's return row type via CREATE OR REPLACE
+-- (ERROR 42P13), so the existing function is dropped first. No tables, views or
+-- policies depend on this RPC; EXECUTE privilege reverts to PUBLIC on recreation.
+drop function if exists public.my_usage();
+
 create or replace function public.my_usage()
 returns table (
   projects bigint,
   documents bigint,
   exports bigint,
+  generations bigint,
   max_projects int,
   max_documents int,
   max_exports int,
+  gen_limit int,
+  gen_period text,
+  allowed_tools text[],
+  can_self_publish boolean,
   status text
 )
 language sql stable security definer
@@ -218,9 +321,14 @@ as $$
     (select count(*) from public.projects pr where pr.owner_id = auth.uid()),
     (select count(*) from public.activity_logs a where a.user_id = auth.uid() and (a.action like 'save.%' or a.action = 'project.save')),
     (select count(*) from public.activity_logs a where a.user_id = auth.uid() and a.action like 'export.%'),
+    public.generation_count_in_period(auth.uid(), p.gen_period),
     p.max_projects,
     p.max_documents,
     p.max_exports,
+    p.gen_limit,
+    p.gen_period,
+    p.allowed_tools,
+    p.can_self_publish,
     p.status
   from public.profiles p
   where p.id = auth.uid();
@@ -242,6 +350,7 @@ returns table (
   projects bigint,
   documents bigint,
   exports bigint,
+  generations bigint,
   last_activity timestamptz
 )
 language sql stable security definer
@@ -251,6 +360,7 @@ as $$
     (select count(*) from public.projects pr where pr.owner_id = p.id),
     (select count(*) from public.activity_logs a where a.user_id = p.id and (a.action like 'save.%' or a.action = 'project.save')),
     (select count(*) from public.activity_logs a where a.user_id = p.id and a.action like 'export.%'),
+    public.generation_count_in_period(p.id, p.gen_period),
     (select max(a.created_at) from public.activity_logs a where a.user_id = p.id)
   from public.profiles p
   where public.is_admin();
@@ -329,13 +439,14 @@ create policy "profiles_admin_delete" on public.profiles
 
 -- Active users can read their OWN templates; admins can read every template.
 -- The previous "any active user reads all templates" policy is removed so one
--- user's private templates never surface for another user.
+-- user's private templates never surface for another user. Access to the
+-- Templates tool itself is gated server-side by has_tool_access(..,'templates').
 drop policy if exists "templates_read" on public.templates;
 drop policy if exists "templates_write" on public.templates;
 drop policy if exists "templates_select_own" on public.templates;
 create policy "templates_select_own" on public.templates
   for select using (
-    (owner_id = auth.uid() and public.is_active_user(auth.uid()))
+    (owner_id = auth.uid() and public.is_active_user(auth.uid()) and public.has_tool_access(auth.uid(), 'templates'))
     or public.is_admin()
   );
 
@@ -344,6 +455,7 @@ drop policy if exists "templates_insert_own" on public.templates;
 create policy "templates_insert_own" on public.templates
   for insert with check (
     public.is_active_user(auth.uid())
+    and public.has_tool_access(auth.uid(), 'templates')
     and (owner_id = auth.uid() or public.is_admin())
     and exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor'))
   );
@@ -356,6 +468,7 @@ create policy "templates_update_own" on public.templates
     or public.is_admin()
   ) with check (
     public.is_active_user(auth.uid())
+    and public.has_tool_access(auth.uid(), 'templates')
     and (owner_id = auth.uid() or public.is_admin())
     and exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin', 'editor'))
   );
@@ -364,7 +477,7 @@ create policy "templates_update_own" on public.templates
 drop policy if exists "templates_delete_own" on public.templates;
 create policy "templates_delete_own" on public.templates
   for delete using (
-    (owner_id = auth.uid() and public.is_active_user(auth.uid()))
+    (owner_id = auth.uid() and public.is_active_user(auth.uid()) and public.has_tool_access(auth.uid(), 'templates'))
     or public.is_admin()
   );
 
@@ -372,6 +485,7 @@ create policy "templates_delete_own" on public.templates
 
 -- Active users can read/update/delete their OWN projects (admins can access
 -- every project); new project creation is gated by max_projects server-side.
+-- The Projects tool itself is gated server-side by has_tool_access(..,'projects').
 drop policy if exists "projects_read_own" on public.projects;
 drop policy if exists "projects_write_own" on public.projects;
 drop policy if exists "projects_select" on public.projects;
@@ -383,13 +497,13 @@ drop policy if exists "projects_insert_own" on public.projects;
 drop policy if exists "projects_update_own" on public.projects;
 drop policy if exists "projects_delete_own" on public.projects;
 create policy "projects_read_active_own" on public.projects
-  for select using ((auth.uid() = owner_id and public.is_active_user(auth.uid())) or public.is_admin());
+  for select using ((auth.uid() = owner_id and public.is_active_user(auth.uid()) and public.has_tool_access(auth.uid(), 'projects')) or public.is_admin());
 create policy "projects_insert_own" on public.projects
-  for insert with check (auth.uid() = owner_id and (public.can_create_project(auth.uid()) or public.is_admin()));
+  for insert with check (auth.uid() = owner_id and public.has_tool_access(auth.uid(), 'projects') and (public.can_create_project(auth.uid()) or public.is_admin()));
 create policy "projects_update_own" on public.projects
-  for update using ((auth.uid() = owner_id and public.is_active_user(auth.uid())) or public.is_admin());
+  for update using ((auth.uid() = owner_id and public.is_active_user(auth.uid()) and public.has_tool_access(auth.uid(), 'projects')) or public.is_admin());
 create policy "projects_delete_own" on public.projects
-  for delete using ((auth.uid() = owner_id and public.is_active_user(auth.uid())) or public.is_admin());
+  for delete using ((auth.uid() = owner_id and public.is_active_user(auth.uid()) and public.has_tool_access(auth.uid(), 'projects')) or public.is_admin());
 
 -- ────────────────────────── activity_logs ──────────────────────────
 

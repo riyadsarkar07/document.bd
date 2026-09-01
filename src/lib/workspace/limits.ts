@@ -14,20 +14,31 @@ export interface UsageInfo {
   projects: number;
   documents: number;
   exports: number;
+  /** Generations inside the current gen_period rolling window. */
+  generations: number;
   max_projects: number | null;
   max_documents: number | null;
   max_exports: number | null;
+  /** Max generations per gen_period window; null = unlimited. */
+  gen_limit: number | null;
+  /** daily / weekly / monthly / unlimited. */
+  gen_period: string | null;
+  /** Explicit tool-scope allowlist; null = all tools. */
+  allowed_tools?: string[] | null;
+  /** User purchased/paid and may publish their own records. */
+  can_self_publish?: boolean;
   status: UserStatus;
   /** Whether the values came from the server RPC (true) or are unknown (false). */
   enforced: boolean;
 }
 
-export type LimitKind = 'project' | 'document' | 'export';
+export type LimitKind = 'project' | 'document' | 'export' | 'generation';
 
 export const LIMIT_LABEL: Record<LimitKind, string> = {
   project: 'Projects',
   document: 'Document generations',
   export: 'Exports',
+  generation: 'Generations',
 };
 
 function toInt(v: unknown): number | null {
@@ -46,9 +57,14 @@ export async function fetchMyUsage(): Promise<UsageInfo | null> {
     projects: toInt(row.projects) ?? 0,
     documents: toInt(row.documents) ?? 0,
     exports: toInt(row.exports) ?? 0,
+    generations: toInt(row.generations) ?? 0,
     max_projects: toInt(row.max_projects),
     max_documents: toInt(row.max_documents),
     max_exports: toInt(row.max_exports),
+    gen_limit: toInt(row.gen_limit),
+    gen_period: typeof row.gen_period === 'string' ? row.gen_period : null,
+    allowed_tools: Array.isArray(row.allowed_tools) ? (row.allowed_tools as string[]) : null,
+    can_self_publish: Boolean(row.can_self_publish),
     status: row.status === 'disabled' ? 'disabled' : 'active',
     enforced: true,
   };
@@ -57,6 +73,35 @@ export async function fetchMyUsage(): Promise<UsageInfo | null> {
 export interface LimitCheck {
   ok: boolean;
   message?: string;
+}
+
+export interface GenerationLimit {
+  genPeriod: string | null;
+  genLimit: number | null;
+  generations: number;
+}
+
+/**
+ * Whether a generation cap is currently reached. Pure mirror of the server-side
+ * rule (schema.sql `can_generate`): an 'unlimited' period or a null cap always
+ * allows; otherwise the window count must stay below the cap.
+ */
+export function isGenerationLimited(limit: GenerationLimit): boolean {
+  if (limit.genPeriod === 'unlimited' || limit.genLimit == null) return false;
+  return limit.generations >= limit.genLimit;
+}
+
+export function generationPeriodLabel(period: string | null): string {
+  switch (period) {
+    case 'daily':
+      return 'day';
+    case 'weekly':
+      return 'week';
+    case 'monthly':
+      return 'month';
+    default:
+      return 'period';
+  }
 }
 
 /**
@@ -70,6 +115,16 @@ export async function checkLimit(kind: LimitKind): Promise<LimitCheck> {
 
   if (usage.status === 'disabled') {
     return { ok: false, message: 'This account is suspended. Contact an administrator.' };
+  }
+
+  if (kind === 'generation') {
+    if (isGenerationLimited({ genPeriod: usage.gen_period, genLimit: usage.gen_limit, generations: usage.generations })) {
+      return {
+        ok: false,
+        message: `Generations limit reached (${usage.generations}/${usage.gen_limit} per ${generationPeriodLabel(usage.gen_period)}). Contact an administrator to raise your limit.`,
+      };
+    }
+    return { ok: true };
   }
 
   const max =

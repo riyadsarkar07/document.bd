@@ -14,6 +14,7 @@ import {
 } from '@/lib/publish/schema';
 import {
   authorize,
+  authorizeUserPublish,
   json,
   PUBLIC_VERIFY_BASE_URL,
   type Caller,
@@ -21,13 +22,25 @@ import {
 
 export const runtime = 'nodejs';
 
-/** Refuse to publish/unpublish a number another (non-admin) account owns. */
+/**
+ * Refuse to publish/unpublish a number the caller does not own.
+ *
+ * Admin/editor path (unchanged): a non-admin cannot publish a number another
+ * account archived. Viewer (self-publish) path: the record MUST belong to the
+ * caller — a purchased user can never publish another user's certificate.
+ */
 async function assertOwnership(caller: Caller, regNo: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const { data: existing } = await caller.sb
     .from('certificates')
     .select('created_by')
     .eq('trademark_no', regNo)
     .maybeSingle();
+  if (caller.role === 'viewer') {
+    if (!existing?.created_by || existing.created_by !== caller.userId) {
+      return { ok: false, error: `TM No. ${regNo} is not your record. You can only publish certificates you own.` };
+    }
+    return { ok: true };
+  }
   if (existing?.created_by && existing.created_by !== caller.userId && caller.role !== 'admin') {
     return { ok: false, error: `TM No. ${regNo} is archived by another account. Only an admin can publish it.` };
   }
@@ -77,8 +90,17 @@ export async function POST(req: Request): Promise<NextResponse> {
   const authz = req.headers.get('authorization') ?? '';
   const token = authz.startsWith('Bearer ') ? authz.slice('Bearer '.length) : null;
 
+  // Admin/editor path (unchanged). If that fails, a non-admin with the
+  // purchased self-publish flag may still publish their OWN records.
   const auth = await authorize(token);
-  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+  let caller: Caller;
+  if (auth.ok) {
+    caller = auth.caller;
+  } else {
+    const userAuth = await authorizeUserPublish(token);
+    if (!userAuth.ok) return json({ ok: false, error: userAuth.error }, userAuth.status);
+    caller = userAuth.caller;
+  }
 
   const raw = await req.text().catch(() => null);
   if (raw === null) return json({ ok: false, error: 'Could not read request body.' }, 400);
@@ -92,7 +114,6 @@ export async function POST(req: Request): Promise<NextResponse> {
     return json({ ok: false, error: 'Invalid JSON payload.' }, 400);
   }
 
-  const caller = auth.caller;
   const action = body.action === 'unpublish' ? 'unpublish' : 'publish';
 
   if (action === 'unpublish') {

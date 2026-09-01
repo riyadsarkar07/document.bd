@@ -5,10 +5,23 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Loader2, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { canManageUsers } from '@/lib/auth/types';
+import { hasToolAccess, type ToolScope } from '@/lib/workspace/access';
 import { StudioShell } from '@/components/layout/studio-shell';
 import { Button } from '@/components/ui/button';
 
 const ADMIN_ROUTES = ['/studio/users', '/studio/activity'];
+
+/** Route prefix -> tool scope. Users without the scope are redirected. */
+const TOOL_ROUTES: { prefix: string; scope: ToolScope }[] = [
+  { prefix: '/studio/editor/tm', scope: 'tm' },
+  { prefix: '/studio/editor/nid', scope: 'nid' },
+  { prefix: '/studio/editor/tin', scope: 'tin' },
+  { prefix: '/studio/templates', scope: 'templates' },
+  { prefix: '/studio/projects', scope: 'projects' },
+  { prefix: '/studio/history', scope: 'history' },
+  { prefix: '/studio/assets', scope: 'assets' },
+  { prefix: '/studio/settings', scope: 'settings' },
+];
 
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, role, loading, signOut } = useAuth();
@@ -17,19 +30,26 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
   const [checked, setChecked] = useState(false);
 
   const isAdminRoute = ADMIN_ROUTES.some((prefix) => pathname.startsWith(prefix));
+  const blockedTool = TOOL_ROUTES.find(({ prefix, scope }) => pathname.startsWith(prefix) && !hasToolAccess(profile, scope));
 
   useEffect(() => {
     if (!loading) {
       if (!user) router.replace('/login');
-      else setChecked(true);
+      else if (profile) setChecked(true);
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, profile]);
 
   useEffect(() => {
     if (checked && isAdminRoute && !canManageUsers(role)) {
       router.replace('/studio');
     }
   }, [checked, isAdminRoute, role, router]);
+
+  useEffect(() => {
+    if (checked && blockedTool) {
+      router.replace('/studio');
+    }
+  }, [checked, blockedTool, router]);
 
   if (loading || !checked) {
     return (

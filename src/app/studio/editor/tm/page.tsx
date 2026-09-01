@@ -182,6 +182,11 @@ function TMEditorInner() {
       toast.error(limit.message ?? 'Export limit reached.');
       return;
     }
+    const generationLimit = await checkLimit('generation');
+    if (!generationLimit.ok) {
+      toast.error(generationLimit.message ?? 'Generation limit reached.');
+      return;
+    }
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
     const canvas = document.createElement('canvas');
@@ -206,6 +211,11 @@ function TMEditorInner() {
     const limit = await checkLimit('export');
     if (!limit.ok) {
       toast.error(limit.message ?? 'Export limit reached.');
+      return;
+    }
+    const generationLimit = await checkLimit('generation');
+    if (!generationLimit.ok) {
+      toast.error(generationLimit.message ?? 'Generation limit reached.');
       return;
     }
     const bg = await loadImage(TM_BACKGROUND);

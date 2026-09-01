@@ -159,6 +159,11 @@ function NIDEditorInner() {
       toast.error(limit.message ?? 'Export limit reached.');
       return;
     }
+    const generationLimit = await checkLimit('generation');
+    if (!generationLimit.ok) {
+      toast.error(generationLimit.message ?? 'Generation limit reached.');
+      return;
+    }
     const bg = await loadImage(NID_BACKGROUND);
     const canvas = document.createElement('canvas');
     renderNIDCard(canvas, presentRef.current, bg, photoImageRef.current, 1);

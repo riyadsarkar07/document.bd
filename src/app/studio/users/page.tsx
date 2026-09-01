@@ -7,6 +7,7 @@ import {
   PencilLine,
   Search,
   ShieldAlert,
+  ShieldCheck,
   Unlock,
   Users,
 } from 'lucide-react';
@@ -31,11 +32,13 @@ import { Pagination } from '@/components/ui/pagination';
 import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { useToast } from '@/lib/toast/toast-provider';
 import { cn, timeAgo } from '@/lib/utils';
+import { TOOL_SCOPES, TOOL_SCOPE_LABEL, type ToolScope } from '@/lib/workspace/access';
 
 interface UserUsage {
   projects: number;
   documents: number;
   exports: number;
+  generations: number;
   lastActivity?: string | null;
 }
 
@@ -52,6 +55,13 @@ const LIMIT_FIELDS: { key: 'max_projects' | 'max_documents' | 'max_exports'; lab
   { key: 'max_exports', label: 'Export Limit', usageKey: 'exports' },
 ];
 
+const GEN_PERIOD_LABEL: Record<string, string> = {
+  daily: 'Daily',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+  unlimited: 'Unlimited',
+};
+
 const STATUS_TONE: Record<UserStatus, 'green' | 'red'> = {
   active: 'green',
   disabled: 'red',
@@ -66,8 +76,11 @@ export default function UsersPage() {
   const [detail, setDetail] = useState<AdminUserRow | null>(null);
   const [confirm, setConfirm] = useState<{ type: 'suspend' | 'reactivate'; target: AdminUserRow } | null>(null);
   const [limitsTarget, setLimitsTarget] = useState<AdminUserRow | null>(null);
-  const [limitsForm, setLimitsForm] = useState({ max_projects: '', max_documents: '', max_exports: '' });
+  const [limitsForm, setLimitsForm] = useState({ max_projects: '', max_documents: '', max_exports: '', gen_limit: '', gen_period: 'unlimited' });
   const [savingLimits, setSavingLimits] = useState(false);
+  const [accessTarget, setAccessTarget] = useState<AdminUserRow | null>(null);
+  const [accessForm, setAccessForm] = useState<{ tools: string[]; selfPublish: boolean }>({ tools: [], selfPublish: false });
+  const [savingAccess, setSavingAccess] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -100,6 +113,7 @@ export default function UsersPage() {
           projects: Number(row.projects ?? 0),
           documents: Number(row.documents ?? 0),
           exports: Number(row.exports ?? 0),
+          generations: Number(row.generations ?? 0),
           lastActivity: row.last_activity ?? null,
         });
       }
@@ -121,6 +135,10 @@ export default function UsersPage() {
       max_projects: p.max_projects != null ? Number(p.max_projects) : null,
       max_documents: p.max_documents != null ? Number(p.max_documents) : null,
       max_exports: p.max_exports != null ? Number(p.max_exports) : null,
+      allowed_tools: Array.isArray(p.allowed_tools) ? (p.allowed_tools as string[]) : null,
+      gen_limit: p.gen_limit != null ? Number(p.gen_limit) : null,
+      gen_period: typeof p.gen_period === 'string' ? p.gen_period : 'unlimited',
+      can_self_publish: Boolean(p.can_self_publish),
       created_at: p.created_at,
       usage: usageMap.get(p.id),
       certificateCount: certMap.get(p.id),
@@ -183,6 +201,8 @@ export default function UsersPage() {
       max_projects: target.max_projects != null ? String(target.max_projects) : '',
       max_documents: target.max_documents != null ? String(target.max_documents) : '',
       max_exports: target.max_exports != null ? String(target.max_exports) : '',
+      gen_limit: target.gen_limit != null ? String(target.gen_limit) : '',
+      gen_period: target.gen_period ?? 'unlimited',
     });
   };
 
@@ -199,11 +219,14 @@ export default function UsersPage() {
       max_projects: parse(limitsForm.max_projects),
       max_documents: parse(limitsForm.max_documents),
       max_exports: parse(limitsForm.max_exports),
+      gen_limit: parse(limitsForm.gen_limit),
+      gen_period: limitsForm.gen_period,
     };
     if (
       (next.max_projects !== null && !Number.isFinite(next.max_projects)) ||
       (next.max_documents !== null && !Number.isFinite(next.max_documents)) ||
-      (next.max_exports !== null && !Number.isFinite(next.max_exports))
+      (next.max_exports !== null && !Number.isFinite(next.max_exports)) ||
+      (next.gen_limit !== null && !Number.isFinite(next.gen_limit))
     ) {
       toast.error('Limits must be whole numbers (0 or more), or empty for unlimited');
       return;
@@ -220,10 +243,53 @@ export default function UsersPage() {
       user_id: currentUser?.id,
       email: currentUser?.email,
       action: 'limits.updated',
-      detail: `${limitsTarget.email} → P:${next.max_projects ?? '∞'} D:${next.max_documents ?? '∞'} E:${next.max_exports ?? '∞'}`,
+      detail: `${limitsTarget.email} → P:${next.max_projects ?? '∞'} D:${next.max_documents ?? '∞'} E:${next.max_exports ?? '∞'} G:${next.gen_limit ?? '∞'}/${next.gen_period}`,
     });
     toast.success(`Limits updated for ${limitsTarget.email}`);
     setLimitsTarget(null);
+    setDetail(null);
+    await refresh();
+  };
+
+  const openAccess = (target: AdminUserRow) => {
+    setAccessTarget(target);
+    setAccessForm({
+      tools: target.allowed_tools ?? [...TOOL_SCOPES],
+      selfPublish: Boolean(target.can_self_publish),
+    });
+  };
+
+  const toggleTool = (scope: string) => {
+    setAccessForm((prev) => ({
+      ...prev,
+      tools: prev.tools.includes(scope)
+        ? prev.tools.filter((t) => t !== scope)
+        : [...prev.tools, scope],
+    }));
+  };
+
+  const saveAccess = async () => {
+    if (!accessTarget) return;
+    const allTools = accessForm.tools.length === TOOL_SCOPES.length;
+    const next = {
+      allowed_tools: allTools ? null : accessForm.tools,
+      can_self_publish: accessForm.selfPublish,
+    };
+    setSavingAccess(true);
+    const { error: err } = await supabase.from('profiles').update(next).eq('id', accessTarget.id);
+    setSavingAccess(false);
+    if (err) {
+      toast.error(`Access update blocked: ${err.message}`);
+      return;
+    }
+    await logActivity({
+      user_id: currentUser?.id,
+      email: currentUser?.email,
+      action: 'access.updated',
+      detail: `${accessTarget.email} → tools:[${allTools ? 'all' : next.allowed_tools?.join(',') || 'none'}] self-publish:${next.can_self_publish ? 'on' : 'off'}`,
+    });
+    toast.success(`Access updated for ${accessTarget.email}`);
+    setAccessTarget(null);
     setDetail(null);
     await refresh();
   };
@@ -416,6 +482,41 @@ export default function UsersPage() {
                             </div>
                           );
                         })}
+                        {(() => {
+                          const g = u.usage?.generations;
+                          const gMax = u.gen_limit;
+                          const unlimited = !u.gen_period || u.gen_period === 'unlimited';
+                          const gReached = g !== undefined && !unlimited && gMax != null && g >= gMax;
+                          const gPct =
+                            g !== undefined && !unlimited && gMax != null && gMax > 0
+                              ? Math.min(100, Math.round((g / gMax) * 100))
+                              : null;
+                          return (
+                            <div className="mb-1.5 last:mb-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono text-[10.5px] text-dimm">
+                                  G <span className="text-muted">{g ?? '—'}</span>/{fmtLimit(gMax)}
+                                  {!unlimited && (
+                                    <span className="ml-1 text-[9.5px] normal-case text-dimm">· {GEN_PERIOD_LABEL[u.gen_period ?? 'unlimited']}</span>
+                                  )}
+                                </span>
+                                {gPct != null && (
+                                  <span className={cn('font-mono text-[9.5px]', gReached ? 'text-danger' : 'text-dimm')}>
+                                    {gPct}%
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-surface-elevated">
+                                {gPct != null && (
+                                  <div
+                                    className={cn('h-full rounded-full transition-all', gReached ? 'bg-danger' : 'bg-accent')}
+                                    style={{ width: `${gPct}%` }}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-dimm">
                         {u.usage?.lastActivity ? timeAgo(u.usage.lastActivity) : '—'}
@@ -425,6 +526,11 @@ export default function UsersPage() {
                           <Button size="sm" variant="outline" onClick={() => setDetail(u)}>
                             Manage
                           </Button>
+                          {!isSelf && (
+                            <Button size="sm" variant="outline" onClick={() => openAccess(u)}>
+                              Access
+                            </Button>
+                          )}
                           {!isSelf && (
                             <Button size="sm" variant="outline" onClick={() => openLimits(u)}>
                               Limits
@@ -475,6 +581,9 @@ export default function UsersPage() {
             <div className="flex w-full flex-wrap items-center justify-end gap-2">
               {detail.id !== currentUser?.id && (
                 <>
+                  <Button variant="outline" icon={<ShieldCheck className="h-4 w-4" />} onClick={() => openAccess(detail)}>
+                    Update Access
+                  </Button>
                   <Button variant="outline" icon={<PencilLine className="h-4 w-4" />} onClick={() => openLimits(detail)}>
                     Update Limits
                   </Button>
@@ -579,6 +688,37 @@ export default function UsersPage() {
                   );
                 })}
               </div>
+              {(() => {
+                const g = detail.usage?.generations;
+                const gMax = detail.gen_limit;
+                const gPeriod = detail.gen_period && detail.gen_period !== 'unlimited' ? detail.gen_period : null;
+                const gReached = g !== undefined && gPeriod != null && gMax != null && g >= gMax;
+                return (
+                  <div
+                    className={cn(
+                      'mt-3 rounded-xl border px-4 py-3',
+                      gReached ? 'border-danger/30 bg-danger/5' : 'border-line bg-surface-raised',
+                    )}
+                  >
+                    <div className="truncate text-[10px] font-semibold uppercase tracking-wide text-dimm">
+                      Generation Limit
+                    </div>
+                    <div className="mt-1.5 font-display text-xl font-bold text-primary">
+                      {g ?? '—'}
+                      <span className="text-sm font-medium text-dimm">
+                        {' '}
+                        / {fmtLimit(gMax)} {gPeriod ? `per ${gPeriod}` : '(unlimited)'}
+                      </span>
+                    </div>
+                    <div className="mt-1 font-mono text-[10.5px] text-dimm">
+                      Remaining:{' '}
+                      <span className="text-muted">
+                        {g === undefined ? '—' : gPeriod == null || gMax == null ? 'Unlimited' : String(Math.max(0, gMax - g))}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -621,6 +761,108 @@ export default function UsersPage() {
               />
             </div>
           ))}
+          <div className="rounded-xl border border-line bg-surface-raised p-4">
+            <div className="mb-2 text-[10.5px] font-bold uppercase tracking-wider text-dimm">
+              Generation Limit
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel hint="rolling window">Period</FieldLabel>
+                <Select
+                  options={[
+                    { value: 'daily', label: 'Daily' },
+                    { value: 'weekly', label: 'Weekly' },
+                    { value: 'monthly', label: 'Monthly' },
+                    { value: 'unlimited', label: 'Unlimited' },
+                  ]}
+                  value={limitsForm.gen_period}
+                  onChange={(e) => setLimitsForm((prev) => ({ ...prev, gen_period: e.target.value }))}
+                />
+              </div>
+              <div>
+                <FieldLabel hint="empty = unlimited">Generations</FieldLabel>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="Unlimited"
+                  value={limitsForm.gen_limit}
+                  onChange={(e) => setLimitsForm((prev) => ({ ...prev, gen_limit: e.target.value }))}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Tool access & self-publish modal ── */}
+      <Modal
+        open={Boolean(accessTarget)}
+        onClose={() => setAccessTarget(null)}
+        title="User Access"
+        meta={accessTarget?.email ?? ''}
+        maxWidth="max-w-lg"
+        footer={
+          <div className="flex w-full items-center justify-end gap-2">
+            <Button variant="ghost" onClick={() => setAccessTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" loading={savingAccess} onClick={saveAccess}>
+              Save Access
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-xs leading-relaxed text-muted">
+            Choose which tools/pages this user may use. Keep every tool checked for full
+            access (equivalent to no restriction). Enforcement is server-side — blocked tools
+            are hidden from the sidebar, redirect back to the dashboard, and are rejected by
+            the database.
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {TOOL_SCOPES.map((scope) => {
+              const active = accessForm.tools.includes(scope);
+              return (
+                <button
+                  key={scope}
+                  type="button"
+                  onClick={() => toggleTool(scope)}
+                  className={cn(
+                    'flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition',
+                    active
+                      ? 'border-accent/40 bg-accent/10 text-primary'
+                      : 'border-line bg-surface-raised text-muted hover:border-line/70',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold',
+                      active ? 'border-accent bg-accent text-canvas' : 'border-line bg-surface',
+                    )}
+                  >
+                    {active ? '✓' : ''}
+                  </span>
+                  <span className="flex-1 truncate">{TOOL_SCOPE_LABEL[scope as ToolScope]}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-start gap-3 rounded-xl border border-line bg-surface-raised px-3.5 py-3">
+            <input
+              id="self-publish-toggle"
+              type="checkbox"
+              checked={accessForm.selfPublish}
+              onChange={(e) => setAccessForm((prev) => ({ ...prev, selfPublish: e.target.checked }))}
+              className="mt-0.5 h-4 w-4"
+            />
+            <label htmlFor="self-publish-toggle" className="cursor-pointer">
+              <div className="text-[13px] font-semibold text-primary">Allow self-publish (purchased)</div>
+              <div className="text-[11.5px] leading-snug text-muted">
+                Grants this user the right to publish their own saved certificates to the public
+                verification portal. They can only ever publish records they created.
+              </div>
+            </label>
+          </div>
         </div>
       </Modal>
 

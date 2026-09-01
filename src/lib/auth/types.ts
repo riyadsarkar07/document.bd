@@ -19,6 +19,14 @@ export interface Profile {
   max_projects?: number | null;
   max_documents?: number | null;
   max_exports?: number | null;
+  /** Explicit list of tool scopes the user may use; null/absent = all tools. */
+  allowed_tools?: string[] | null;
+  /** Rolling window for the generation cap: daily / weekly / monthly / unlimited. */
+  gen_period?: string | null;
+  /** Max certificate generations inside the current gen_period window; null = unlimited. */
+  gen_limit?: number | null;
+  /** The user purchased/paid and may publish their own vault records. */
+  can_self_publish?: boolean;
   created_at?: string;
 }
 
