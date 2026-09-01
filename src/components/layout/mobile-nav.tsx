@@ -11,22 +11,26 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/auth/auth-context';
+import { hasToolAccess, type ToolScope } from '@/lib/workspace/access';
 
-const ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: '/studio', label: 'Home', icon: LayoutDashboard },
-  { href: '/studio/editor/tm', label: 'TM', icon: FileText },
-  { href: '/studio/editor/nid', label: 'NID', icon: CreditCard },
-  { href: '/studio/editor/tin', label: 'TIN', icon: Landmark },
-  { href: '/studio/projects', label: 'Projects', icon: FolderKanban },
+const ITEMS: { href: string; label: string; icon: LucideIcon; scope?: ToolScope }[] = [
+  { href: '/studio', label: 'Home', icon: LayoutDashboard, scope: 'dashboard' },
+  { href: '/studio/editor/tm', label: 'TM', icon: FileText, scope: 'tm' },
+  { href: '/studio/editor/nid', label: 'NID', icon: CreditCard, scope: 'nid' },
+  { href: '/studio/editor/tin', label: 'TIN', icon: Landmark, scope: 'tin' },
+  { href: '/studio/projects', label: 'Projects', icon: FolderKanban, scope: 'projects' },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
+  const { profile } = useAuth();
+  const items = ITEMS.filter((item) => !item.scope || hasToolAccess(profile, item.scope));
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-[80] border-t border-line bg-surface/92 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
       <div className="grid grid-cols-5">
-        {ITEMS.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           const active =
             item.href === '/studio'

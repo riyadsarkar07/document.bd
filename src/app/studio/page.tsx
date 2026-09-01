@@ -14,6 +14,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
+import { hasToolAccess, type ToolScope } from '@/lib/workspace/access';
 import { Card, StatCard } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -80,57 +81,96 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
-            <Link href="/studio/editor/tm">
-              <Button variant="secondary" icon={<FileText className="h-4 w-4" />}>
-                TM Certificate
-              </Button>
-            </Link>
-            <Link href="/studio/editor/nid">
-              <Button variant="primary" icon={<CreditCard className="h-4 w-4" />}>
-                NID Card
-              </Button>
-            </Link>
-            <Link href="/studio/editor/tin">
-              <Button variant="success" icon={<Landmark className="h-4 w-4" />}>
-                TIN Record
-              </Button>
-            </Link>
+            {hasToolAccess(profile, 'tm') && (
+              <Link href="/studio/editor/tm">
+                <Button variant="secondary" icon={<FileText className="h-4 w-4" />}>
+                  TM Certificate
+                </Button>
+              </Link>
+            )}
+            {hasToolAccess(profile, 'nid') && (
+              <Link href="/studio/editor/nid">
+                <Button variant="primary" icon={<CreditCard className="h-4 w-4" />}>
+                  NID Card
+                </Button>
+              </Link>
+            )}
+            {hasToolAccess(profile, 'tin') && (
+              <Link href="/studio/editor/tin">
+                <Button variant="success" icon={<Landmark className="h-4 w-4" />}>
+                  TIN Record
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
       </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Link href="/studio/history">
+        {hasToolAccess(profile, 'history') ? (
+          <Link href="/studio/history">
+            <StatCard
+              label="Vault Records"
+              value={stats.records}
+              hint={stats.lastSync ? `Last sync ${timeAgo(stats.lastSync)}` : 'No syncs yet'}
+              icon={<History className="h-5 w-5" />}
+              tone="gold"
+              loading={loading}
+            />
+          </Link>
+        ) : (
           <StatCard
             label="Vault Records"
             value={stats.records}
-            hint={stats.lastSync ? `Last sync ${timeAgo(stats.lastSync)}` : 'No syncs yet'}
+            hint="History access is disabled"
             icon={<History className="h-5 w-5" />}
             tone="gold"
             loading={loading}
           />
-        </Link>
-        <Link href="/studio/templates">
+        )}
+        {hasToolAccess(profile, 'templates') ? (
+          <Link href="/studio/templates">
+            <StatCard
+              label="Templates"
+              value={stats.templates}
+              hint="Reusable document presets"
+              icon={<Shapes className="h-5 w-5" />}
+              tone="blue"
+              loading={loading}
+            />
+          </Link>
+        ) : (
           <StatCard
             label="Templates"
             value={stats.templates}
-            hint="Reusable document presets"
+            hint="Templates access is disabled"
             icon={<Shapes className="h-5 w-5" />}
             tone="blue"
             loading={loading}
           />
-        </Link>
-        <Link href="/studio/projects">
+        )}
+        {hasToolAccess(profile, 'projects') ? (
+          <Link href="/studio/projects">
+            <StatCard
+              label="Projects"
+              value={stats.projects}
+              hint="Saved working documents"
+              icon={<Package className="h-5 w-5" />}
+              tone="green"
+              loading={loading}
+            />
+          </Link>
+        ) : (
           <StatCard
             label="Projects"
             value={stats.projects}
-            hint="Saved working documents"
+            hint="Projects access is disabled"
             icon={<Package className="h-5 w-5" />}
             tone="green"
             loading={loading}
           />
-        </Link>
+        )}
         <StatCard
           label="Assets"
           value="7"
@@ -155,6 +195,7 @@ export default function DashboardPage() {
               icon: FileText,
               tone: 'from-accent to-accent-bright text-canvas',
               meta: '2373 × 3508 px',
+              scope: 'tm',
             },
             {
               href: '/studio/editor/nid',
@@ -163,6 +204,7 @@ export default function DashboardPage() {
               icon: CreditCard,
               tone: 'from-info to-blue-500 text-white',
               meta: '3570 × 2203 px',
+              scope: 'nid',
             },
             {
               href: '/studio/editor/tin',
@@ -171,6 +213,7 @@ export default function DashboardPage() {
               icon: Landmark,
               tone: 'from-success to-emerald-500 text-white',
               meta: '2480 × 3508 px',
+              scope: 'tin',
             },
             {
               href: '/studio/templates',
@@ -179,6 +222,7 @@ export default function DashboardPage() {
               icon: Shapes,
               tone: 'from-success to-emerald-500 text-white',
               meta: `${stats.templates} saved`,
+              scope: 'templates',
             },
             {
               href: '/studio/history',
@@ -187,8 +231,11 @@ export default function DashboardPage() {
               icon: History,
               tone: 'from-violet-500 to-purple-600 text-white',
               meta: `${stats.records} archived`,
+              scope: 'history',
             },
-          ].map((q) => (
+          ]
+            .filter((q) => hasToolAccess(profile, q.scope as ToolScope))
+            .map((q) => (
             <Link
               key={q.href}
               href={q.href}
