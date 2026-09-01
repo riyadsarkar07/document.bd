@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Activity,
+  Briefcase,
   CreditCard,
   FileText,
   FolderKanban,
@@ -11,10 +12,12 @@ import {
   Landmark,
   LayoutDashboard,
   Package,
+  RotateCcw,
   Settings,
   Shapes,
   ShieldCheck,
   Users,
+  Youtube,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -34,9 +37,12 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '/studio', label: 'Dashboard', icon: LayoutDashboard, scope: 'dashboard' },
-  { href: '/studio/editor/tm', label: 'TM Certificate', icon: FileText, scope: 'tm', section: 'Studio' },
   { href: '/studio/editor/nid', label: 'NID Card', icon: CreditCard, scope: 'nid' },
   { href: '/studio/editor/tin', label: 'TIN Record', icon: Landmark, scope: 'tin' },
+  { href: '/studio/editor/tm', label: 'TM Certificate', icon: FileText, scope: 'tm', section: 'Studio' },
+  { href: '/studio/editor/page-recover', label: 'Hacked Page Recover', icon: RotateCcw, scope: 'tm', section: 'Studio' },
+  { href: '/studio/editor/youtube-trademark', label: 'YouTube Trademark', icon: Youtube, scope: 'tm', section: 'Studio' },
+  { href: '/studio/editor/business-manager', label: 'Business Manager Access', icon: Briefcase, scope: 'tm', section: 'Studio' },
   { href: '/studio/templates', label: 'Templates', icon: Shapes, scope: 'templates' },
   { href: '/studio/projects', label: 'Projects', icon: FolderKanban, scope: 'projects' },
   { href: '/studio/history', label: 'History', icon: History, scope: 'history' },
