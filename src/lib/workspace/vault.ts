@@ -6,7 +6,7 @@ import { formatTimestamp } from '@/lib/utils';
 import { logAudit } from '@/lib/workspace/audit';
 import { VERIFY_BASE_URL } from '@/lib/verify-base';
 import { sealedTextFromVault } from '@/lib/publish/sealed-text';
-import { layoutFromSnapshot, layoutFromVault } from '@/lib/publish/layout';
+import { layoutFromSnapshot, layoutFromVaultSources, packDetails, unpackDetails } from '@/lib/publish/layout';
 import type { TMSnapshot } from '@/lib/editor/types';
 
 /** Publication state of a vault record against the public verification portal. */
@@ -63,7 +63,7 @@ function mapVaultRow(row: VaultRow): VaultRecord {
     compType: row.company_type || '',
     openingText: TM_DEFAULTS.openingText,
     middleTextArial: TM_DEFAULTS.middleTextArial,
-    goodsDesc: row.details || '',
+    goodsDesc: unpackDetails(row.details).goodsDesc,
     sealedTextPhrase: sealedTextFromVault(row.sealed_text_phrase, TM_DEFAULTS.sealedTextPhrase),
     sealedDate: row.sealed_date || '',
     // `logoText` is not persisted in the vault row. Deriving it from the
@@ -71,7 +71,7 @@ function mapVaultRow(row: VaultRow): VaultRecord {
     // logo that was never part of the exported certificate (exports use the
     // empty default), so it stays empty to match the original JPG exactly.
     logoText: '',
-    ...layoutFromVault(row.layout_json),
+    ...layoutFromVaultSources(row.layout_json, row.details),
     logoDataUrl: row.logo_data_url || null,
     createdBy: row.created_by || null,
     timestamp: row.synced_at ? formatTimestamp(new Date(row.synced_at)) : '—',
@@ -106,7 +106,7 @@ export async function commitCertificate(
     address: entry.address || '',
     company_type: entry.compType || '',
     app_date: entry.appDate || '',
-    details: entry.goodsDesc || '',
+    details: packDetails(entry.goodsDesc || '', layoutFromSnapshot(entry)),
     sealed_date: entry.sealedDate || '',
     sealed_text_phrase:
       typeof entry.sealedTextPhrase === 'string' ? entry.sealedTextPhrase : TM_DEFAULTS.sealedTextPhrase,

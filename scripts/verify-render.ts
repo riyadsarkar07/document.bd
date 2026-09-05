@@ -27,7 +27,7 @@ import {
   normalizeTinSnapshot,
 } from '../src/lib/constants/tin';
 import { renderTMCertificate } from '../src/lib/renderers/tmRenderer';
-import { layoutFromSnapshot, layoutFromVault } from '../src/lib/publish/layout';
+import { layoutFromSnapshot, layoutFromVault, layoutFromVaultSources, packDetails } from '../src/lib/publish/layout';
 import { renderNIDCard } from '../src/lib/renderers/nidRenderer';
 import { renderTINDocument, wrapTinText } from '../src/lib/renderers/tinRenderer';
 import { buildTinQrPayload, encodeDemoQr } from '../src/lib/tinQr';
@@ -548,6 +548,34 @@ async function main() {
   assert(buffersEqual(livePixels, vaultPixels), 'TM 261061 seal/signature layout survives Save → History re-render');
   assert(roundTripped.signX === 1480 && roundTripped.signY === 2488 && roundTripped.signSize === 280, 'signature X/Y/size restored');
   assert(roundTripped.sealX === 310 && roundTripped.sealY === 2910, 'seal X/Y restored');
+
+  // Reproduce production: layout_json column missing → History used TM_DEFAULTS.
+  const droppedLayout = { ...tm261061Layout, ...layoutFromVault(null) };
+  const droppedCanvas = createCanvas(1, 1);
+  renderTMCertificate(
+    droppedCanvas as unknown as HTMLCanvasElement,
+    droppedLayout,
+    certBg as HTMLImageElement | null,
+    null,
+    sign as HTMLImageElement | null,
+    1,
+  );
+  const droppedPixels = Buffer.from(droppedCanvas.getContext('2d')!.getImageData(0, 0, droppedCanvas.width, droppedCanvas.height).data.buffer);
+  assert(!buffersEqual(livePixels, droppedPixels), 'repro: missing layout_json shifts TM 261061 seal/signature vs Instant Download');
+
+  const detailsFallback = { ...tm261061Layout, ...layoutFromVaultSources(null, packDetails(tm261061Layout.goodsDesc, layoutFromSnapshot(tm261061Layout))) };
+  const fallbackCanvas = createCanvas(1, 1);
+  renderTMCertificate(
+    fallbackCanvas as unknown as HTMLCanvasElement,
+    detailsFallback,
+    certBg as HTMLImageElement | null,
+    null,
+    sign as HTMLImageElement | null,
+    1,
+  );
+  const fallbackPixels = Buffer.from(fallbackCanvas.getContext('2d')!.getImageData(0, 0, fallbackCanvas.width, fallbackCanvas.height).data.buffer);
+  assert(buffersEqual(livePixels, fallbackPixels), 'fix: details fallback keeps TM 261061 seal/signature identical to Instant Download');
+  assert(detailsFallback.signX === 1480 && detailsFallback.sealX === 310, 'details fallback restores 261061 coordinates');
 
   const nidDefault = { ...NID_DEFAULTS };
   const r3 = renderBothNID(nidDefault, nidBg, null);

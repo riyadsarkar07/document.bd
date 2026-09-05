@@ -34,7 +34,60 @@ export type TMLayoutKey = (typeof TM_LAYOUT_KEYS)[number];
 export type TMLayout = Pick<TMSnapshot, TMLayoutKey>;
 
 function finiteNumber(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
+const LAYOUT_BEGIN = '\n[[TM_LAYOUT]]';
+const LAYOUT_END = '[[/TM_LAYOUT]]';
+
+function hasLayoutPayload(value: unknown): boolean {
+  if (value == null || value === '') return false;
+  let obj: unknown = value;
+  if (typeof value === 'string') {
+    try {
+      obj = JSON.parse(value) as unknown;
+    } catch {
+      return false;
+    }
+  }
+  return Boolean(obj && typeof obj === 'object' && !Array.isArray(obj) && Object.keys(obj as object).length > 0);
+}
+
+/**
+ * Production still lacks `layout_json`, and the vault drops that column on
+ * write. Embed layout in the existing `details` text so History Publish can
+ * restore seal/signature even when the jsonb column is absent.
+ */
+export function unpackDetails(details: string | null | undefined): { goodsDesc: string; layout: unknown } {
+  if (typeof details !== 'string' || !details) return { goodsDesc: details || '', layout: null };
+  const start = details.lastIndexOf(LAYOUT_BEGIN);
+  if (start < 0) return { goodsDesc: details, layout: null };
+  const jsonStart = start + LAYOUT_BEGIN.length;
+  const end = details.indexOf(LAYOUT_END, jsonStart);
+  if (end < 0) return { goodsDesc: details, layout: null };
+  let layout: unknown = null;
+  try {
+    layout = JSON.parse(details.slice(jsonStart, end)) as unknown;
+  } catch {
+    layout = null;
+  }
+  return { goodsDesc: details.slice(0, start), layout };
+}
+
+export function packDetails(goodsDesc: string, layout: TMLayout): string {
+  const clean = unpackDetails(goodsDesc).goodsDesc;
+  return `${clean}${LAYOUT_BEGIN}${JSON.stringify(layout)}${LAYOUT_END}`;
+}
+
+/** Prefer `layout_json`; fall back to the layout block embedded in `details`. */
+export function layoutFromVaultSources(layoutJson: unknown, details: string | null | undefined): TMLayout {
+  const unpacked = unpackDetails(details);
+  return layoutFromVault(hasLayoutPayload(layoutJson) ? layoutJson : unpacked.layout);
 }
 
 /** Snapshot → vault payload. Every key is a finite number (never stripped). */

@@ -24,7 +24,7 @@ import { githubEnv } from '../src/lib/publish/github';
 import { hasToolAccess, canSelfPublish } from '../src/lib/workspace/access';
 import { isGenerationLimited, generationPeriodLabel } from '../src/lib/workspace/limits';
 import { sealedTextFromVault } from '../src/lib/publish/sealed-text';
-import { layoutFromSnapshot, layoutFromVault } from '../src/lib/publish/layout';
+import { layoutFromSnapshot, layoutFromVault, layoutFromVaultSources, packDetails, unpackDetails } from '../src/lib/publish/layout';
 import { TM_DEFAULTS } from '../src/lib/constants/tm';
 
 const ROOT = process.cwd();
@@ -219,6 +219,22 @@ function main() {
   const legacy = layoutFromVault(null);
   assert(legacy.signX === TM_DEFAULTS.signX && legacy.signY === TM_DEFAULTS.signY && legacy.signSize === TM_DEFAULTS.signSize, 'legacy vault rows without layout_json still use TM_DEFAULTS');
   assert(legacy.sealX === TM_DEFAULTS.sealX && legacy.sealY === TM_DEFAULTS.sealY, 'legacy vault rows keep default seal anchors');
+
+  console.log('\n[11] History publish restores layout when production drops layout_json\n');
+  const GOODS = 'in respect of online news publishing; digital journalism.';
+  const packed = packDetails(GOODS, stored);
+  const unpacked = unpackDetails(packed);
+  assert(unpacked.goodsDesc === GOODS, 'goods description survives the layout embed');
+  assert(!unpacked.goodsDesc.includes('[[TM_LAYOUT]]'), 'goods description does not leak the layout marker');
+  const dropped = layoutFromVaultSources(null, packed);
+  assert(dropped.signX === 1480 && dropped.signY === 2488 && dropped.signSize === 280, 'details fallback restores signature when layout_json is dropped');
+  assert(dropped.sealX === 310 && dropped.sealY === 2910, 'details fallback restores seal anchors when layout_json is dropped');
+  const missingBoth = layoutFromVaultSources(null, GOODS);
+  assert(missingBoth.signX === TM_DEFAULTS.signX && missingBoth.signY === TM_DEFAULTS.signY, 'plain details without layout still use TM_DEFAULTS');
+  const preferColumn = layoutFromVaultSources(stored, packDetails(GOODS, layoutFromSnapshot(TM_DEFAULTS)));
+  assert(preferColumn.signX === 1480, 'layout_json wins over an older details embed');
+  const fromString = layoutFromVault(JSON.stringify({ signX: '1480', signY: '2488', signSize: '280' }));
+  assert(fromString.signX === 1480 && fromString.signY === 2488 && fromString.signSize === 280, 'numeric strings from JSON restore as numbers');
 
   console.log(`\n${failures === 0 ? '✓ ALL PUBLISH CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
