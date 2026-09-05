@@ -652,6 +652,11 @@ end $$;
 -- vault row, so this must be stored verbatim or the dots are lost.
 alter table if exists public.certificates add column if not exists sealed_text_phrase text;
 
+-- Persist seal/signature (and other) layout coordinates so History View/Publish
+-- re-renders with the same anchors Instant Download used. Legacy rows stay NULL
+-- and keep TM_DEFAULTS, so existing certificates are unchanged.
+alter table if exists public.certificates add column if not exists layout_json jsonb;
+
 -- Persist the uploaded logo image with vault records so History can restore it.
 -- `if exists` guards environments where the legacy vault table is absent.
 alter table if exists public.certificates add column if not exists logo_data_url text;

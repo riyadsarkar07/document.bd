@@ -6,6 +6,7 @@ import { formatTimestamp } from '@/lib/utils';
 import { logAudit } from '@/lib/workspace/audit';
 import { VERIFY_BASE_URL } from '@/lib/verify-base';
 import { sealedTextFromVault } from '@/lib/publish/sealed-text';
+import { layoutFromSnapshot, layoutFromVault } from '@/lib/publish/layout';
 import type { TMSnapshot } from '@/lib/editor/types';
 
 /** Publication state of a vault record against the public verification portal. */
@@ -40,6 +41,7 @@ interface VaultRow {
   details?: string | null;
   sealed_date?: string | null;
   sealed_text_phrase?: string | null;
+  layout_json?: unknown;
   logo_data_url?: string | null;
   created_by?: string | null;
   synced_at?: string | null;
@@ -69,27 +71,7 @@ function mapVaultRow(row: VaultRow): VaultRecord {
     // logo that was never part of the exported certificate (exports use the
     // empty default), so it stays empty to match the original JPG exactly.
     logoText: '',
-    arialSize: TM_DEFAULTS.arialSize,
-    corsivSize: TM_DEFAULTS.corsivSize,
-    sealSize: TM_DEFAULTS.sealSize,
-    blueDateSize: TM_DEFAULTS.blueDateSize,
-    tmX: TM_DEFAULTS.tmX,
-    tmY: TM_DEFAULTS.tmY,
-    dateX: TM_DEFAULTS.dateX,
-    dateY: TM_DEFAULTS.dateY,
-    paraY: TM_DEFAULTS.paraY,
-    logoY: TM_DEFAULTS.logoY,
-    logoSize: TM_DEFAULTS.logoSize,
-    sealX: TM_DEFAULTS.sealX,
-    sealY: TM_DEFAULTS.sealY,
-    blueX: TM_DEFAULTS.blueX,
-    blueY: TM_DEFAULTS.blueY,
-    logoTextSize: TM_DEFAULTS.logoTextSize,
-    logoTextX: TM_DEFAULTS.logoTextX,
-    logoTextY: TM_DEFAULTS.logoTextY,
-    signX: TM_DEFAULTS.signX,
-    signY: TM_DEFAULTS.signY,
-    signSize: TM_DEFAULTS.signSize,
+    ...layoutFromVault(row.layout_json),
     logoDataUrl: row.logo_data_url || null,
     createdBy: row.created_by || null,
     timestamp: row.synced_at ? formatTimestamp(new Date(row.synced_at)) : '—',
@@ -128,6 +110,7 @@ export async function commitCertificate(
     sealed_date: entry.sealedDate || '',
     sealed_text_phrase:
       typeof entry.sealedTextPhrase === 'string' ? entry.sealedTextPhrase : TM_DEFAULTS.sealedTextPhrase,
+    layout_json: layoutFromSnapshot(entry),
     synced_at: new Date().toISOString(),
     // Re-saving a trashed record brings it back into the active vault.
     deleted_at: null,
@@ -183,6 +166,7 @@ export async function commitCertificate(
     if (/logo_data_url/i.test(msg)) drops.push('logo_data_url');
     if (/deleted_at/i.test(msg)) drops.push('deleted_at');
     if (/sealed_text_phrase/i.test(msg)) drops.push('sealed_text_phrase');
+    if (/layout_json/i.test(msg)) drops.push('layout_json');
     if (drops.length === 0) break;
     for (const key of drops) delete payload[key];
     result = existingRow

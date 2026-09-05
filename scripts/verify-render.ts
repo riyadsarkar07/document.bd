@@ -27,6 +27,7 @@ import {
   normalizeTinSnapshot,
 } from '../src/lib/constants/tin';
 import { renderTMCertificate } from '../src/lib/renderers/tmRenderer';
+import { layoutFromSnapshot, layoutFromVault } from '../src/lib/publish/layout';
 import { renderNIDCard } from '../src/lib/renderers/nidRenderer';
 import { renderTINDocument, wrapTinText } from '../src/lib/renderers/tinRenderer';
 import { buildTinQrPayload, encodeDemoQr } from '../src/lib/tinQr';
@@ -511,6 +512,42 @@ async function main() {
   // TM without background (fallback path)
   const r2b = renderBothTM(tmDefault, null, null, null);
   assert(buffersEqual(r2b.original.buffer, r2b.ported.buffer), 'TM without background — pixels identical');
+
+  // Instant Download uses live editor layout; History View/Publish rebuild from
+  // the vault. Custom seal/signature anchors must survive that round-trip.
+  const tm261061Layout = {
+    ...TM_DEFAULTS,
+    trademarkNo: '261061',
+    signX: 1480,
+    signY: 2488,
+    signSize: 280,
+    sealX: 310,
+    sealY: 2910,
+  };
+  const roundTripped = { ...tm261061Layout, ...layoutFromVault(layoutFromSnapshot(tm261061Layout)) };
+  const liveCanvas = createCanvas(1, 1);
+  const vaultCanvas = createCanvas(1, 1);
+  renderTMCertificate(
+    liveCanvas as unknown as HTMLCanvasElement,
+    tm261061Layout,
+    certBg as HTMLImageElement | null,
+    null,
+    sign as HTMLImageElement | null,
+    1,
+  );
+  renderTMCertificate(
+    vaultCanvas as unknown as HTMLCanvasElement,
+    roundTripped,
+    certBg as HTMLImageElement | null,
+    null,
+    sign as HTMLImageElement | null,
+    1,
+  );
+  const livePixels = Buffer.from(liveCanvas.getContext('2d')!.getImageData(0, 0, liveCanvas.width, liveCanvas.height).data.buffer);
+  const vaultPixels = Buffer.from(vaultCanvas.getContext('2d')!.getImageData(0, 0, vaultCanvas.width, vaultCanvas.height).data.buffer);
+  assert(buffersEqual(livePixels, vaultPixels), 'TM 261061 seal/signature layout survives Save → History re-render');
+  assert(roundTripped.signX === 1480 && roundTripped.signY === 2488 && roundTripped.signSize === 280, 'signature X/Y/size restored');
+  assert(roundTripped.sealX === 310 && roundTripped.sealY === 2910, 'seal X/Y restored');
 
   const nidDefault = { ...NID_DEFAULTS };
   const r3 = renderBothNID(nidDefault, nidBg, null);

@@ -24,6 +24,7 @@ import { githubEnv } from '../src/lib/publish/github';
 import { hasToolAccess, canSelfPublish } from '../src/lib/workspace/access';
 import { isGenerationLimited, generationPeriodLabel } from '../src/lib/workspace/limits';
 import { sealedTextFromVault } from '../src/lib/publish/sealed-text';
+import { layoutFromSnapshot, layoutFromVault } from '../src/lib/publish/layout';
 import { TM_DEFAULTS } from '../src/lib/constants/tm';
 
 const ROOT = process.cwd();
@@ -196,6 +197,28 @@ function main() {
     sealedTextFromVault(null, TM_DEFAULTS.sealedTextPhrase) === TM_DEFAULTS.sealedTextPhrase,
     'null sealed_text_phrase still uses the template default',
   );
+
+  console.log('\n[10] History publish preserves saved seal/signature layout\n');
+  const SAVED_LAYOUT = {
+    ...TM_DEFAULTS,
+    signX: 1480,
+    signY: 2488,
+    signSize: 280,
+    sealX: 310,
+    sealY: 2910,
+  };
+  const stored = layoutFromSnapshot(SAVED_LAYOUT);
+  assert(stored.signX === 1480, 'Save stores Signature X verbatim');
+  assert(stored.signY === 2488, 'Save stores Signature Y verbatim');
+  assert(stored.signSize === 280, 'Save stores Signature Size verbatim');
+  assert(stored.sealX === 310 && stored.sealY === 2910, 'Save stores sealed-phrase anchors verbatim');
+  const restored = layoutFromVault(stored);
+  assert(restored.signX === 1480 && restored.signY === 2488 && restored.signSize === 280, 'History Publish uses saved signature position/size');
+  assert(restored.sealX === 310 && restored.sealY === 2910, 'History Publish uses saved seal anchors');
+  assert(restored.signX !== TM_DEFAULTS.signX || restored.signY !== TM_DEFAULTS.signY, 'publish does not fall back to default signature when layout was saved');
+  const legacy = layoutFromVault(null);
+  assert(legacy.signX === TM_DEFAULTS.signX && legacy.signY === TM_DEFAULTS.signY && legacy.signSize === TM_DEFAULTS.signSize, 'legacy vault rows without layout_json still use TM_DEFAULTS');
+  assert(legacy.sealX === TM_DEFAULTS.sealX && legacy.sealY === TM_DEFAULTS.sealY, 'legacy vault rows keep default seal anchors');
 
   console.log(`\n${failures === 0 ? '✓ ALL PUBLISH CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
