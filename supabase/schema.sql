@@ -647,6 +647,11 @@ end $$;
 -- Note: if you recreate this table you must restore the per-user RLS policies
 -- defined in STEP 4 (own-or-admin) so the isolated vault keeps working.
 
+-- Persist the sealed statement phrase as typed (including consecutive periods
+-- such as `....day of....Month.......`). History publish re-renders from the
+-- vault row, so this must be stored verbatim or the dots are lost.
+alter table if exists public.certificates add column if not exists sealed_text_phrase text;
+
 -- Persist the uploaded logo image with vault records so History can restore it.
 -- `if exists` guards environments where the legacy vault table is absent.
 alter table if exists public.certificates add column if not exists logo_data_url text;

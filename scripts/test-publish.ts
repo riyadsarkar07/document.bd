@@ -23,6 +23,8 @@ import { withRecord, withoutRecord } from '../src/lib/publish/data';
 import { githubEnv } from '../src/lib/publish/github';
 import { hasToolAccess, canSelfPublish } from '../src/lib/workspace/access';
 import { isGenerationLimited, generationPeriodLabel } from '../src/lib/workspace/limits';
+import { sealedTextFromVault } from '../src/lib/publish/sealed-text';
+import { TM_DEFAULTS } from '../src/lib/constants/tm';
 
 const ROOT = process.cwd();
 
@@ -171,6 +173,29 @@ function main() {
   assert(generationPeriodLabel('weekly') === 'week', 'period label maps weekly');
   assert(generationPeriodLabel('monthly') === 'month', 'period label maps monthly');
   assert(generationPeriodLabel(null) === 'period', 'period label falls back');
+
+  console.log('\n[9] History publish preserves saved sealed-line periods\n');
+  const SAVED_SEALED = 'Sealed at my direction this ....day of....Month.......';
+  assert(
+    sealedTextFromVault(SAVED_SEALED, TM_DEFAULTS.sealedTextPhrase) === SAVED_SEALED,
+    'saved phrase with consecutive periods is used verbatim on publish re-render',
+  );
+  assert(
+    sealedTextFromVault(SAVED_SEALED, TM_DEFAULTS.sealedTextPhrase).includes('....day of....Month.......'),
+    'consecutive periods are not collapsed or stripped',
+  );
+  assert(
+    sealedTextFromVault(SAVED_SEALED, TM_DEFAULTS.sealedTextPhrase) !== TM_DEFAULTS.sealedTextPhrase,
+    'publish does not fall back to the undotted template default when Save stored the dotted phrase',
+  );
+  assert(
+    sealedTextFromVault(undefined, TM_DEFAULTS.sealedTextPhrase) === TM_DEFAULTS.sealedTextPhrase,
+    'legacy vault rows without sealed_text_phrase still use the template default',
+  );
+  assert(
+    sealedTextFromVault(null, TM_DEFAULTS.sealedTextPhrase) === TM_DEFAULTS.sealedTextPhrase,
+    'null sealed_text_phrase still uses the template default',
+  );
 
   console.log(`\n${failures === 0 ? '✓ ALL PUBLISH CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);

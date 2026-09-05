@@ -5,6 +5,7 @@ import { TM_DEFAULTS } from '@/lib/constants/tm';
 import { formatTimestamp } from '@/lib/utils';
 import { logAudit } from '@/lib/workspace/audit';
 import { VERIFY_BASE_URL } from '@/lib/verify-base';
+import { sealedTextFromVault } from '@/lib/publish/sealed-text';
 import type { TMSnapshot } from '@/lib/editor/types';
 
 /** Publication state of a vault record against the public verification portal. */
@@ -38,6 +39,7 @@ interface VaultRow {
   company_type?: string | null;
   details?: string | null;
   sealed_date?: string | null;
+  sealed_text_phrase?: string | null;
   logo_data_url?: string | null;
   created_by?: string | null;
   synced_at?: string | null;
@@ -60,7 +62,7 @@ function mapVaultRow(row: VaultRow): VaultRecord {
     openingText: TM_DEFAULTS.openingText,
     middleTextArial: TM_DEFAULTS.middleTextArial,
     goodsDesc: row.details || '',
-    sealedTextPhrase: TM_DEFAULTS.sealedTextPhrase,
+    sealedTextPhrase: sealedTextFromVault(row.sealed_text_phrase, TM_DEFAULTS.sealedTextPhrase),
     sealedDate: row.sealed_date || '',
     // `logoText` is not persisted in the vault row. Deriving it from the
     // company name would inject a duplicate text box beside the embedded
@@ -124,6 +126,8 @@ export async function commitCertificate(
     app_date: entry.appDate || '',
     details: entry.goodsDesc || '',
     sealed_date: entry.sealedDate || '',
+    sealed_text_phrase:
+      typeof entry.sealedTextPhrase === 'string' ? entry.sealedTextPhrase : TM_DEFAULTS.sealedTextPhrase,
     synced_at: new Date().toISOString(),
     // Re-saving a trashed record brings it back into the active vault.
     deleted_at: null,
@@ -172,12 +176,13 @@ export async function commitCertificate(
   // logo_data_url, deleted_at before its migration is applied) so the vault
   // write still succeeds; the extra data persists once the migration is run.
   let attempts = 0;
-  while (result.error && attempts < 3) {
+  while (result.error && attempts < 5) {
     const msg = result.error.message ?? '';
     const drops: string[] = [];
     if (/created_by/i.test(msg)) drops.push('created_by');
     if (/logo_data_url/i.test(msg)) drops.push('logo_data_url');
     if (/deleted_at/i.test(msg)) drops.push('deleted_at');
+    if (/sealed_text_phrase/i.test(msg)) drops.push('sealed_text_phrase');
     if (drops.length === 0) break;
     for (const key of drops) delete payload[key];
     result = existingRow
