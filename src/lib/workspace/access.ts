@@ -15,6 +15,9 @@
 export const TOOL_SCOPES = [
   'dashboard',
   'tm',
+  'page-recover',
+  'youtube-trademark',
+  'business-manager',
   'nid',
   'tin',
   'templates',
@@ -29,6 +32,9 @@ export type ToolScope = (typeof TOOL_SCOPES)[number];
 export const TOOL_SCOPE_LABEL: Record<ToolScope, string> = {
   dashboard: 'Dashboard',
   tm: 'TM Certificate',
+  'page-recover': 'Hacked Page Recover',
+  'youtube-trademark': 'YouTube Trademark',
+  'business-manager': 'Business Manager Access',
   nid: 'NID Card',
   tin: 'TIN Record',
   templates: 'Templates',

@@ -816,7 +816,7 @@ export default function UsersPage() {
           <p className="text-xs leading-relaxed text-muted">
             Choose which tools/pages this user may use. Keep every tool checked for full
             access (equivalent to no restriction). Enforcement is server-side — blocked tools
-            are hidden from the sidebar, redirect back to the dashboard, and are rejected by
+            stay locked in the sidebar, redirect back to the dashboard, and are rejected by
             the database.
           </p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

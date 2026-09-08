@@ -158,6 +158,17 @@ function main() {
   assert(hasToolAccess({ role: 'viewer', allowed_tools: ['nid'] }, 'tm') === false, 'blocked scope fails');
   assert(hasToolAccess({ role: 'viewer', allowed_tools: [] }, 'tm') === false, 'empty allowlist -> no tools');
   assert(hasToolAccess({ role: 'editor', allowed_tools: ['tm', 'history'] }, 'projects') === false, 'editor is gated by the allowlist too');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['page-recover'] }, 'page-recover') === true, 'Hacked Page Recover granted');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['page-recover'] }, 'youtube-trademark') === false, 'Hacked Page Recover does not grant YouTube Trademark');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['youtube-trademark'] }, 'youtube-trademark') === true, 'YouTube Trademark granted');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['youtube-trademark'] }, 'business-manager') === false, 'YouTube Trademark does not grant Business Manager');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['business-manager'] }, 'business-manager') === true, 'Business Manager Access granted');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tm'] }, 'page-recover') === false, 'TM Certificate does not grant Hacked Page Recover');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tm'] }, 'youtube-trademark') === false, 'TM Certificate does not grant YouTube Trademark');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tm'] }, 'business-manager') === false, 'TM Certificate does not grant Business Manager');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'page-recover') === true, 'null allowlist grants Hacked Page Recover');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'youtube-trademark') === true, 'null allowlist grants YouTube Trademark');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'business-manager') === true, 'null allowlist grants Business Manager');
 
   console.log('\n[7] user self-publish eligibility (mirrors profiles.can_self_publish)\n');
   assert(canSelfPublish({ role: 'viewer', can_self_publish: true }) === true, 'purchased viewer can self-publish');
