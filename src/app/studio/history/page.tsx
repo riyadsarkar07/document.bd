@@ -21,6 +21,7 @@ import {
 } from '@/lib/publish/publish-client';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
 import { loadImage, loadDataUrlImage } from '@/lib/images';
+import { loadDocumentFonts, ensureTmFontsReady } from '@/lib/fonts';
 import { TM_BACKGROUND, TM_SIGNATURE, TM_EXPORT_SCALE } from '@/lib/constants/tm';
 import { useAuth } from '@/lib/auth/auth-context';
 import { canSelfPublish } from '@/lib/workspace/access';
@@ -121,24 +122,42 @@ export default function HistoryPage() {
     return () => clearTimeout(t);
   }, [refresh]);
 
-  const openPreview = async (record: VaultRecord) => {
-    setPreview(record);
-    setPreviewImg(null);
+  useEffect(() => {
+    void loadDocumentFonts();
+  }, []);
+
+  const renderHistoryCertificate = async (
+    record: VaultRecord,
+    scale: number,
+  ): Promise<HTMLCanvasElement | null> => {
+    const fontsOk = await ensureTmFontsReady();
+    if (!fontsOk) return null;
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
     const logo = record.logoDataUrl ? await loadDataUrlImage(record.logoDataUrl) : null;
     const canvas = document.createElement('canvas');
-    renderTMCertificate(canvas, record, bg, logo, sign, TM_EXPORT_SCALE);
+    renderTMCertificate(canvas, record, bg, logo, sign, scale);
+    return canvas;
+  };
+
+  const openPreview = async (record: VaultRecord) => {
+    setPreview(record);
+    setPreviewImg(null);
+    const canvas = await renderHistoryCertificate(record, TM_EXPORT_SCALE);
+    if (!canvas) {
+      toast.error('Certificate fonts are not ready. Please try again.');
+      return;
+    }
     setPreviewImg(canvas.toDataURL('image/jpeg', 0.96));
   };
 
   const downloadRecord = async (record: VaultRecord) => {
     toast.success('Preparing download…');
-    const bg = await loadImage(TM_BACKGROUND);
-    const sign = await loadImage(TM_SIGNATURE);
-    const logo = record.logoDataUrl ? await loadDataUrlImage(record.logoDataUrl) : null;
-    const canvas = document.createElement('canvas');
-    renderTMCertificate(canvas, record, bg, logo, sign, TM_EXPORT_SCALE);
+    const canvas = await renderHistoryCertificate(record, TM_EXPORT_SCALE);
+    if (!canvas) {
+      toast.error('Certificate fonts are not ready. Please try again.');
+      return;
+    }
     const link = document.createElement('a');
     link.download = `Archive-TM-${record.trademarkNo || 'cert'}.jpg`;
     link.href = canvas.toDataURL('image/jpeg', 0.96);
@@ -177,11 +196,8 @@ export default function HistoryPage() {
   };
 
   const renderRecordJpg = async (record: VaultRecord): Promise<string | null> => {
-    const bg = await loadImage(TM_BACKGROUND);
-    const sign = await loadImage(TM_SIGNATURE);
-    const logo = record.logoDataUrl ? await loadDataUrlImage(record.logoDataUrl) : null;
-    const canvas = document.createElement('canvas');
-    renderTMCertificate(canvas, record, bg, logo, sign);
+    const canvas = await renderHistoryCertificate(record, 1);
+    if (!canvas) return null;
     return canvas.toDataURL('image/jpeg', 0.9);
   };
 
