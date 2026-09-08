@@ -88,7 +88,7 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
     );
   }
 
-  if (isAdminRoute && !canManageUsers(role)) {
+  if ((isAdminRoute && !canManageUsers(role)) || blockedTool) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
         <Loader2 className="h-7 w-7 animate-spin text-accent" />

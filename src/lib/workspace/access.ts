@@ -3,8 +3,8 @@
  *
  * `allowed_tools` is stored on the `profiles` row and ENFORCED server-side by
  * Supabase RLS / RPCs (see `supabase/schema.sql`). This module mirrors the
- * same rules in the UI (sidebar + route guards) so restricted pages are hidden
- * and redirect before any data is fetched. It is NOT the enforcement itself.
+ * same rules in the UI (sidebar + route guards) so restricted pages appear
+ * locked and cannot be opened. It is NOT the enforcement itself.
  *
  * Semantics (must match `has_tool_access` in schema.sql):
  *   - admin role   -> every tool (hard bypass).

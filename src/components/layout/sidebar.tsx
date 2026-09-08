@@ -11,6 +11,7 @@ import {
   History,
   Landmark,
   LayoutDashboard,
+  Lock,
   Package,
   RotateCcw,
   Settings,
@@ -22,9 +23,10 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/auth-context';
-import { canManageUsers, ROLE_LABEL } from '@/lib/auth/types';
+import { canManageUsers, ROLE_LABEL, type Profile } from '@/lib/auth/types';
 import { hasToolAccess, type ToolScope } from '@/lib/workspace/access';
 import { Brand } from '@/components/layout/brand';
+import { useAccessGate } from '@/components/layout/access-gate';
 
 interface NavItem {
   href: string;
@@ -60,9 +62,15 @@ function groupBy<T>(items: T[], key: (item: T) => string | undefined) {
   }, {});
 }
 
+function itemLocked(item: NavItem, profile: Profile | null) {
+  if (!item.scope) return false;
+  return !hasToolAccess(profile, item.scope);
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const { role, profile } = useAuth();
+  const { denyAccess } = useAccessGate();
   const groups = groupBy(NAV, (n) => n.section);
 
   return (
@@ -73,9 +81,7 @@ export function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto px-3 py-5">
         {Object.entries(groups).map(([section, items]) => {
-          const visible = items.filter(
-            (item) => (!item.admin || canManageUsers(role)) && (!item.scope || hasToolAccess(profile, item.scope)),
-          );
+          const visible = items.filter((item) => !item.admin || canManageUsers(role));
           if (!visible.length) return null;
           return (
             <div key={section} className="mb-6">
@@ -85,36 +91,72 @@ export function Sidebar() {
               <div className="flex flex-col gap-1">
                 {visible.map((item) => {
                   const Icon = item.icon;
+                  const locked = itemLocked(item, profile);
                   const isActive =
-                    pathname === item.href ||
-                    (item.href !== '/studio' && pathname.startsWith(item.href));
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-150',
-                        isActive
-                          ? 'bg-accent/10 text-accent-bright'
-                          : 'text-muted hover:bg-surface-raised hover:text-primary',
-                      )}
-                    >
+                    !locked &&
+                    (pathname === item.href ||
+                      (item.href !== '/studio' && pathname.startsWith(item.href)));
+                  const className = cn(
+                    'group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-150',
+                    locked
+                      ? 'cursor-not-allowed text-dimm/80'
+                      : isActive
+                        ? 'bg-accent/10 text-accent-bright'
+                        : 'text-muted hover:bg-surface-raised hover:text-primary',
+                  );
+
+                  const inner = (
+                    <>
                       {isActive && (
                         <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-accent shadow-glow" />
                       )}
                       <Icon
                         className={cn(
                           'h-[18px] w-[18px] shrink-0 transition-colors',
-                          isActive ? 'text-accent-bright' : 'text-dimm group-hover:text-muted',
+                          locked
+                            ? 'text-dimm/70'
+                            : isActive
+                              ? 'text-accent-bright'
+                              : 'text-dimm group-hover:text-muted',
                         )}
                         strokeWidth={isActive ? 2.2 : 1.8}
                       />
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {item.admin && (
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{item.label}</span>
+                        {locked && (
+                          <span className="mt-0.5 block truncate text-[10px] font-medium text-dimm">
+                            Admin permission required
+                          </span>
+                        )}
+                      </span>
+                      {locked ? (
+                        <Lock className="h-3.5 w-3.5 shrink-0 text-dimm" aria-hidden />
+                      ) : item.admin ? (
                         <ShieldCheck
                           className={cn('h-3.5 w-3.5', isActive ? 'text-accent-bright' : 'text-dimm')}
                         />
-                      )}
+                      ) : null}
+                    </>
+                  );
+
+                  if (locked) {
+                    return (
+                      <button
+                        key={item.href}
+                        type="button"
+                        onClick={denyAccess}
+                        className={className}
+                        aria-disabled="true"
+                        aria-label={`${item.label}, Admin permission required`}
+                      >
+                        {inner}
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <Link key={item.href} href={item.href} className={className}>
+                      {inner}
                     </Link>
                   );
                 })}
