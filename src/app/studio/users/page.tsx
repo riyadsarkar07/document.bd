@@ -31,7 +31,7 @@ import { FieldLabel, Input } from '@/components/ui/input';
 import { Pagination } from '@/components/ui/pagination';
 import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { useToast } from '@/lib/toast/toast-provider';
-import { cn, timeAgo } from '@/lib/utils';
+import { cn, escapePostgrestSearch, timeAgo } from '@/lib/utils';
 import { TOOL_SCOPES, TOOL_SCOPE_LABEL, type ToolScope } from '@/lib/workspace/access';
 
 interface UserUsage {
@@ -89,7 +89,7 @@ export default function UsersPage() {
     setLoading(true);
 
     let profileQuery = supabase.from('profiles').select('*', { count: 'exact' }).order('created_at');
-    const search = searchTerm.trim();
+    const search = escapePostgrestSearch(searchTerm);
     if (search) profileQuery = profileQuery.ilike('email', `%${search}%`);
     profileQuery = profileQuery.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 

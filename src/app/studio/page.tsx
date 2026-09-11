@@ -8,6 +8,7 @@ import {
   FileText,
   History,
   Landmark,
+  Lock,
   Package,
   Shapes,
   Sparkles,
@@ -15,16 +16,18 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { hasToolAccess, type ToolScope } from '@/lib/workspace/access';
+import { useAccessGate } from '@/components/layout/access-gate';
 import { Card, StatCard } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { loadVault } from '@/lib/workspace/vault';
 import { listTemplates, listProjects, getScopedStorageKey } from '@/lib/workspace/store';
-import { timeAgo } from '@/lib/utils';
+import { cn, timeAgo } from '@/lib/utils';
 import type { ActivityRecord } from '@/lib/auth/types';
 
 export default function DashboardPage() {
   const { profile } = useAuth();
+  const { denyAccess } = useAccessGate();
   const [stats, setStats] = useState({
     records: 0,
     templates: 0,
@@ -81,26 +84,38 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
-            {hasToolAccess(profile, 'tm') && (
+            {hasToolAccess(profile, 'tm') ? (
               <Link href="/studio/editor/tm">
                 <Button variant="secondary" icon={<FileText className="h-4 w-4" />}>
                   TM Certificate
                 </Button>
               </Link>
+            ) : (
+              <Button variant="secondary" icon={<Lock className="h-4 w-4" />} onClick={denyAccess}>
+                TM Certificate
+              </Button>
             )}
-            {hasToolAccess(profile, 'nid') && (
+            {hasToolAccess(profile, 'nid') ? (
               <Link href="/studio/editor/nid">
                 <Button variant="primary" icon={<CreditCard className="h-4 w-4" />}>
                   NID Card
                 </Button>
               </Link>
+            ) : (
+              <Button variant="primary" icon={<Lock className="h-4 w-4" />} onClick={denyAccess}>
+                NID Card
+              </Button>
             )}
-            {hasToolAccess(profile, 'tin') && (
+            {hasToolAccess(profile, 'tin') ? (
               <Link href="/studio/editor/tin">
                 <Button variant="success" icon={<Landmark className="h-4 w-4" />}>
                   TIN Record
                 </Button>
               </Link>
+            ) : (
+              <Button variant="success" icon={<Lock className="h-4 w-4" />} onClick={denyAccess}>
+                TIN Record
+              </Button>
             )}
           </div>
         </div>
@@ -120,14 +135,16 @@ export default function DashboardPage() {
             />
           </Link>
         ) : (
-          <StatCard
-            label="Vault Records"
-            value={stats.records}
-            hint="History access is disabled"
-            icon={<History className="h-5 w-5" />}
-            tone="gold"
-            loading={loading}
-          />
+          <button type="button" className="w-full text-left" onClick={denyAccess}>
+            <StatCard
+              label="Vault Records"
+              value={stats.records}
+              hint="Admin permission required"
+              icon={<Lock className="h-5 w-5" />}
+              tone="gold"
+              loading={loading}
+            />
+          </button>
         )}
         {hasToolAccess(profile, 'templates') ? (
           <Link href="/studio/templates">
@@ -141,14 +158,16 @@ export default function DashboardPage() {
             />
           </Link>
         ) : (
-          <StatCard
-            label="Templates"
-            value={stats.templates}
-            hint="Templates access is disabled"
-            icon={<Shapes className="h-5 w-5" />}
-            tone="blue"
-            loading={loading}
-          />
+          <button type="button" className="w-full text-left" onClick={denyAccess}>
+            <StatCard
+              label="Templates"
+              value={stats.templates}
+              hint="Admin permission required"
+              icon={<Lock className="h-5 w-5" />}
+              tone="blue"
+              loading={loading}
+            />
+          </button>
         )}
         {hasToolAccess(profile, 'projects') ? (
           <Link href="/studio/projects">
@@ -162,14 +181,16 @@ export default function DashboardPage() {
             />
           </Link>
         ) : (
-          <StatCard
-            label="Projects"
-            value={stats.projects}
-            hint="Projects access is disabled"
-            icon={<Package className="h-5 w-5" />}
-            tone="green"
-            loading={loading}
-          />
+          <button type="button" className="w-full text-left" onClick={denyAccess}>
+            <StatCard
+              label="Projects"
+              value={stats.projects}
+              hint="Admin permission required"
+              icon={<Lock className="h-5 w-5" />}
+              tone="green"
+              loading={loading}
+            />
+          </button>
         )}
         <StatCard
           label="Assets"
@@ -234,26 +255,57 @@ export default function DashboardPage() {
               scope: 'history',
             },
           ]
-            .filter((q) => hasToolAccess(profile, q.scope as ToolScope))
-            .map((q) => (
-            <Link
-              key={q.href}
-              href={q.href}
-              className="group rounded-2xl border border-line bg-surface-raised p-5 transition hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-pop"
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${q.tone}`}>
-                  <q.icon className="h-5 w-5" />
+            .map((q) => {
+            const locked = !hasToolAccess(profile, q.scope as ToolScope);
+            const className = cn(
+              'group rounded-2xl border border-line bg-surface-raised p-5 text-left transition',
+              locked
+                ? 'cursor-not-allowed opacity-80'
+                : 'hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-pop',
+            );
+            const inner = (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${q.tone}`}>
+                    {locked ? <Lock className="h-5 w-5" /> : <q.icon className="h-5 w-5" />}
+                  </div>
+                  <span className="font-mono text-[9.5px] uppercase tracking-wider text-dimm">
+                    {locked ? 'Locked' : q.meta}
+                  </span>
                 </div>
-                <span className="font-mono text-[9.5px] uppercase tracking-wider text-dimm">{q.meta}</span>
-              </div>
-              <div className="flex items-center gap-2 font-medium text-primary">
-                {q.title}
-                <ArrowRight className="h-3.5 w-3.5 text-dimm transition group-hover:translate-x-0.5 group-hover:text-accent-bright" />
-              </div>
-              <p className="mt-1 text-xs leading-relaxed text-muted">{q.desc}</p>
-            </Link>
-          ))}
+                <div className="flex items-center gap-2 font-medium text-primary">
+                  {q.title}
+                  {locked ? (
+                    <Lock className="h-3.5 w-3.5 text-dimm" />
+                  ) : (
+                    <ArrowRight className="h-3.5 w-3.5 text-dimm transition group-hover:translate-x-0.5 group-hover:text-accent-bright" />
+                  )}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-muted">
+                  {locked ? 'Admin permission required' : q.desc}
+                </p>
+              </>
+            );
+            if (locked) {
+              return (
+                <button
+                  key={q.href}
+                  type="button"
+                  onClick={denyAccess}
+                  className={className}
+                  aria-disabled="true"
+                  aria-label={`${q.title}, Admin permission required`}
+                >
+                  {inner}
+                </button>
+              );
+            }
+            return (
+              <Link key={q.href} href={q.href} className={className}>
+                {inner}
+              </Link>
+            );
+          })}
         </Card>
 
         <Card title="Recent Activity" subtitle="Latest actions in this workspace">

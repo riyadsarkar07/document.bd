@@ -45,6 +45,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [resolved, setResolved] = useState<'dark' | 'light'>('dark');
 
   useEffect(() => {
+    try {
+      const off = localStorage.getItem('studio.grain') === 'false';
+      document.documentElement.classList.toggle('grain-disabled', off);
+      document.body.classList.toggle('grain-disabled', off);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
     const update = () => {
       const next = theme === 'system' ? resolveSystem() : theme;
       setResolved(next);

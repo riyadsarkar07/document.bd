@@ -13,6 +13,10 @@ const TITLES: Record<string, string> = {
   '/studio': 'Dashboard',
   '/studio/editor/tm': 'TM Certificate Editor',
   '/studio/editor/nid': 'NID Card Editor',
+  '/studio/editor/tin': 'TIN Record Editor',
+  '/studio/editor/page-recover': 'Hacked Page Recover',
+  '/studio/editor/youtube-trademark': 'YouTube Trademark',
+  '/studio/editor/business-manager': 'Business Manager Access',
   '/studio/templates': 'Templates',
   '/studio/projects': 'Projects',
   '/studio/history': 'Download History',
@@ -26,6 +30,10 @@ const SUBS: Record<string, string> = {
   '/studio': 'Workspace overview',
   '/studio/editor/tm': 'Trademark certificate canvas',
   '/studio/editor/nid': 'National ID card canvas',
+  '/studio/editor/tin': 'TIN information record canvas',
+  '/studio/editor/page-recover': 'Hacked page recovery workspace',
+  '/studio/editor/youtube-trademark': 'YouTube trademark workspace',
+  '/studio/editor/business-manager': 'Business manager access workspace',
 };
 
 export function Topbar({ onMenu }: { onMenu?: () => void }) {

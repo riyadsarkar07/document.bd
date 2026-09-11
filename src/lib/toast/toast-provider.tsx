@@ -64,12 +64,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-6 right-6 z-[300] flex w-full max-w-sm flex-col gap-2">
+      <div className="pointer-events-none fixed bottom-24 right-6 z-[300] flex w-full max-w-sm flex-col gap-2 lg:bottom-6">
         {items.map((t) => (
           <div
             key={t.id}
             className={cn(
-              'pointer-events-auto flex items-center gap-3 rounded-xl border bg-surface px-4 py-3 text-sm text-slate-100 shadow-deep animate-slide-up',
+              'pointer-events-auto flex items-center gap-3 rounded-xl border bg-surface px-4 py-3 text-sm text-primary shadow-deep animate-slide-up',
               t.type === 'success' && 'border-success/50',
               t.type === 'error' && 'border-danger/50',
               t.type === 'info' && 'border-info/40',
@@ -81,7 +81,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <span className="flex-1">{t.message}</span>
             <button
               onClick={() => dismiss(t.id)}
-              className="text-muted transition hover:text-slate-200"
+              className="text-muted transition hover:text-primary"
               aria-label="Dismiss"
             >
               ✕

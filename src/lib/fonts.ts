@@ -23,15 +23,22 @@ async function waitForDocumentFonts(): Promise<void> {
   }
 }
 
+function fontFaceLoaded(spec: string): boolean {
+  try {
+    return document.fonts.check(spec);
+  } catch {
+    return false;
+  }
+}
+
+function coreFontFacesAreLoaded(): boolean {
+  if (typeof document === 'undefined') return false;
+  return fontFaceLoaded("16px 'Arial Regular'");
+}
+
 function tmFontFacesAreLoaded(): boolean {
   if (typeof document === 'undefined') return false;
-  return TM_FONT_CHECKS.every((spec) => {
-    try {
-      return document.fonts.check(spec);
-    } catch {
-      return false;
-    }
-  });
+  return TM_FONT_CHECKS.every((spec) => fontFaceLoaded(spec));
 }
 
 async function loadTmFontFaces(): Promise<void> {
@@ -48,8 +55,9 @@ async function loadTmFontFaces(): Promise<void> {
  * Registers the exact font families the renderers depend on. Family names and
  * file mappings are preserved from the original application.
  *
- * Resolves true only after `document.fonts.ready` and the TM certificate faces
- * (`Arial Regular`, `Monotype Corsiva Bold Italic`) are confirmed loaded.
+ * Resolves true after `document.fonts.ready` and the shared renderer face
+ * (`Arial Regular`) is confirmed loaded. TM Corsiva is still requested, but a
+ * missing Corsiva file no longer blocks NID/TIN live preview.
  */
 export function loadDocumentFonts(): Promise<boolean> {
   if (typeof document === 'undefined') return Promise.resolve(false);
@@ -71,7 +79,7 @@ export function loadDocumentFonts(): Promise<boolean> {
     await waitForDocumentFonts();
     await loadTmFontFaces();
     await waitForDocumentFonts();
-    const ok = tmFontFacesAreLoaded();
+    const ok = coreFontFacesAreLoaded();
     if (!ok) loadPromise = null;
     return ok;
   })();

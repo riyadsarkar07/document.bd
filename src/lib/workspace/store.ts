@@ -73,6 +73,15 @@ export async function listTemplates(): Promise<StoreResult<TemplateRecord[]>> {
   return { data: data as TemplateRecord[], source: 'supabase', error: null };
 }
 
+function withLocalId<T extends { id?: string }>(record: T): T {
+  if (record.id) return record;
+  const id =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return { ...record, id };
+}
+
 export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<TemplateRecord | null>> {
   // Templates are always attributed to the current user so RLS ownership holds
   // even if a caller forgets to set owner_id.
@@ -84,13 +93,17 @@ export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<Tem
     .select()
     .maybeSingle();
   if (error) {
+    if (isEnforcementError(error)) {
+      return { data: null, source: 'supabase', error: error.message };
+    }
+    const saved = withLocalId({ ...tpl, updated_at: new Date().toISOString() });
     const key = await getScopedStorageKey(LS_TEMPLATES_BASE);
     const local = readLocal<TemplateRecord[]>(key, []);
-    const idx = local.findIndex((t) => t.id === tpl.id);
-    if (idx >= 0) local[idx] = { ...tpl, updated_at: new Date().toISOString() };
-    else local.unshift({ ...tpl, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+    const idx = local.findIndex((t) => t.id === saved.id);
+    if (idx >= 0) local[idx] = saved;
+    else local.unshift({ ...saved, created_at: saved.created_at ?? new Date().toISOString() });
     writeLocal(key, local);
-    return { data: tpl, source: 'local', error: null };
+    return { data: saved, source: 'local', error: null };
   }
   void logAudit({
     action: 'template.saved',
@@ -104,14 +117,18 @@ export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<Tem
 export async function deleteTemplate(id: string): Promise<StoreResult<null>> {
   const { data, error } = await supabase.from('templates').delete().eq('id', id).select('name');
   if (error) {
+    if (isEnforcementError(error)) {
+      return { data: null, source: 'supabase', error: error.message };
+    }
     const key = await getScopedStorageKey(LS_TEMPLATES_BASE);
     const local = readLocal<TemplateRecord[]>(key, []).filter((t) => t.id !== id);
     writeLocal(key, local);
+    return { data: null, source: 'local', error: null };
   }
-  if (!error) {
-    void logAudit({ action: 'template.deleted', targetType: 'template', targetId: id, metadata: { name: data?.[0]?.name ?? '' } });
-  }
-  return { data: null, source: 'supabase', error: error ? error.message : null };
+  const key = await getScopedStorageKey(LS_TEMPLATES_BASE);
+  writeLocal(key, readLocal<TemplateRecord[]>(key, []).filter((t) => t.id !== id));
+  void logAudit({ action: 'template.deleted', targetType: 'template', targetId: id, metadata: { name: data?.[0]?.name ?? '' } });
+  return { data: null, source: 'supabase', error: null };
 }
 
 /* ────────────────────────── Projects ────────────────────────── */
@@ -137,13 +154,14 @@ export async function saveProject(proj: ProjectRecord): Promise<StoreResult<Proj
     if (isEnforcementError(error)) {
       return { data: null, source: 'supabase', error: error.message };
     }
+    const saved = withLocalId({ ...proj, updated_at: new Date().toISOString() });
     const key = await getScopedStorageKey(LS_PROJECTS_BASE);
     const local = readLocal<ProjectRecord[]>(key, []);
-    const idx = local.findIndex((p) => p.id === proj.id);
-    if (idx >= 0) local[idx] = { ...proj, updated_at: new Date().toISOString() };
-    else local.unshift({ ...proj, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+    const idx = local.findIndex((p) => p.id === saved.id);
+    if (idx >= 0) local[idx] = saved;
+    else local.unshift({ ...saved, created_at: saved.created_at ?? new Date().toISOString() });
     writeLocal(key, local);
-    return { data: proj, source: 'local', error: null };
+    return { data: saved, source: 'local', error: null };
   }
   void logAudit({
     action: 'project.saved',
@@ -157,14 +175,18 @@ export async function saveProject(proj: ProjectRecord): Promise<StoreResult<Proj
 export async function deleteProject(id: string): Promise<StoreResult<null>> {
   const { data, error } = await supabase.from('projects').delete().eq('id', id).select('name');
   if (error) {
+    if (isEnforcementError(error)) {
+      return { data: null, source: 'supabase', error: error.message };
+    }
     const key = await getScopedStorageKey(LS_PROJECTS_BASE);
     const local = readLocal<ProjectRecord[]>(key, []).filter((p) => p.id !== id);
     writeLocal(key, local);
+    return { data: null, source: 'local', error: null };
   }
-  if (!error) {
-    void logAudit({ action: 'project.deleted', targetType: 'project', targetId: id, metadata: { name: data?.[0]?.name ?? '' } });
-  }
-  return { data: null, source: 'supabase', error: error ? error.message : null };
+  const key = await getScopedStorageKey(LS_PROJECTS_BASE);
+  writeLocal(key, readLocal<ProjectRecord[]>(key, []).filter((p) => p.id !== id));
+  void logAudit({ action: 'project.deleted', targetType: 'project', targetId: id, metadata: { name: data?.[0]?.name ?? '' } });
+  return { data: null, source: 'supabase', error: null };
 }
 
 /* ────────────────────────── Activity ────────────────────────── */

@@ -1,6 +1,7 @@
 'use client';
 
 import { supabase } from '@/lib/supabase/client';
+import { escapePostgrestSearch } from '@/lib/utils';
 
 export interface AuditLog {
   id: string | number;
@@ -83,7 +84,7 @@ export async function listAuditLogs(q: AuditQuery = {}): Promise<AuditListResult
       count: 'exact',
     });
 
-  const search = q.search?.trim();
+  const search = escapePostgrestSearch(q.search ?? '');
   if (search) {
     query = query.or(`actor_email.ilike.%${search}%,target_id.ilike.%${search}%,action.ilike.%${search}%`);
   }

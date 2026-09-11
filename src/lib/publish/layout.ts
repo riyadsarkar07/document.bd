@@ -58,12 +58,33 @@ function hasLayoutPayload(value: unknown): boolean {
   return Boolean(obj && typeof obj === 'object' && !Array.isArray(obj) && Object.keys(obj as object).length > 0);
 }
 
+export interface PackedDetailsExtra {
+  openingText?: string;
+  middleTextArial?: string;
+  logoText?: string;
+}
+
+export interface PackedDetails extends PackedDetailsExtra {
+  goodsDesc: string;
+  layout: unknown;
+}
+
+function extraFromLayout(layout: unknown): PackedDetailsExtra {
+  if (!layout || typeof layout !== 'object' || Array.isArray(layout)) return {};
+  const src = layout as Record<string, unknown>;
+  const extra: PackedDetailsExtra = {};
+  if (typeof src.openingText === 'string') extra.openingText = src.openingText;
+  if (typeof src.middleTextArial === 'string') extra.middleTextArial = src.middleTextArial;
+  if (typeof src.logoText === 'string') extra.logoText = src.logoText;
+  return extra;
+}
+
 /**
  * Production still lacks `layout_json`, and the vault drops that column on
  * write. Embed layout in the existing `details` text so History Publish can
  * restore seal/signature even when the jsonb column is absent.
  */
-export function unpackDetails(details: string | null | undefined): { goodsDesc: string; layout: unknown } {
+export function unpackDetails(details: string | null | undefined): PackedDetails {
   if (typeof details !== 'string' || !details) return { goodsDesc: details || '', layout: null };
   const start = details.lastIndexOf(LAYOUT_BEGIN);
   if (start < 0) return { goodsDesc: details, layout: null };
@@ -76,12 +97,13 @@ export function unpackDetails(details: string | null | undefined): { goodsDesc: 
   } catch {
     layout = null;
   }
-  return { goodsDesc: details.slice(0, start), layout };
+  return { goodsDesc: details.slice(0, start), layout, ...extraFromLayout(layout) };
 }
 
-export function packDetails(goodsDesc: string, layout: TMLayout): string {
+export function packDetails(goodsDesc: string, layout: TMLayout, extra?: PackedDetailsExtra): string {
   const clean = unpackDetails(goodsDesc).goodsDesc;
-  return `${clean}${LAYOUT_BEGIN}${JSON.stringify(layout)}${LAYOUT_END}`;
+  const payload = extra ? { ...layout, ...extra } : layout;
+  return `${clean}${LAYOUT_BEGIN}${JSON.stringify(payload)}${LAYOUT_END}`;
 }
 
 /** Prefer `layout_json`; fall back to the layout block embedded in `details`. */

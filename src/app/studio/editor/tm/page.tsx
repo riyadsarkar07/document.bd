@@ -82,8 +82,6 @@ function TMEditorInner() {
   presentRef.current = present;
   const logoImageRef = useRef(logoImage);
   logoImageRef.current = logoImage;
-  const fontsLoadedRef = useRef(fontsLoaded);
-  fontsLoadedRef.current = fontsLoaded;
 
   // Load external project/template state
   useEffect(() => {
@@ -145,7 +143,6 @@ function TMEditorInner() {
   // rendered at a preview scale so keystrokes and sliders update instantly
   // without full-resolution redraws. No busy/status churn on the live path.
   useEffect(() => {
-    if (!fontsLoadedRef.current) return;
     liveScaleRef.current = Math.min(1, Math.max(zoom, 0.35));
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {

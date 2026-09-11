@@ -163,11 +163,16 @@ async function updateRef(env: GitHubEnv, sha: string): Promise<void> {
 export async function readRepoFile(path: string): Promise<string | null> {
   const env = githubEnv();
   const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const obj = await ghJson<ContentsObject>(env, `contents/${encoded}?ref=${encodeURIComponent(env.branch)}`);
-  if (obj.encoding !== 'base64') {
-    throw new Error(`Unexpected file encoding for ${path}: ${obj.encoding}`);
+  try {
+    const obj = await ghJson<ContentsObject>(env, `contents/${encoded}?ref=${encodeURIComponent(env.branch)}`);
+    if (obj.encoding !== 'base64') {
+      throw new Error(`Unexpected file encoding for ${path}: ${obj.encoding}`);
+    }
+    return Buffer.from(obj.content, 'base64').toString('utf8');
+  } catch (err) {
+    if (err instanceof GitHubApiError && err.status === 404) return null;
+    throw err;
   }
-  return Buffer.from(obj.content, 'base64').toString('utf8');
 }
 
 /**

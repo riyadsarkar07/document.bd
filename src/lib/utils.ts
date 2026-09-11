@@ -50,6 +50,11 @@ export function cleanDate(value: string): string {
   return value.replace(/^Date:\s*/i, '').trim();
 }
 
+/** Strip PostgREST `or` / `ilike` metacharacters from user search input. */
+export function escapePostgrestSearch(value: string): string {
+  return value.replace(/[%_,".()\\]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function toDataUrl(
   img: HTMLImageElement,
   type = 'image/jpeg',

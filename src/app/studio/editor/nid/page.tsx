@@ -7,7 +7,7 @@ import { useDocumentEditor } from '@/lib/editor/use-document-editor';
 import { NID_DEFAULTS, NID_SECTIONS, NID_BACKGROUND, NID_TEXT_FIELDS } from '@/lib/constants/nid';
 import type { NIDSnapshot } from '@/lib/editor/types';
 import { renderNIDCard } from '@/lib/renderers/nidRenderer';
-import { loadImage } from '@/lib/images';
+import { loadImage, loadDataUrlImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import { checkLimit } from '@/lib/workspace/limits';
@@ -58,8 +58,6 @@ function NIDEditorInner() {
   presentRef.current = present;
   const photoImageRef = useRef(photoImage);
   photoImageRef.current = photoImage;
-  const fontsLoadedRef = useRef(fontsLoaded);
-  fontsLoadedRef.current = fontsLoaded;
 
   // Load external project/template state
   useEffect(() => {
@@ -121,7 +119,6 @@ function NIDEditorInner() {
   // rendered at a preview scale so keystrokes and sliders update instantly
   // without full-resolution redraws. No busy/status churn on the live path.
   useEffect(() => {
-    if (!fontsLoadedRef.current) return;
     liveScaleRef.current = Math.min(1, Math.max(zoom, 0.35));
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
@@ -188,18 +185,38 @@ function NIDEditorInner() {
     (file: File) => {
       const reader = new FileReader();
       reader.onload = (e) => {
+        const dataUrl = String(e.target?.result);
         const img = new Image();
         img.onload = () => {
           setPhotoImage(img);
           setPhotoName(file.name);
+          setField('photoDataUrl', dataUrl);
           toast.success('Profile photo loaded');
         };
-        img.src = String(e.target?.result);
+        img.src = dataUrl;
       };
       reader.readAsDataURL(file);
     },
-    [toast],
+    [toast, setField],
   );
+
+  useEffect(() => {
+    const dataUrl = present.photoDataUrl;
+    if (!dataUrl) {
+      if (photoImageRef.current) setPhotoImage(null);
+      return;
+    }
+    if (photoImageRef.current?.src === dataUrl) return;
+    let cancelled = false;
+    loadDataUrlImage(dataUrl).then((img) => {
+      if (cancelled) return;
+      if (img) setPhotoImage(img);
+      else if (photoImageRef.current?.src !== dataUrl) setPhotoImage(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [present.photoDataUrl]);
 
   const saveAsProject = useCallback(async () => {
     if (!user) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export type { TMSnapshot, NIDSnapshot } from '@/lib/editor/types';
 
@@ -24,8 +24,6 @@ export function useHistory<T>(initial: T) {
     future: [],
   }));
 
-  const skipNext = useRef(false);
-
   const set = useCallback((updater: T | ((prev: T) => T)) => {
     setState((prev) => {
       const next =
@@ -38,7 +36,6 @@ export function useHistory<T>(initial: T) {
 
   /** Replace the present value without recording history (used for load/reset). */
   const replace = useCallback((next: T) => {
-    skipNext.current = true;
     setState(() => ({ past: [], present: next, future: [] }));
   }, []);
 
@@ -74,10 +71,11 @@ export function useHistory<T>(initial: T) {
       const inField =
         tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
       if (inField && !(e.metaKey || e.ctrlKey)) return;
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+      const key = e.key.toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && key === 'z') {
         e.preventDefault();
         undo();
-      } else if ((e.metaKey || e.ctrlKey) && (e.shiftKey || e.key.toLowerCase() === 'y')) {
+      } else if ((e.metaKey || e.ctrlKey) && ((e.shiftKey && key === 'z') || key === 'y')) {
         e.preventDefault();
         redo();
       }

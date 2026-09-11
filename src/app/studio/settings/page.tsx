@@ -19,18 +19,19 @@ export default function SettingsPage() {
   const [autosave, setAutosave] = useLocalStorage('studio.autosave', true);
   const [autosaveDelay, setAutosaveDelay] = useLocalStorage('studio.autosaveDelay', 800);
   const [grain, setGrain] = useLocalStorage('studio.grain', true);
-  const [fontStatus, setFontStatus] = useState<'idle' | 'loading' | 'ok'>('idle');
+  const [fontStatus, setFontStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
 
   useEffect(() => {
+    document.documentElement.classList.toggle('grain-disabled', !grain);
     document.body.classList.toggle('grain-disabled', !grain);
-    return () => document.body.classList.remove('grain-disabled');
   }, [grain]);
 
   const verifyFonts = async () => {
     setFontStatus('loading');
     const ok = await loadDocumentFonts();
-    setFontStatus(ok ? 'ok' : 'ok');
-    toast.success(ok ? 'All renderer fonts loaded' : 'Renderer fonts verified');
+    setFontStatus(ok ? 'ok' : 'error');
+    if (ok) toast.success('All renderer fonts loaded');
+    else toast.error('Some renderer fonts failed to load');
   };
 
   return (
@@ -108,6 +109,7 @@ export default function SettingsPage() {
             Verify renderer fonts
             {fontStatus === 'loading' && <span className="ml-auto h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />}
             {fontStatus === 'ok' && <span className="ml-auto text-xs text-success">Loaded</span>}
+            {fontStatus === 'error' && <span className="ml-auto text-xs text-danger">Failed</span>}
           </button>
         </Card>
 

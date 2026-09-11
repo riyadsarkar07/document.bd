@@ -12,10 +12,14 @@ export function loadImage(src: string): Promise<HTMLImageElement | null> {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
     img.onload = () => {
+      inflight.delete(src);
       cache.set(src, img);
       resolve(img);
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => {
+      inflight.delete(src);
+      resolve(null);
+    };
     img.src = src;
   });
   inflight.set(src, promise);

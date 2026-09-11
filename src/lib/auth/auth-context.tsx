@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // No profile row yet — attempt to create one (RLS permitting).
     if (error) {
-      // Table missing or no permission: default to viewer.
+      // Table missing or no permission: default to viewer so the studio still loads.
       setProfile({ id: userId, email, role: 'viewer', status: 'active' });
       return;
     }
@@ -112,12 +112,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadProfile]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user);
-        void loadProfile(session.user.id, session.user.email || '');
+    supabase.auth.getUser().then(({ data: { user: current } }) => {
+      if (current) {
+        setUser(current);
+        void loadProfile(current.id, current.email || '').finally(() => setLoading(false));
+      } else {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {

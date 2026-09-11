@@ -32,15 +32,24 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
   const router = useRouter();
   const [checked, setChecked] = useState(false);
 
-  const isAdminRoute = ADMIN_ROUTES.some((prefix) => pathname.startsWith(prefix));
-  const blockedTool = TOOL_ROUTES.find(({ prefix, scope }) => pathname.startsWith(prefix) && !hasToolAccess(profile, scope));
+  const matchesPrefix = (path: string, prefix: string) =>
+    path === prefix || path.startsWith(`${prefix}/`);
+
+  const isAdminRoute = ADMIN_ROUTES.some((prefix) => matchesPrefix(pathname, prefix));
+  const blockedTool = TOOL_ROUTES.find(
+    ({ prefix, scope }) => matchesPrefix(pathname, prefix) && !hasToolAccess(profile, scope),
+  );
 
   useEffect(() => {
     if (!loading) {
-      if (!user) router.replace('/login');
-      else if (profile) setChecked(true);
+      if (!user) {
+        setChecked(false);
+        router.replace('/login');
+      } else {
+        setChecked(true);
+      }
     }
-  }, [user, loading, router, profile]);
+  }, [user, loading, router]);
 
   useEffect(() => {
     if (checked && isAdminRoute && !canManageUsers(role)) {

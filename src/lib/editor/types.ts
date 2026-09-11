@@ -116,6 +116,7 @@ export interface NIDSnapshot {
   photoY: number;
   photoW: number;
   photoH: number;
+  photoDataUrl?: string | null;
 }
 
 export interface TINSnapshot {

@@ -247,6 +247,25 @@ function main() {
   const fromString = layoutFromVault(JSON.stringify({ signX: '1480', signY: '2488', signSize: '280' }));
   assert(fromString.signX === 1480 && fromString.signY === 2488 && fromString.signSize === 280, 'numeric strings from JSON restore as numbers');
 
+  console.log('\n[12] History restore keeps TM body text when extra columns are dropped\n');
+  const CUSTOM_OPENING = 'Custom opening for History restore.';
+  const CUSTOM_MIDDLE = 'Custom middle Arial for History restore.';
+  const CUSTOM_LOGO = 'ACME LTD';
+  const packedText = packDetails(GOODS, stored, {
+    openingText: CUSTOM_OPENING,
+    middleTextArial: CUSTOM_MIDDLE,
+    logoText: CUSTOM_LOGO,
+  });
+  const unpackedText = unpackDetails(packedText);
+  assert(unpackedText.goodsDesc === GOODS, 'goods description still survives when body text is packed');
+  assert(unpackedText.openingText === CUSTOM_OPENING, 'details embed restores openingText');
+  assert(unpackedText.middleTextArial === CUSTOM_MIDDLE, 'details embed restores middleTextArial');
+  assert(unpackedText.logoText === CUSTOM_LOGO, 'details embed restores logoText');
+  const packedLayoutOnly = packDetails(GOODS, stored);
+  const unpackedLayoutOnly = unpackDetails(packedLayoutOnly);
+  assert(unpackedLayoutOnly.openingText === undefined, 'legacy layout-only embed does not invent openingText');
+  assert(unpackedLayoutOnly.goodsDesc === GOODS, 'legacy layout-only embed still restores goods description');
+
   console.log(`\n${failures === 0 ? '✓ ALL PUBLISH CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

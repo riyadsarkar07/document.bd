@@ -2,7 +2,7 @@
 
 import { supabase } from '@/lib/supabase/client';
 import { TM_DEFAULTS } from '@/lib/constants/tm';
-import { formatTimestamp } from '@/lib/utils';
+import { escapePostgrestSearch, formatTimestamp } from '@/lib/utils';
 import { logAudit } from '@/lib/workspace/audit';
 import { VERIFY_BASE_URL } from '@/lib/verify-base';
 import { sealedTextFromVault } from '@/lib/publish/sealed-text';
@@ -41,6 +41,9 @@ interface VaultRow {
   details?: string | null;
   sealed_date?: string | null;
   sealed_text_phrase?: string | null;
+  opening_text?: string | null;
+  middle_text_arial?: string | null;
+  logo_text?: string | null;
   layout_json?: unknown;
   logo_data_url?: string | null;
   created_by?: string | null;
@@ -53,6 +56,7 @@ interface VaultRow {
 }
 
 function mapVaultRow(row: VaultRow): VaultRecord {
+  const unpacked = unpackDetails(row.details);
   return {
     trademarkNo: row.trademark_no || '',
     regDate: row.reg_date || '',
@@ -61,16 +65,27 @@ function mapVaultRow(row: VaultRow): VaultRecord {
     ownerName: row.owner_name || '',
     address: row.address || '',
     compType: row.company_type || '',
-    openingText: TM_DEFAULTS.openingText,
-    middleTextArial: TM_DEFAULTS.middleTextArial,
-    goodsDesc: unpackDetails(row.details).goodsDesc,
+    openingText:
+      typeof row.opening_text === 'string' && row.opening_text.length
+        ? row.opening_text
+        : unpacked.openingText && unpacked.openingText.length
+          ? unpacked.openingText
+          : TM_DEFAULTS.openingText,
+    middleTextArial:
+      typeof row.middle_text_arial === 'string' && row.middle_text_arial.length
+        ? row.middle_text_arial
+        : unpacked.middleTextArial && unpacked.middleTextArial.length
+          ? unpacked.middleTextArial
+          : TM_DEFAULTS.middleTextArial,
+    goodsDesc: unpacked.goodsDesc,
     sealedTextPhrase: sealedTextFromVault(row.sealed_text_phrase, TM_DEFAULTS.sealedTextPhrase),
     sealedDate: row.sealed_date || '',
-    // `logoText` is not persisted in the vault row. Deriving it from the
-    // company name would inject a duplicate text box beside the embedded
-    // logo that was never part of the exported certificate (exports use the
-    // empty default), so it stays empty to match the original JPG exactly.
-    logoText: '',
+    logoText:
+      typeof row.logo_text === 'string'
+        ? row.logo_text
+        : typeof unpacked.logoText === 'string'
+          ? unpacked.logoText
+          : '',
     ...layoutFromVaultSources(row.layout_json, row.details),
     logoDataUrl: row.logo_data_url || null,
     createdBy: row.created_by || null,
@@ -106,10 +121,19 @@ export async function commitCertificate(
     address: entry.address || '',
     company_type: entry.compType || '',
     app_date: entry.appDate || '',
-    details: packDetails(entry.goodsDesc || '', layoutFromSnapshot(entry)),
+    details: packDetails(entry.goodsDesc || '', layoutFromSnapshot(entry), {
+      openingText: typeof entry.openingText === 'string' ? entry.openingText : TM_DEFAULTS.openingText,
+      middleTextArial:
+        typeof entry.middleTextArial === 'string' ? entry.middleTextArial : TM_DEFAULTS.middleTextArial,
+      logoText: typeof entry.logoText === 'string' ? entry.logoText : '',
+    }),
     sealed_date: entry.sealedDate || '',
     sealed_text_phrase:
       typeof entry.sealedTextPhrase === 'string' ? entry.sealedTextPhrase : TM_DEFAULTS.sealedTextPhrase,
+    opening_text: typeof entry.openingText === 'string' ? entry.openingText : TM_DEFAULTS.openingText,
+    middle_text_arial:
+      typeof entry.middleTextArial === 'string' ? entry.middleTextArial : TM_DEFAULTS.middleTextArial,
+    logo_text: typeof entry.logoText === 'string' ? entry.logoText : '',
     layout_json: layoutFromSnapshot(entry),
     synced_at: new Date().toISOString(),
     // Re-saving a trashed record brings it back into the active vault.
@@ -167,6 +191,9 @@ export async function commitCertificate(
     if (/deleted_at/i.test(msg)) drops.push('deleted_at');
     if (/sealed_text_phrase/i.test(msg)) drops.push('sealed_text_phrase');
     if (/layout_json/i.test(msg)) drops.push('layout_json');
+    if (/opening_text/i.test(msg)) drops.push('opening_text');
+    if (/middle_text_arial/i.test(msg)) drops.push('middle_text_arial');
+    if (/logo_text/i.test(msg)) drops.push('logo_text');
     if (drops.length === 0) break;
     for (const key of drops) delete payload[key];
     result = existingRow
@@ -262,13 +289,13 @@ export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultLis
     if (withTrash) {
       query = status === 'trashed' ? query.not('deleted_at', 'is', null) : query.is('deleted_at', null);
     }
-    const search = q.search?.trim();
+    const search = escapePostgrestSearch(q.search ?? '');
     if (search) {
       query = query.or(`trademark_no.ilike.%${search}%,name.ilike.%${search}%,owner_name.ilike.%${search}%`);
     }
-    if (q.company?.trim()) query = query.ilike('name', `%${q.company.trim()}%`);
-    if (q.owner?.trim()) query = query.ilike('owner_name', `%${q.owner.trim()}%`);
-    if (q.type?.trim()) query = query.ilike('company_type', `%${q.type.trim()}%`);
+    if (q.company?.trim()) query = query.ilike('name', `%${escapePostgrestSearch(q.company)}%`);
+    if (q.owner?.trim()) query = query.ilike('owner_name', `%${escapePostgrestSearch(q.owner)}%`);
+    if (q.type?.trim()) query = query.ilike('company_type', `%${escapePostgrestSearch(q.type)}%`);
     if (q.createdBy) query = query.eq('created_by', q.createdBy);
     if (q.dateFrom) query = query.gte('synced_at', new Date(`${q.dateFrom}T00:00:00`).toISOString());
     if (q.dateTo) query = query.lte('synced_at', new Date(`${q.dateTo}T23:59:59.999`).toISOString());
