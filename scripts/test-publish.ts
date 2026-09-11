@@ -169,6 +169,9 @@ function main() {
   assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'page-recover') === true, 'null allowlist grants Hacked Page Recover');
   assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'youtube-trademark') === true, 'null allowlist grants YouTube Trademark');
   assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'business-manager') === true, 'null allowlist grants Business Manager');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['pdf'] }, 'pdf') === true, 'PDF Editor granted');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tm'] }, 'pdf') === false, 'TM Certificate does not grant PDF Editor');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'pdf') === true, 'null allowlist grants PDF Editor');
 
   console.log('\n[7] user self-publish eligibility (mirrors profiles.can_self_publish)\n');
   assert(canSelfPublish({ role: 'viewer', can_self_publish: true }) === true, 'purchased viewer can self-publish');

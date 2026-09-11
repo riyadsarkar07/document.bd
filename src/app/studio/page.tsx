@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   ArrowRight,
   CreditCard,
+  FilePen,
   FileText,
   History,
   Landmark,
@@ -235,6 +236,15 @@ export default function DashboardPage() {
               tone: 'from-success to-emerald-500 text-white',
               meta: '2480 × 3508 px',
               scope: 'tin',
+            },
+            {
+              href: '/studio/editor/pdf',
+              title: 'PDF Editor',
+              desc: 'Upload a PDF, annotate pages, then export without leaving the studio.',
+              icon: FilePen,
+              tone: 'from-warning to-amber-500 text-canvas',
+              meta: 'Client-side only',
+              scope: 'pdf',
             },
             {
               href: '/studio/templates',

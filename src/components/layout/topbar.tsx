@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 const TITLES: Record<string, string> = {
   '/studio': 'Dashboard',
   '/studio/editor/tm': 'TM Certificate Editor',
+  '/studio/editor/pdf': 'PDF Editor',
   '/studio/editor/nid': 'NID Card Editor',
   '/studio/editor/tin': 'TIN Record Editor',
   '/studio/editor/page-recover': 'Hacked Page Recover',
@@ -29,6 +30,7 @@ const TITLES: Record<string, string> = {
 const SUBS: Record<string, string> = {
   '/studio': 'Workspace overview',
   '/studio/editor/tm': 'Trademark certificate canvas',
+  '/studio/editor/pdf': 'Annotate and export PDF pages',
   '/studio/editor/nid': 'National ID card canvas',
   '/studio/editor/tin': 'TIN information record canvas',
   '/studio/editor/page-recover': 'Hacked page recovery workspace',

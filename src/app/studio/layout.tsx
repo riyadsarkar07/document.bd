@@ -14,6 +14,7 @@ const ADMIN_ROUTES = ['/studio/users', '/studio/activity'];
 /** Route prefix -> tool scope. Users without the scope are redirected. */
 const TOOL_ROUTES: { prefix: string; scope: ToolScope }[] = [
   { prefix: '/studio/editor/tm', scope: 'tm' },
+  { prefix: '/studio/editor/pdf', scope: 'pdf' },
   { prefix: '/studio/editor/nid', scope: 'nid' },
   { prefix: '/studio/editor/tin', scope: 'tin' },
   { prefix: '/studio/editor/page-recover', scope: 'page-recover' },
