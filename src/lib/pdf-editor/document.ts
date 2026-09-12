@@ -1,12 +1,14 @@
 import { annotationIntersectsBox, hitTestAnnotation, moveAnnotation, normalizeBox, rotateAnnotation } from '@/lib/pdf-editor/geometry';
 import { createPdfId } from '@/lib/pdf-editor/ids';
 import type {
+  NativeTextRun,
   PdfAnnotation,
   PdfEditorDocument,
   PdfPageMeta,
   PdfPoint,
   PdfRotation,
   PdfTool,
+  TextAnnotation,
 } from '@/lib/pdf-editor/types';
 
 export function annotationsForPage(doc: PdfEditorDocument, pageId: string): PdfAnnotation[] {
@@ -111,6 +113,7 @@ export function makeDraft(
       fontSize: 0.028,
       color: '#111827',
       bold: false,
+      source: 'overlay',
     };
   }
   if (tool === 'highlight') {
@@ -213,4 +216,24 @@ export function isMeaningfulDraft(draft: PdfAnnotation): boolean {
   if (draft.type === 'pen') return draft.points.length >= 2;
   if (draft.type === 'text' || draft.type === 'image' || draft.type === 'signature') return true;
   return Math.max(draft.width, draft.height) >= 0.008;
+}
+
+export function nativeRunToTextAnnotation(pageId: string, run: NativeTextRun): TextAnnotation {
+  return {
+    id: createPdfId('text'),
+    pageId,
+    type: 'text',
+    x: run.x,
+    y: run.y,
+    width: Math.max(run.width, 0.02),
+    height: Math.max(run.height, run.fontSize * 1.15),
+    text: run.text,
+    fontSize: run.fontSize,
+    color: '#111827',
+    bold: run.bold,
+    source: 'native',
+    coverOriginal: true,
+    fontFamily: run.fontFamily,
+    align: 'left',
+  };
 }

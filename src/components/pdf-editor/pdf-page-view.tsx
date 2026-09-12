@@ -5,7 +5,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { AnnotationSvg } from '@/lib/pdf-editor/annotations-svg';
 import { pageVisualSize } from '@/lib/pdf-editor/geometry';
 import { renderPdfPageToCanvas } from '@/lib/pdf-editor/pdfjs';
-import type { PdfAnnotation, PdfPageMeta, PdfPoint } from '@/lib/pdf-editor/types';
+import type { NativeTextRun, PdfAnnotation, PdfPageMeta, PdfPoint } from '@/lib/pdf-editor/types';
 import { clamp01 } from '@/lib/pdf-editor/geometry';
 import { cn } from '@/lib/utils';
 
@@ -26,6 +26,12 @@ export function PdfPageView({
   draft,
   interactive,
   thumbnail,
+  textRuns,
+  hoveredRunId,
+  editingId,
+  onTextChange,
+  onEditEnd,
+  onHoverEnd,
   className,
   onPointerDown,
   onPointerMove,
@@ -39,6 +45,12 @@ export function PdfPageView({
   draft?: PdfAnnotation | null;
   interactive?: boolean;
   thumbnail?: boolean;
+  textRuns?: NativeTextRun[];
+  hoveredRunId?: string | null;
+  editingId?: string | null;
+  onTextChange?: (id: string, text: string) => void;
+  onEditEnd?: () => void;
+  onHoverEnd?: () => void;
   className?: string;
   onPointerDown?: (e: React.PointerEvent<HTMLDivElement>, point: PdfPoint) => void;
   onPointerMove?: (e: React.PointerEvent<HTMLDivElement>, point: PdfPoint) => void;
@@ -122,7 +134,10 @@ export function PdfPageView({
       onPointerLeave={
         interactive
           ? (e) => {
-              if (e.buttons === 0) return;
+              if (e.buttons === 0) {
+                onHoverEnd?.();
+                return;
+              }
               if (!wrapRef.current) return;
               onPointerUp?.(e, pointerToNorm(e, wrapRef.current));
             }
@@ -130,16 +145,62 @@ export function PdfPageView({
       }
     >
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+      {textRuns?.map((run) => (
+        <div
+          key={run.id}
+          className={cn(
+            'pointer-events-none absolute rounded-[2px]',
+            run.id === hoveredRunId && 'bg-info/18 ring-1 ring-info/70',
+          )}
+          style={{
+            left: `${run.x * 100}%`,
+            top: `${run.y * 100}%`,
+            width: `${run.width * 100}%`,
+            height: `${run.height * 100}%`,
+          }}
+        />
+      ))}
       <div className="pointer-events-none absolute inset-0">
-        {items.map((annotation) => (
-          <AnnotationSvg
-            key={annotation.id}
-            annotation={annotation}
-            width={cssSize.width}
-            height={cssSize.height}
-            selected={annotation.id === selectedId}
-          />
-        ))}
+        {items.map((annotation) =>
+          annotation.type === 'text' && annotation.id === editingId ? (
+            <textarea
+              key={annotation.id}
+              autoFocus
+              value={annotation.text}
+              onChange={(e) => onTextChange?.(annotation.id, e.target.value)}
+              onBlur={() => onEditEnd?.()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  onEditEnd?.();
+                }
+              }}
+              className="pointer-events-auto absolute z-10 resize-none overflow-hidden rounded-[2px] border-2 border-accent bg-white p-0 text-primary shadow-glow outline-none"
+              style={{
+                left: `${annotation.x * 100}%`,
+                top: `${annotation.y * 100}%`,
+                width: `${Math.max(annotation.width, 0.04) * 100}%`,
+                height: `${Math.max(annotation.height, annotation.fontSize * 1.2) * 100}%`,
+                color: annotation.color,
+                fontSize: Math.max(4, annotation.fontSize * cssSize.height),
+                fontWeight: annotation.bold ? 700 : 400,
+                fontFamily: annotation.fontFamily || 'Helvetica, Arial, sans-serif',
+                textAlign: annotation.align || 'left',
+                lineHeight: 1.1,
+              }}
+              aria-label="Edit PDF text"
+            />
+          ) : (
+            <AnnotationSvg
+              key={annotation.id}
+              annotation={annotation}
+              width={cssSize.width}
+              height={cssSize.height}
+              selected={annotation.id === selectedId}
+            />
+          ),
+        )}
       </div>
     </div>
   );

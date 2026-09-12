@@ -3,15 +3,54 @@
  * Creates a multi-page PDF, applies edits, and checks the exported file.
  */
 import assert from 'node:assert/strict';
+import { inflateSync } from 'node:zlib';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import { addAnnotation, deletePage, movePage, rotatePage } from '../src/lib/pdf-editor/document';
+import { addAnnotation, deletePage, movePage, nativeRunToTextAnnotation, rotatePage } from '../src/lib/pdf-editor/document';
 import { exportEditedPdf } from '../src/lib/pdf-editor/export';
 import { pageVisualSize } from '../src/lib/pdf-editor/geometry';
-import type { PdfEditorDocument } from '../src/lib/pdf-editor/types';
+import { hitTestNativeRun, visibleNativeRuns } from '../src/lib/pdf-editor/native-text';
+import type { NativeTextRun, PdfEditorDocument } from '../src/lib/pdf-editor/types';
 
 function ok(cond: boolean, msg: string) {
   assert.equal(cond, true, msg);
   console.log(`  ok  ${msg}`);
+}
+
+function pdfContains(bytes: Uint8Array, needle: string): boolean {
+  const hex = Buffer.from(needle, 'latin1').toString('hex').toUpperCase();
+  const buf = Buffer.from(bytes);
+  if (buf.includes(needle) || buf.toString('latin1').includes(hex)) return true;
+  const latin = buf.toString('latin1');
+  let idx = 0;
+  while (idx < latin.length) {
+    const start = latin.indexOf('stream', idx);
+    if (start < 0) break;
+    const after = start + 6;
+    const dataStart =
+      latin[after] === '\r' && latin[after + 1] === '\n'
+        ? after + 2
+        : latin[after] === '\n' || latin[after] === '\r'
+          ? after + 1
+          : -1;
+    if (dataStart < 0) {
+      idx = after;
+      continue;
+    }
+    const end = latin.indexOf('endstream', dataStart);
+    if (end < 0) break;
+    let payloadEnd = end;
+    if (latin[end - 1] === '\n') payloadEnd = latin[end - 2] === '\r' ? end - 2 : end - 1;
+    const payload = buf.subarray(dataStart, payloadEnd);
+    try {
+      const inflated = inflateSync(payload);
+      const text = inflated.toString('latin1');
+      if (text.includes(needle) || text.toUpperCase().includes(hex)) return true;
+    } catch {
+      // not a flate stream
+    }
+    idx = end + 9;
+  }
+  return false;
 }
 
 async function makeSource(): Promise<Uint8Array> {
@@ -159,6 +198,73 @@ async function main() {
   ok(exported.byteLength > 500, 'exported PDF has content');
 
   console.log('\nPDF editor export checks passed.\n');
+
+  console.log('[pdf-editor] native text edit → export\n');
+  const run: NativeTextRun = {
+    id: 'ntext_1',
+    text: 'Source page 1',
+    x: 0.1,
+    y: 0.05,
+    width: 0.42,
+    height: 0.04,
+    fontSize: 0.028,
+    fontFamily: 'Helvetica, Arial, sans-serif',
+    bold: false,
+  };
+  ok(hitTestNativeRun([run], { x: 0.12, y: 0.06 })?.id === 'ntext_1', 'hit-test finds native run under click');
+  ok(hitTestNativeRun([run], { x: 0.9, y: 0.9 }) === null, 'hit-test misses empty space');
+  ok(visibleNativeRuns([run], [{ x: 0.1, y: 0.05, width: 0.42, height: 0.04 }]).length === 0, 'covered native run is hidden');
+
+  const nativeAnn = nativeRunToTextAnnotation('page_1', run);
+  nativeAnn.id = 'native_edit';
+  nativeAnn.text = 'NATIVE_EDIT_OK';
+  ok(nativeAnn.source === 'native' && nativeAnn.coverOriginal === true, 'native annotation covers original glyphs');
+
+  const nativeDoc: PdfEditorDocument = {
+    fileName: 'native-edit.pdf',
+    pages: [
+      {
+        id: 'page_1',
+        sourceIndex: 0,
+        rotation: 0,
+        sourceRotate: 0,
+        widthPt: 612,
+        heightPt: 792,
+      },
+    ],
+    annotations: [nativeAnn],
+  };
+  const nativeExported = await exportEditedPdf(sourceBytes, nativeDoc);
+  const nativeOut = await PDFDocument.load(nativeExported);
+  ok(nativeOut.getPageCount() === 1, 'native-edit export writes the edited page');
+  ok(pdfContains(nativeExported, 'NATIVE_EDIT_OK'), 'replacement text persisted in exported PDF');
+  ok(pdfContains(nativeExported, 'Source page 1'), 'original glyphs remain under the white cover');
+
+  const overlayDoc: PdfEditorDocument = {
+    fileName: 'overlay-add-text.pdf',
+    pages: nativeDoc.pages,
+    annotations: [
+      {
+        id: 'overlay_1',
+        pageId: 'page_1',
+        type: 'text',
+        x: 0.2,
+        y: 0.4,
+        width: 0.3,
+        height: 0.05,
+        text: 'OVERLAY_ADD_TEXT',
+        fontSize: 0.028,
+        color: '#111827',
+        bold: false,
+        source: 'overlay',
+      },
+    ],
+  };
+  const overlayExported = await exportEditedPdf(sourceBytes, overlayDoc);
+  ok(pdfContains(overlayExported, 'OVERLAY_ADD_TEXT'), 'Add Text overlay persists without covering native runs');
+  ok(hitTestNativeRun([], { x: 0.2, y: 0.4 }) === null, 'scanned PDF with no text layer misses native hits');
+
+  console.log('\nNative text edit checks passed.\n');
 }
 
 main().catch((err) => {

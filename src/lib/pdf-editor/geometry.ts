@@ -131,6 +131,17 @@ export function boxesIntersect(a: PdfBox, b: PdfBox): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
+export function boxesOverlap(a: PdfBox, b: PdfBox, minIoU = 0.45): boolean {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
+  const y2 = Math.min(a.y + a.height, b.y + b.height);
+  if (x2 <= x1 || y2 <= y1) return false;
+  const inter = (x2 - x1) * (y2 - y1);
+  const area = Math.min(a.width * a.height, b.width * b.height);
+  return area > 0 && inter / area >= minIoU;
+}
+
 export function annotationIntersectsBox(annotation: PdfAnnotation, box: PdfBox): boolean {
   if (annotation.type === 'pen') {
     return annotation.points.some(

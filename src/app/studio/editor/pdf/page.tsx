@@ -41,7 +41,7 @@ import { FieldLabel } from '@/components/ui/input';
 import { useHistory } from '@/lib/hooks/useHistory';
 import { useToast } from '@/lib/toast/toast-provider';
 import { cn, clamp } from '@/lib/utils';
-import { moveAnnotation } from '@/lib/pdf-editor/geometry';
+import { boxesOverlap, moveAnnotation } from '@/lib/pdf-editor/geometry';
 import {
   addAnnotation,
   annotationsForPage,
@@ -51,6 +51,7 @@ import {
   isMeaningfulDraft,
   makeDraft,
   movePage,
+  nativeRunToTextAnnotation,
   removeAnnotation,
   resizeDraft,
   rotatePage,
@@ -58,8 +59,17 @@ import {
   updateAnnotation,
 } from '@/lib/pdf-editor/document';
 import { downloadPdfBytes, exportEditedPdf } from '@/lib/pdf-editor/export';
+import { extractNativeTextRuns, hitTestNativeRun, visibleNativeRuns } from '@/lib/pdf-editor/native-text';
 import { loadPdfDocument, readPdfPages } from '@/lib/pdf-editor/pdfjs';
-import { EMPTY_PDF_DOCUMENT, PDF_TOOL_LABEL, type PdfAnnotation, type PdfEditorDocument, type PdfPoint, type PdfTool } from '@/lib/pdf-editor/types';
+import {
+  EMPTY_PDF_DOCUMENT,
+  PDF_TOOL_LABEL,
+  type NativeTextRun,
+  type PdfAnnotation,
+  type PdfEditorDocument,
+  type PdfPoint,
+  type PdfTool,
+} from '@/lib/pdf-editor/types';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const TOOLS: { id: PdfTool; label: string; icon: typeof Type }[] = [
@@ -94,6 +104,9 @@ export default function PdfEditorPage() {
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [nativeRuns, setNativeRuns] = useState<Record<string, NativeTextRun[]>>({});
+  const [hoveredRunId, setHoveredRunId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const dragRef = useRef<{
     mode: 'draw' | 'move' | 'erase';
@@ -123,6 +136,9 @@ export default function PdfEditorPage() {
     setDraft(null);
     setPendingImage(null);
     setSignatureDataUrl(null);
+    setNativeRuns({});
+    setHoveredRunId(null);
+    setEditingId(null);
     setStatus('Upload a PDF to begin');
   }, [reset]);
 
@@ -155,8 +171,22 @@ export default function PdfEditorPage() {
         setActivePageId(pages[0]?.id ?? null);
         setSelectedId(null);
         setDraft(null);
+        setEditingId(null);
+        setHoveredRunId(null);
         setZoom(1);
-        setStatus(`${file.name} · ${pages.length} page${pages.length === 1 ? '' : 's'} · stays in this session`);
+        const runsByPage: Record<string, NativeTextRun[]> = {};
+        let nativeCount = 0;
+        for (const page of pages) {
+          const runs = await extractNativeTextRuns(loaded, page);
+          runsByPage[page.id] = runs;
+          nativeCount += runs.length;
+        }
+        setNativeRuns(runsByPage);
+        setStatus(
+          `${file.name} · ${pages.length} page${pages.length === 1 ? '' : 's'}` +
+            (nativeCount ? ` · ${nativeCount} text run${nativeCount === 1 ? '' : 's'}` : ' · no text layer') +
+            ' · stays in this session',
+        );
         toast.success(`Loaded ${pages.length} page${pages.length === 1 ? '' : 's'}`);
       } catch {
         toast.error('Could not read this PDF');
@@ -186,7 +216,11 @@ export default function PdfEditorPage() {
       return;
     }
     setTool(next);
-    if (next !== 'select') setSelectedId(null);
+    if (next !== 'text') setHoveredRunId(null);
+    if (next !== 'select' && next !== 'text') {
+      setSelectedId(null);
+      setEditingId(null);
+    }
   };
 
   const commitDraft = (next: PdfAnnotation | null) => {
@@ -202,17 +236,88 @@ export default function PdfEditorPage() {
     setSelectedId(next.id);
   };
 
+  const beginNativeEdit = (run: NativeTextRun) => {
+    if (!activePage) return;
+    const existing = annotationsForPage(present, activePage.id).find(
+      (item) => item.type === 'text' && item.source === 'native' && boxesOverlap(item, run, 0.35),
+    );
+    if (existing) {
+      setSelectedId(existing.id);
+      setEditingId(existing.id);
+      setHoveredRunId(null);
+      return;
+    }
+    const annotation = nativeRunToTextAnnotation(activePage.id, run);
+    set((doc) => addAnnotation(doc, annotation));
+    setSelectedId(annotation.id);
+    setEditingId(annotation.id);
+    setHoveredRunId(null);
+  };
+
+  const pageGeometryKey = present.pages.map((page) => `${page.id}:${page.rotation}`).join('|');
+  useEffect(() => {
+    const loaded = pdfRef.current;
+    const pages = present.pages;
+    if (!loaded || !pages.length) return;
+    let cancelled = false;
+    void (async () => {
+      for (const page of pages) {
+        try {
+          const runs = await extractNativeTextRuns(loaded, page);
+          if (cancelled) return;
+          setNativeRuns((prev) => ({ ...prev, [page.id]: runs }));
+        } catch {
+          if (cancelled) return;
+          setNativeRuns((prev) => ({ ...prev, [page.id]: [] }));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Re-extract only when page set or rotation changes (undo/redo/rotate/delete).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageGeometryKey]);
+
+  const coveredNativeBoxes = useMemo(() => {
+    if (!activePage) return [];
+    return annotationsForPage(present, activePage.id).flatMap((item) =>
+      item.type === 'text' && item.source === 'native' && item.coverOriginal
+        ? [{ x: item.x, y: item.y, width: item.width, height: item.height }]
+        : [],
+    );
+  }, [present, activePage]);
+
+  const pageTextRuns = useMemo(() => {
+    if (!activePage) return [];
+    return visibleNativeRuns(nativeRuns[activePage.id] ?? [], coveredNativeBoxes);
+  }, [activePage, nativeRuns, coveredNativeBoxes]);
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>, point: PdfPoint) => {
     if (!activePage) return;
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     if (tool === 'select') {
       const hit = findAnnotationAt(present, activePage.id, point);
       setSelectedId(hit?.id ?? null);
+      setEditingId(null);
       if (hit) {
         dragRef.current = { mode: 'move', start: point, last: point, pageId: activePage.id, annotationId: hit.id };
         setMovePreview({ id: hit.id, dx: 0, dy: 0 });
       }
       return;
+    }
+    if (tool === 'text') {
+      const overlayHit = findAnnotationAt(present, activePage.id, point);
+      if (overlayHit?.type === 'text') {
+        setSelectedId(overlayHit.id);
+        setEditingId(overlayHit.id);
+        return;
+      }
+      const run = hitTestNativeRun(pageTextRuns, point);
+      if (run) {
+        beginNativeEdit(run);
+        return;
+      }
     }
     const extra = { imageDataUrl: pendingImage ?? undefined, signatureDataUrl: signatureDataUrl ?? undefined };
     if ((tool === 'image' && !pendingImage) || (tool === 'signature' && !signatureDataUrl)) {
@@ -224,7 +329,7 @@ export default function PdfEditorPage() {
     if (created.type === 'text' || created.type === 'image' || created.type === 'signature') {
       set((doc) => addAnnotation(doc, created));
       setSelectedId(created.id);
-      setTool('select');
+      setEditingId(created.type === 'text' ? created.id : null);
       if (created.type === 'image') setPendingImage(null);
       return;
     }
@@ -239,6 +344,10 @@ export default function PdfEditorPage() {
   };
 
   const onPointerMove = (_e: React.PointerEvent<HTMLDivElement>, point: PdfPoint) => {
+    if (!dragRef.current && tool === 'text' && activePage && !editingId) {
+      const run = hitTestNativeRun(pageTextRuns, point);
+      setHoveredRunId(run?.id ?? null);
+    }
     const session = dragRef.current;
     if (!session) return;
     if (session.mode === 'move' && session.annotationId) {
@@ -282,16 +391,21 @@ export default function PdfEditorPage() {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setEditingId(null);
+        setHoveredRunId(null);
+        setSelectedId(null);
+        if (!inField) setTool('select');
+        return;
+      }
       if (inField) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (!selectedId) return;
         e.preventDefault();
         set((doc) => removeAnnotation(doc, selectedId));
         setSelectedId(null);
-      }
-      if (e.key === 'Escape') {
-        setSelectedId(null);
-        setTool('select');
+        setEditingId(null);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -403,6 +517,8 @@ export default function PdfEditorPage() {
                     onClick={() => {
                       setActivePageId(page.id);
                       setSelectedId(null);
+                      setEditingId(null);
+                      setHoveredRunId(null);
                     }}
                     className={cn(
                       'rounded-xl border p-1.5 text-left transition',
@@ -449,6 +565,12 @@ export default function PdfEditorPage() {
                   zoom={zoom}
                   draft={draft}
                   interactive
+                  textRuns={tool === 'text' ? pageTextRuns : undefined}
+                  hoveredRunId={tool === 'text' ? hoveredRunId : null}
+                  editingId={editingId}
+                  onTextChange={(id, text) => set((doc) => updateAnnotation(doc, id, { text } as Partial<PdfAnnotation>))}
+                  onEditEnd={() => setEditingId(null)}
+                  onHoverEnd={() => setHoveredRunId(null)}
                   onPointerDown={onPointerDown}
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
@@ -501,7 +623,11 @@ export default function PdfEditorPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => set((doc) => rotatePage(doc, activePage.id, -90))}
+                  onClick={() => {
+                    set((doc) => rotatePage(doc, activePage.id, -90));
+                    setHoveredRunId(null);
+                    setEditingId(null);
+                  }}
                   icon={<RotateCcw className="h-3.5 w-3.5" />}
                 >
                   Rotate L
@@ -509,7 +635,11 @@ export default function PdfEditorPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => set((doc) => rotatePage(doc, activePage.id, 90))}
+                  onClick={() => {
+                    set((doc) => rotatePage(doc, activePage.id, 90));
+                    setHoveredRunId(null);
+                    setEditingId(null);
+                  }}
                   icon={<RotateCw className="h-3.5 w-3.5" />}
                 >
                   Rotate R
@@ -546,8 +676,15 @@ export default function PdfEditorPage() {
                   const idx = present.pages.findIndex((p) => p.id === id);
                   const next = present.pages[idx + 1] ?? present.pages[idx - 1] ?? null;
                   set((doc) => deletePage(doc, id));
+                  setNativeRuns((prev) => {
+                    const nextRuns = { ...prev };
+                    delete nextRuns[id];
+                    return nextRuns;
+                  });
                   setActivePageId(next?.id ?? null);
                   setSelectedId(null);
+                  setEditingId(null);
+                  setHoveredRunId(null);
                 }}
                 icon={<Trash2 className="h-3.5 w-3.5" />}
               >
@@ -592,6 +729,7 @@ export default function PdfEditorPage() {
                 onClick={() => {
                   set((doc) => removeAnnotation(doc, selected.id));
                   setSelectedId(null);
+                  setEditingId(null);
                 }}
               >
                 Delete text
@@ -609,6 +747,7 @@ export default function PdfEditorPage() {
                 onClick={() => {
                   set((doc) => removeAnnotation(doc, selected.id));
                   setSelectedId(null);
+                  setEditingId(null);
                 }}
               >
                 Delete annotation
@@ -616,8 +755,8 @@ export default function PdfEditorPage() {
             </div>
           ) : (
             <p className="text-xs leading-relaxed text-muted">
-              Choose a tool, then click or drag on the page. Whiteout covers original content. Select an object and press
-              Delete to remove it.
+              Choose a tool, then click or drag on the page. In Text mode, click existing PDF text to edit it in place.
+              Whiteout covers original content. Select an object and press Delete to remove it.
             </p>
           )}
         </CollapsibleSection>

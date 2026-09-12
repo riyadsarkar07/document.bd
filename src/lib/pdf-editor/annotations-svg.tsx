@@ -22,11 +22,14 @@ export function AnnotationSvg({
   const outline = selected ? 'drop-shadow(0 0 2px rgb(var(--accent)))' : undefined;
 
   if (annotation.type === 'text') {
+    const native = annotation.source === 'native';
     return (
       <div
         className={cn(
-          'pointer-events-none absolute overflow-hidden whitespace-pre-wrap break-words leading-tight',
+          'pointer-events-none absolute overflow-hidden whitespace-pre leading-none',
           selected && 'ring-2 ring-accent',
+          native && selected && 'bg-white/95',
+          native && !selected && 'bg-white',
         )}
         style={{
           left: `${annotation.x * 100}%`,
@@ -34,12 +37,13 @@ export function AnnotationSvg({
           width: `${annotation.width * 100}%`,
           height: `${annotation.height * 100}%`,
           color: annotation.color,
-          fontSize: Math.max(10, annotation.fontSize * height),
-          fontWeight: annotation.bold ? 700 : 500,
-          fontFamily: 'Helvetica, Arial, sans-serif',
+          fontSize: Math.max(4, annotation.fontSize * height),
+          fontWeight: annotation.bold ? 700 : 400,
+          fontFamily: annotation.fontFamily || 'Helvetica, Arial, sans-serif',
+          textAlign: annotation.align || 'left',
         }}
       >
-        {annotation.text || 'Text'}
+        {annotation.text || (native ? '' : 'Text')}
       </div>
     );
   }

@@ -107,19 +107,35 @@ async function drawAnnotation(
 
   if (annotation.type === 'text') {
     const font = annotation.bold ? fonts.bold : fonts.regular;
-    const size = Math.max(6, annotation.fontSize * height);
-    const x = nx(page, annotation.x);
-    const y = nyTop(page, annotation.y) - size;
-    const maxWidth = Math.max(8, annotation.width * width);
-    const lines = winAnsi(annotation.text || 'Text').split('\n');
+    const size = Math.max(4, annotation.fontSize * height);
+    const boxX = nx(page, annotation.x);
+    const boxW = Math.max(8, annotation.width * width);
+    const boxH = Math.max(size, annotation.height * height);
+    const boxY = nyTop(page, annotation.y + annotation.height);
+    if (annotation.coverOriginal) {
+      const pad = Math.max(0.4, size * 0.08);
+      outPage.drawRectangle({
+        x: boxX - pad,
+        y: boxY - pad,
+        width: boxW + pad * 2,
+        height: boxH + pad * 2,
+        color: rgb(1, 1, 1),
+      });
+    }
+    const lines = winAnsi(annotation.text || '').split('\n');
+    const lineHeight = size * 1.15;
     lines.forEach((line, index) => {
+      const widthOf = font.widthOfTextAtSize(line || ' ', size);
+      let x = boxX;
+      if (annotation.align === 'center') x = boxX + Math.max(0, (boxW - widthOf) / 2);
+      if (annotation.align === 'right') x = boxX + Math.max(0, boxW - widthOf);
       outPage.drawText(line || ' ', {
         x,
-        y: y - index * size * 1.25,
+        y: boxY + boxH - size - index * lineHeight,
         size,
         font,
         color: toPdfColor(annotation.color),
-        maxWidth,
+        maxWidth: boxW,
       });
     });
     return;

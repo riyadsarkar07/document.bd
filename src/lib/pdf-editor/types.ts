@@ -48,6 +48,22 @@ export interface TextAnnotation extends AnnotationBase {
   fontSize: number;
   color: string;
   bold: boolean;
+  source?: 'overlay' | 'native';
+  coverOriginal?: boolean;
+  fontFamily?: string;
+  align?: 'left' | 'center' | 'right';
+}
+
+export interface NativeTextRun {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+  fontFamily: string;
+  bold: boolean;
 }
 
 export interface HighlightAnnotation extends AnnotationBase {
@@ -128,7 +144,7 @@ export const EMPTY_PDF_DOCUMENT: PdfEditorDocument = {
 
 export const PDF_TOOL_LABEL: Record<PdfTool, string> = {
   select: 'Select',
-  text: 'Add Text',
+  text: 'Text',
   highlight: 'Highlight',
   pen: 'Draw',
   whiteout: 'Whiteout',
