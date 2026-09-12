@@ -167,6 +167,7 @@ create index if not exists projects_owner_idx on public.projects (owner_id);
 create or replace function public.is_admin()
 returns boolean
 language sql stable security definer
+set search_path = public
 as $$
   select coalesce(
     (select p.role = 'admin' and p.status = 'active' from public.profiles p where p.id = auth.uid()),
@@ -178,8 +179,12 @@ $$;
 create or replace function public.is_active_user(uid uuid)
 returns boolean
 language sql stable security definer
+set search_path = public
 as $$
-  select coalesce((select p.status = 'active' from public.profiles p where p.id = uid), true);
+  select case
+    when uid is distinct from auth.uid() and not public.is_admin() then false
+    else coalesce((select p.status = 'active' from public.profiles p where p.id = uid), true)
+  end;
 $$;
 
 -- Map a generation/save activity action to the tool scope it belongs to
@@ -203,14 +208,18 @@ $$;
 create or replace function public.has_tool_access(uid uuid, scope text)
 returns boolean
 language sql stable security definer
+set search_path = public
 as $$
-  select coalesce((
-    select
-      p.status = 'active'
-      and (p.role = 'admin' or p.allowed_tools is null or coalesce(scope = any(p.allowed_tools), false))
-    from public.profiles p
-    where p.id = uid
-  ), false);
+  select case
+    when uid is distinct from auth.uid() and not public.is_admin() then false
+    else coalesce((
+      select
+        p.status = 'active'
+        and (p.role = 'admin' or p.allowed_tools is null or coalesce(scope = any(p.allowed_tools), false))
+      from public.profiles p
+      where p.id = uid
+    ), false)
+  end;
 $$;
 
 -- Number of generations (certificate exports) logged by the user inside the
@@ -219,16 +228,22 @@ $$;
 create or replace function public.generation_count_in_period(uid uuid, period text)
 returns bigint
 language sql stable security definer
+set search_path = public
 as $$
-  select count(*) from public.activity_logs a
-  where a.user_id = uid
-    and a.action like 'export.%'
-    and case period
-      when 'daily' then a.created_at >= now() - interval '1 day'
-      when 'weekly' then a.created_at >= now() - interval '1 week'
-      when 'monthly' then a.created_at >= now() - interval '1 month'
-      else true
-    end;
+  select case
+    when uid is distinct from auth.uid() and not public.is_admin() then 0::bigint
+    else (
+      select count(*) from public.activity_logs a
+      where a.user_id = uid
+        and a.action like 'export.%'
+        and case period
+          when 'daily' then a.created_at >= now() - interval '1 day'
+          when 'weekly' then a.created_at >= now() - interval '1 week'
+          when 'monthly' then a.created_at >= now() - interval '1 month'
+          else true
+        end
+    )
+  end;
 $$;
 
 -- May this user generate a certificate right now? Enforces the per-user
@@ -237,32 +252,40 @@ $$;
 create or replace function public.can_generate(uid uuid)
 returns boolean
 language sql stable security definer
+set search_path = public
 as $$
-  select coalesce((
-    select
-      p.status = 'active'
-      and (
-        p.role = 'admin'
-        or p.gen_period = 'unlimited'
-        or p.gen_limit is null
-        or p.gen_limit > public.generation_count_in_period(uid, p.gen_period)
-      )
-    from public.profiles p
-    where p.id = uid
-  ), true);
+  select case
+    when uid is distinct from auth.uid() and not public.is_admin() then false
+    else coalesce((
+      select
+        p.status = 'active'
+        and (
+          p.role = 'admin'
+          or p.gen_period = 'unlimited'
+          or p.gen_limit is null
+          or p.gen_limit > public.generation_count_in_period(uid, p.gen_period)
+        )
+      from public.profiles p
+      where p.id = uid
+    ), true)
+  end;
 $$;
 
 -- May this user create a new project row (enforces max_projects)?
 create or replace function public.can_create_project(uid uuid)
 returns boolean
 language sql stable security definer
+set search_path = public
 as $$
-  select coalesce((
-    select p.status = 'active'
-      and (p.max_projects is null or p.max_projects > (select count(*) from public.projects pr where pr.owner_id = uid))
-    from public.profiles p
-    where p.id = uid
-  ), true);
+  select case
+    when uid is distinct from auth.uid() and not public.is_admin() then false
+    else coalesce((
+      select p.status = 'active'
+        and (p.max_projects is null or p.max_projects > (select count(*) from public.projects pr where pr.owner_id = uid))
+      from public.profiles p
+      where p.id = uid
+    ), true)
+  end;
 $$;
 
 -- May this user record an activity action?
@@ -274,24 +297,28 @@ $$;
 create or replace function public.can_log_action(uid uuid, action text)
 returns boolean
 language sql stable security definer
+set search_path = public
 as $$
-  select coalesce((
-    select
-      case
-        when action like 'export.%' then
-          (p.max_exports is null
-            or p.max_exports > (select count(*) from public.activity_logs a where a.user_id = uid and a.action like 'export.%'))
-          and public.can_generate(uid)
-          and public.has_tool_access(uid, coalesce(public.action_scope(action), 'tm'))
-        when action like 'save.%' or action = 'project.save' then
-          (p.max_documents is null
-            or p.max_documents > (select count(*) from public.activity_logs a where a.user_id = uid and (a.action like 'save.%' or a.action = 'project.save')))
-          and public.has_tool_access(uid, coalesce(public.action_scope(action), 'tm'))
-        else true
-      end
-    from public.profiles p
-    where p.id = uid
-  ), true);
+  select case
+    when uid is distinct from auth.uid() and not public.is_admin() then false
+    else coalesce((
+      select
+        case
+          when action like 'export.%' then
+            (p.max_exports is null
+              or p.max_exports > (select count(*) from public.activity_logs a where a.user_id = uid and a.action like 'export.%'))
+            and public.can_generate(uid)
+            and public.has_tool_access(uid, coalesce(public.action_scope(action), 'tm'))
+          when action like 'save.%' or action = 'project.save' then
+            (p.max_documents is null
+              or p.max_documents > (select count(*) from public.activity_logs a where a.user_id = uid and (a.action like 'save.%' or a.action = 'project.save')))
+            and public.has_tool_access(uid, coalesce(public.action_scope(action), 'tm'))
+          else true
+        end
+      from public.profiles p
+      where p.id = uid
+    ), true)
+  end;
 $$;
 
 -- Current user's own usage + configured limits (RPC: my_usage)
@@ -316,6 +343,7 @@ returns table (
   status text
 )
 language sql stable security definer
+set search_path = public
 as $$
   select
     (select count(*) from public.projects pr where pr.owner_id = auth.uid()),
@@ -354,6 +382,7 @@ returns table (
   last_activity timestamptz
 )
 language sql stable security definer
+set search_path = public
 as $$
   select
     p.id,
@@ -372,6 +401,7 @@ $$;
 create or replace function public.admin_certificate_counts()
 returns table (user_id uuid, total bigint)
 language plpgsql stable security definer
+set search_path = public
 as $$
 begin
   if not public.is_admin() then
@@ -385,6 +415,30 @@ begin
       where deleted_at is null and created_by is not null
       group by created_by';
 end $$;
+
+-- Helper RPCs used by RLS stay callable by authenticated sessions only.
+-- Admin-only RPCs remain executable (they no-op unless is_admin()).
+revoke all on function public.is_admin() from public;
+revoke all on function public.is_active_user(uuid) from public;
+revoke all on function public.has_tool_access(uuid, text) from public;
+revoke all on function public.generation_count_in_period(uuid, text) from public;
+revoke all on function public.can_generate(uuid) from public;
+revoke all on function public.can_create_project(uuid) from public;
+revoke all on function public.can_log_action(uuid, text) from public;
+revoke all on function public.my_usage() from public;
+revoke all on function public.admin_user_usage() from public;
+revoke all on function public.admin_certificate_counts() from public;
+
+grant execute on function public.is_admin() to authenticated;
+grant execute on function public.is_active_user(uuid) to authenticated;
+grant execute on function public.has_tool_access(uuid, text) to authenticated;
+grant execute on function public.generation_count_in_period(uuid, text) to authenticated;
+grant execute on function public.can_generate(uuid) to authenticated;
+grant execute on function public.can_create_project(uuid) to authenticated;
+grant execute on function public.can_log_action(uuid, text) to authenticated;
+grant execute on function public.my_usage() to authenticated;
+grant execute on function public.admin_user_usage() to authenticated;
+grant execute on function public.admin_certificate_counts() to authenticated;
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- STEP 4 — RLS policies

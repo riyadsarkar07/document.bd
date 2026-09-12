@@ -23,6 +23,7 @@ import { checkLimit } from '@/lib/workspace/limits';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useToast } from '@/lib/toast/toast-provider';
 import { apiPublish } from '@/lib/publish/publish-client';
+import { validateImageFile } from '@/lib/uploads';
 import { EditorToolbar } from '@/components/editor/editor-toolbar';
 import { EditorViewport } from '@/components/editor/editor-viewport';
 import { InspectorPanel } from '@/components/editor/inspector-panel';
@@ -259,7 +260,12 @@ function TMEditorInner() {
   }, []);
 
   const handleLogoUpload = useCallback(
-    (file: File) => {
+    async (file: File) => {
+      const invalid = await validateImageFile(file);
+      if (invalid) {
+        toast.error(invalid);
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (e) => {
         const dataUrl = String(e.target?.result);
@@ -437,9 +443,13 @@ function TMEditorInner() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/gif"
               className="hidden"
-              onChange={(e) => e.target.files?.[0] && handleLogoUpload(e.target.files[0])}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void handleLogoUpload(file);
+              }}
             />
             <Button variant="outline" icon={<ImagePlus className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>
               Upload Logo / Seal Image

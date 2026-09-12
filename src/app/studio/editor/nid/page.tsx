@@ -21,6 +21,7 @@ import { PropertyInput } from '@/components/editor/property-input';
 import { PropertySlider } from '@/components/editor/property-slider';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
+import { validateImageFile } from '@/lib/uploads';
 
 export default function NIDEditorPage() {
   return (
@@ -182,7 +183,12 @@ function NIDEditorInner() {
   }, []);
 
   const handlePhotoUpload = useCallback(
-    (file: File) => {
+    async (file: File) => {
+      const invalid = await validateImageFile(file);
+      if (invalid) {
+        toast.error(invalid);
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (e) => {
         const dataUrl = String(e.target?.result);
@@ -302,9 +308,13 @@ function NIDEditorInner() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/gif"
               className="hidden"
-              onChange={(e) => e.target.files?.[0] && handlePhotoUpload(e.target.files[0])}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void handlePhotoUpload(file);
+              }}
             />
             <Button variant="outline" icon={<Camera className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>
               {photoName ? `Replace: ${photoName}` : 'Upload Profile Photo'}

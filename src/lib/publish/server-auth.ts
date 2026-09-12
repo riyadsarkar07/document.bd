@@ -22,8 +22,8 @@ export const SUPABASE_ANON_KEY =
 export const PUBLIC_VERIFY_BASE_URL =
   process.env.PUBLIC_VERIFY_BASE_URL || DEFAULT_VERIFY_BASE_URL;
 
-export function json(data: unknown, status = 200) {
-  return NextResponse.json(data, { status });
+export function json(data: unknown, status = 200, headers?: HeadersInit) {
+  return NextResponse.json(data, { status, headers });
 }
 
 export interface Caller {
@@ -36,25 +36,35 @@ export interface Caller {
 /** Supabase client that carries the caller's access token so RLS applies. */
 export function authedClient(token: string) {
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 }
 
-export async function authorize(
+async function identifyCaller(
   token: string | null,
-): Promise<{ ok: true; caller: Caller } | { ok: false; status: number; error: string }> {
+): Promise<{ ok: true; sb: ReturnType<typeof authedClient>; userId: string; email: string } | { ok: false; status: number; error: string }> {
   if (!token) return { ok: false, status: 401, error: 'Missing authorization token.' };
   const sb = authedClient(token);
   const {
     data: { user },
     error,
-  } = await sb.auth.getUser();
+  } = await sb.auth.getUser(token);
   if (error || !user) return { ok: false, status: 401, error: 'Invalid or expired session.' };
+  return { ok: true, sb, userId: user.id, email: user.email ?? '' };
+}
+
+export async function authorize(
+  token: string | null,
+): Promise<{ ok: true; caller: Caller } | { ok: false; status: number; error: string }> {
+  const identified = await identifyCaller(token);
+  if (!identified.ok) return identified;
+  const { sb, userId, email } = identified;
 
   const { data: profile } = await sb
     .from('profiles')
     .select('role, status')
-    .eq('id', user.id)
+    .eq('id', userId)
     .maybeSingle();
 
   const role = profile?.role ?? null;
@@ -67,7 +77,7 @@ export async function authorize(
 
   return {
     ok: true,
-    caller: { sb, userId: user.id, email: user.email ?? '', role },
+    caller: { sb, userId, email, role },
   };
 }
 
@@ -83,18 +93,14 @@ export async function authorize(
 export async function authorizeUserPublish(
   token: string | null,
 ): Promise<{ ok: true; caller: Caller } | { ok: false; status: number; error: string }> {
-  if (!token) return { ok: false, status: 401, error: 'Missing authorization token.' };
-  const sb = authedClient(token);
-  const {
-    data: { user },
-    error,
-  } = await sb.auth.getUser();
-  if (error || !user) return { ok: false, status: 401, error: 'Invalid or expired session.' };
+  const identified = await identifyCaller(token);
+  if (!identified.ok) return identified;
+  const { sb, userId, email } = identified;
 
   const { data: profile } = await sb
     .from('profiles')
     .select('role, status, can_self_publish')
-    .eq('id', user.id)
+    .eq('id', userId)
     .maybeSingle();
 
   if (profile?.status !== 'active') {
@@ -106,6 +112,6 @@ export async function authorizeUserPublish(
 
   return {
     ok: true,
-    caller: { sb, userId: user.id, email: user.email ?? '', role: profile.role ?? 'viewer' },
+    caller: { sb, userId, email, role: profile.role ?? 'viewer' },
   };
 }

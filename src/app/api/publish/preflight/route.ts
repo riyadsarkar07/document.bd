@@ -5,8 +5,13 @@ import {
   json,
   PUBLIC_VERIFY_BASE_URL,
 } from '@/lib/publish/server-auth';
+import { clientIp, rateLimit } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
+
+export async function GET() {
+  return json({ ok: false, error: 'Method not allowed.' }, 405, { Allow: 'POST' });
+}
 
 interface PreflightCheck {
   name: string;
@@ -34,12 +39,31 @@ const GH_HEADERS = {
  * Nothing is written — no GitHub commits, no database updates.
  */
 export async function POST(req: Request): Promise<NextResponse> {
+  const ip = clientIp(req);
+  const ipLimit = rateLimit(`preflight-ip:${ip}`, 20, 60_000);
+  if (!ipLimit.ok) {
+    return json(
+      { ok: false, error: 'Too many preflight requests. Try again shortly.' },
+      429,
+      { 'Retry-After': String(ipLimit.retryAfterSec) },
+    );
+  }
+
   const authz = req.headers.get('authorization') ?? '';
   const token = authz.startsWith('Bearer ') ? authz.slice('Bearer '.length) : null;
 
   const auth = await authorize(token);
   if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
   const { caller } = auth;
+
+  const userLimit = rateLimit(`preflight-user:${caller.userId}`, 8, 60_000);
+  if (!userLimit.ok) {
+    return json(
+      { ok: false, error: 'Too many preflight requests. Try again shortly.' },
+      429,
+      { 'Retry-After': String(userLimit.retryAfterSec) },
+    );
+  }
 
   const checks: PreflightCheck[] = [];
 

@@ -70,6 +70,7 @@ import {
   type PdfPoint,
   type PdfTool,
 } from '@/lib/pdf-editor/types';
+import { PDF_OVERLAY_IMAGE_MAX_BYTES, validateImageFile, validatePdfFile } from '@/lib/uploads';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const TOOLS: { id: PdfTool; label: string; icon: typeof Type }[] = [
@@ -144,12 +145,9 @@ export default function PdfEditorPage() {
 
   const loadFile = useCallback(
     async (file: File) => {
-      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-        toast.error('Please choose a PDF file');
-        return;
-      }
-      if (file.size > MAX_BYTES) {
-        toast.error('PDF is larger than 25 MB');
+      const invalid = await validatePdfFile(file, MAX_BYTES);
+      if (invalid) {
+        toast.error(invalid);
         return;
       }
       setBusy(true);
@@ -782,15 +780,22 @@ export default function PdfEditorPage() {
           const file = e.target.files?.[0];
           e.target.value = '';
           if (!file) return;
-          const reader = new FileReader();
-          reader.onload = () => {
-            const url = typeof reader.result === 'string' ? reader.result : null;
-            if (!url) return;
-            setPendingImage(url);
-            setTool('image');
-            toast.info('Click the page to place the image');
-          };
-          reader.readAsDataURL(file);
+          void (async () => {
+            const invalid = await validateImageFile(file, { maxBytes: PDF_OVERLAY_IMAGE_MAX_BYTES });
+            if (invalid) {
+              toast.error(invalid);
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+              const url = typeof reader.result === 'string' ? reader.result : null;
+              if (!url) return;
+              setPendingImage(url);
+              setTool('image');
+              toast.info('Click the page to place the image');
+            };
+            reader.readAsDataURL(file);
+          })();
         }}
       />
       <SignaturePad

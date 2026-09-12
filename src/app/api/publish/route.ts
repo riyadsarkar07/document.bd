@@ -19,8 +19,13 @@ import {
   PUBLIC_VERIFY_BASE_URL,
   type Caller,
 } from '@/lib/publish/server-auth';
+import { clientIp, rateLimit } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
+
+export async function GET() {
+  return json({ ok: false, error: 'Method not allowed.' }, 405, { Allow: 'POST' });
+}
 
 /**
  * Refuse to publish/unpublish a number the caller does not own.
@@ -87,6 +92,16 @@ async function confirmLive(regNo: string, maxAttempts = 15): Promise<boolean> {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
+  const ip = clientIp(req);
+  const ipLimit = rateLimit(`publish-ip:${ip}`, 30, 60_000);
+  if (!ipLimit.ok) {
+    return json(
+      { ok: false, error: 'Too many publish requests. Try again shortly.' },
+      429,
+      { 'Retry-After': String(ipLimit.retryAfterSec) },
+    );
+  }
+
   const authz = req.headers.get('authorization') ?? '';
   const token = authz.startsWith('Bearer ') ? authz.slice('Bearer '.length) : null;
 
@@ -100,6 +115,15 @@ export async function POST(req: Request): Promise<NextResponse> {
     const userAuth = await authorizeUserPublish(token);
     if (!userAuth.ok) return json({ ok: false, error: userAuth.error }, userAuth.status);
     caller = userAuth.caller;
+  }
+
+  const userLimit = rateLimit(`publish-user:${caller.userId}`, 10, 60_000);
+  if (!userLimit.ok) {
+    return json(
+      { ok: false, error: 'Too many publish requests. Try again shortly.' },
+      429,
+      { 'Retry-After': String(userLimit.retryAfterSec) },
+    );
   }
 
   const raw = await req.text().catch(() => null);
