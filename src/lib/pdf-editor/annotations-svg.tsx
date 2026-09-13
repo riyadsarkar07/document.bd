@@ -27,9 +27,8 @@ export function AnnotationSvg({
       <div
         className={cn(
           'pointer-events-none absolute overflow-hidden whitespace-pre leading-none',
-          selected && 'ring-2 ring-accent',
-          native && selected && 'bg-white/95',
-          native && !selected && 'bg-white',
+          selected && !native && 'ring-2 ring-accent',
+          selected && native && 'outline outline-1 outline-accent',
         )}
         style={{
           left: `${annotation.x * 100}%`,
@@ -41,6 +40,7 @@ export function AnnotationSvg({
           fontWeight: annotation.bold ? 700 : 400,
           fontFamily: annotation.fontFamily || 'Helvetica, Arial, sans-serif',
           textAlign: annotation.align || 'left',
+          background: native ? '#fff' : undefined,
         }}
       >
         {annotation.text || (native ? '' : 'Text')}

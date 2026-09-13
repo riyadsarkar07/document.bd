@@ -12,6 +12,8 @@ import {
   ImagePlus,
   Loader2,
   MousePointer2,
+  PanelLeft,
+  PanelLeftClose,
   PanelRightOpen,
   PenLine,
   Redo2,
@@ -69,6 +71,7 @@ import {
   type PdfEditorDocument,
   type PdfPoint,
   type PdfTool,
+  type TextAnnotation,
 } from '@/lib/pdf-editor/types';
 import { PDF_OVERLAY_IMAGE_MAX_BYTES, validateImageFile, validatePdfFile } from '@/lib/uploads';
 
@@ -101,6 +104,7 @@ export default function PdfEditorPage() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('Upload a PDF to begin');
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [pagesOpen, setPagesOpen] = useState(false);
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
@@ -108,6 +112,8 @@ export default function PdfEditorPage() {
   const [nativeRuns, setNativeRuns] = useState<Record<string, NativeTextRun[]>>({});
   const [hoveredRunId, setHoveredRunId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<string>('');
+  const [pendingNative, setPendingNative] = useState<TextAnnotation | null>(null);
 
   const dragRef = useRef<{
     mode: 'draw' | 'move' | 'erase';
@@ -124,7 +130,9 @@ export default function PdfEditorPage() {
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const activePage = present.pages.find((p) => p.id === activePageId) ?? present.pages[0] ?? null;
-  const selected = present.annotations.find((a) => a.id === selectedId) ?? null;
+  const selected =
+    present.annotations.find((a) => a.id === selectedId) ??
+    (pendingNative && pendingNative.id === selectedId ? { ...pendingNative, text: editDraft } : null);
 
   const closeDocument = useCallback(async () => {
     pdfRef.current?.destroy().catch(() => undefined);
@@ -140,6 +148,8 @@ export default function PdfEditorPage() {
     setNativeRuns({});
     setHoveredRunId(null);
     setEditingId(null);
+    setEditDraft('');
+    setPendingNative(null);
     setStatus('Upload a PDF to begin');
   }, [reset]);
 
@@ -170,6 +180,8 @@ export default function PdfEditorPage() {
         setSelectedId(null);
         setDraft(null);
         setEditingId(null);
+        setEditDraft('');
+        setPendingNative(null);
         setHoveredRunId(null);
         setZoom(1);
         const runsByPage: Record<string, NativeTextRun[]> = {};
@@ -218,6 +230,8 @@ export default function PdfEditorPage() {
     if (next !== 'select' && next !== 'text') {
       setSelectedId(null);
       setEditingId(null);
+      setEditDraft('');
+      setPendingNative(null);
     }
   };
 
@@ -234,22 +248,49 @@ export default function PdfEditorPage() {
     setSelectedId(next.id);
   };
 
+  const startTextEdit = (annotation: { id: string; text: string }) => {
+    setSelectedId(annotation.id);
+    setEditingId(annotation.id);
+    setEditDraft(annotation.text);
+    setHoveredRunId(null);
+  };
+
+  const applyTextEdit = () => {
+    if (!editingId) return;
+    const next = editDraft;
+    const pending = pendingNative;
+    setEditingId(null);
+    setEditDraft('');
+    setPendingNative(null);
+    if (pending) {
+      set((doc) => addAnnotation(doc, { ...pending, text: next }));
+      setSelectedId(pending.id);
+      return;
+    }
+    set((doc) => updateAnnotation(doc, editingId, { text: next } as Partial<PdfAnnotation>));
+    setSelectedId(editingId);
+  };
+
+  const cancelTextEdit = () => {
+    setEditingId(null);
+    setEditDraft('');
+    setPendingNative(null);
+    setSelectedId(null);
+  };
+
   const beginNativeEdit = (run: NativeTextRun) => {
     if (!activePage) return;
     const existing = annotationsForPage(present, activePage.id).find(
       (item) => item.type === 'text' && item.source === 'native' && boxesOverlap(item, run, 0.35),
     );
-    if (existing) {
-      setSelectedId(existing.id);
-      setEditingId(existing.id);
-      setHoveredRunId(null);
+    if (existing && existing.type === 'text') {
+      setPendingNative(null);
+      startTextEdit(existing);
       return;
     }
     const annotation = nativeRunToTextAnnotation(activePage.id, run);
-    set((doc) => addAnnotation(doc, annotation));
-    setSelectedId(annotation.id);
-    setEditingId(annotation.id);
-    setHoveredRunId(null);
+    setPendingNative(annotation);
+    startTextEdit(annotation);
   };
 
   const pageGeometryKey = present.pages.map((page) => `${page.id}:${page.rotation}`).join('|');
@@ -279,12 +320,21 @@ export default function PdfEditorPage() {
 
   const coveredNativeBoxes = useMemo(() => {
     if (!activePage) return [];
-    return annotationsForPage(present, activePage.id).flatMap((item) =>
+    const committed = annotationsForPage(present, activePage.id).flatMap((item) =>
       item.type === 'text' && item.source === 'native' && item.coverOriginal
         ? [{ x: item.x, y: item.y, width: item.width, height: item.height }]
         : [],
     );
-  }, [present, activePage]);
+    if (pendingNative && pendingNative.pageId === activePage.id) {
+      committed.push({
+        x: pendingNative.x,
+        y: pendingNative.y,
+        width: pendingNative.width,
+        height: pendingNative.height,
+      });
+    }
+    return committed;
+  }, [present, activePage, pendingNative]);
 
   const pageTextRuns = useMemo(() => {
     if (!activePage) return [];
@@ -293,6 +343,7 @@ export default function PdfEditorPage() {
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>, point: PdfPoint) => {
     if (!activePage) return;
+    if (editingId) return;
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     if (tool === 'select') {
       const hit = findAnnotationAt(present, activePage.id, point);
@@ -307,8 +358,8 @@ export default function PdfEditorPage() {
     if (tool === 'text') {
       const overlayHit = findAnnotationAt(present, activePage.id, point);
       if (overlayHit?.type === 'text') {
-        setSelectedId(overlayHit.id);
-        setEditingId(overlayHit.id);
+        setPendingNative(null);
+        startTextEdit(overlayHit);
         return;
       }
       const run = hitTestNativeRun(pageTextRuns, point);
@@ -325,9 +376,14 @@ export default function PdfEditorPage() {
     const created = makeDraft(tool, activePage, point, extra);
     if (!created) return;
     if (created.type === 'text' || created.type === 'image' || created.type === 'signature') {
+      if (created.type === 'text') {
+        set((doc) => addAnnotation(doc, created));
+        setPendingNative(null);
+        startTextEdit(created);
+        return;
+      }
       set((doc) => addAnnotation(doc, created));
       setSelectedId(created.id);
-      setEditingId(created.type === 'text' ? created.id : null);
       if (created.type === 'image') setPendingImage(null);
       return;
     }
@@ -391,7 +447,10 @@ export default function PdfEditorPage() {
       const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable;
       if (e.key === 'Escape') {
         e.preventDefault();
-        setEditingId(null);
+        if (editingId) {
+          cancelTextEdit();
+          return;
+        }
         setHoveredRunId(null);
         setSelectedId(null);
         if (!inField) setTool('select');
@@ -408,7 +467,7 @@ export default function PdfEditorPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, set]);
+  }, [selectedId, set, editingId]);
 
   const handleExport = async () => {
     const bytes = sourceBytesRef.current;
@@ -434,11 +493,17 @@ export default function PdfEditorPage() {
   const pageAnnotations = useMemo(() => {
     if (!activePage) return [];
     const items = annotationsForPage(present, activePage.id);
-    if (!movePreview) return items;
-    return items.map((item) =>
+    const withPending =
+      pendingNative && pendingNative.pageId === activePage.id && !items.some((item) => item.id === pendingNative.id)
+        ? [...items, { ...pendingNative, text: editDraft }]
+        : items.map((item) =>
+            item.id === editingId && item.type === 'text' ? { ...item, text: editDraft } : item,
+          );
+    if (!movePreview) return withPending;
+    return withPending.map((item) =>
       item.id === movePreview.id ? moveAnnotation(item, movePreview.dx, movePreview.dy) : item,
     );
-  }, [present, activePage, movePreview]);
+  }, [present, activePage, movePreview, pendingNative, editingId, editDraft]);
 
   const cursor =
     tool === 'pen' ? 'crosshair' : tool === 'select' ? 'default' : tool === 'text' ? 'text' : 'crosshair';
@@ -480,6 +545,18 @@ export default function PdfEditorPage() {
 
           <div className="mx-1 h-5 w-px bg-line" />
 
+          {pdf && present.pages.length > 0 && (
+            <Button
+              size="icon-sm"
+              variant={pagesOpen ? 'soft' : 'ghost'}
+              title={pagesOpen ? 'Hide pages' : 'Show pages'}
+              aria-label={pagesOpen ? 'Hide pages' : 'Show pages'}
+              onClick={() => setPagesOpen((open) => !open)}
+            >
+              {pagesOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeft className="h-3.5 w-3.5" />}
+            </Button>
+          )}
+
           <div className="flex items-center gap-1 rounded-xl border border-line bg-surface-raised p-1">
             <Button size="icon-sm" variant="ghost" onClick={() => setZoom((z) => clamp(z / 1.15, 0.35, 3))} title="Zoom out">
               <ZoomOut className="h-3.5 w-3.5" />
@@ -503,10 +580,21 @@ export default function PdfEditorPage() {
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1">
-          {pdf && present.pages.length > 0 && (
+        <div className="flex min-h-0 min-w-0 flex-1">
+          {pdf && present.pages.length > 0 && pagesOpen && (
             <aside className="hidden w-[148px] shrink-0 overflow-y-auto border-r border-line bg-surface p-3 md:block">
-              <div className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.16em] text-dimm">Pages</div>
+              <div className="mb-2 flex items-center justify-between px-1">
+                <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-dimm">Pages</span>
+                <button
+                  type="button"
+                  className="text-dimm transition hover:text-muted"
+                  title="Hide pages"
+                  aria-label="Hide pages"
+                  onClick={() => setPagesOpen(false)}
+                >
+                  <PanelLeftClose className="h-3.5 w-3.5" />
+                </button>
+              </div>
               <div className="flex flex-col gap-2">
                 {present.pages.map((page, index) => (
                   <button
@@ -516,6 +604,7 @@ export default function PdfEditorPage() {
                       setActivePageId(page.id);
                       setSelectedId(null);
                       setEditingId(null);
+                      setPendingNative(null);
                       setHoveredRunId(null);
                     }}
                     className={cn(
@@ -539,43 +628,7 @@ export default function PdfEditorPage() {
             </aside>
           )}
 
-          <div className="relative flex min-h-0 flex-1 overflow-auto bg-canvas-soft bg-grid p-6 sm:p-8">
-            {!pdf || !activePage ? (
-              <div className="m-auto w-full max-w-lg">
-                <EmptyState
-                  icon={<FileText className="h-7 w-7" />}
-                  title="PDF Editor"
-                  description="Upload a PDF to preview every page, annotate in the browser, then export. Files never leave this session."
-                  action={
-                    <Button variant="primary" onClick={() => fileInputRef.current?.click()} icon={<FileUp className="h-4 w-4" />}>
-                      Upload PDF
-                    </Button>
-                  }
-                />
-              </div>
-            ) : (
-              <div className="m-auto" style={{ cursor }}>
-                <PdfPageView
-                  pdf={pdf}
-                  page={activePage}
-                  annotations={pageAnnotations}
-                  selectedId={selectedId}
-                  zoom={zoom}
-                  draft={draft}
-                  interactive
-                  textRuns={tool === 'text' ? pageTextRuns : undefined}
-                  hoveredRunId={tool === 'text' ? hoveredRunId : null}
-                  editingId={editingId}
-                  onTextChange={(id, text) => set((doc) => updateAnnotation(doc, id, { text } as Partial<PdfAnnotation>))}
-                  onEditEnd={() => setEditingId(null)}
-                  onHoverEnd={() => setHoveredRunId(null)}
-                  onPointerDown={onPointerDown}
-                  onPointerMove={onPointerMove}
-                  onPointerUp={onPointerUp}
-                />
-              </div>
-            )}
-
+          <div className="relative min-h-0 min-w-0 flex-1">
             {!inspectorOpen && (
               <button
                 onClick={() => setInspectorOpen(true)}
@@ -585,6 +638,47 @@ export default function PdfEditorPage() {
                 Inspector
               </button>
             )}
+            <div className="absolute inset-0 overflow-auto bg-canvas-soft bg-grid">
+              {!pdf || !activePage ? (
+                <div className="flex min-h-full min-w-full items-center justify-center p-6">
+                  <div className="w-full max-w-lg">
+                    <EmptyState
+                      icon={<FileText className="h-7 w-7" />}
+                      title="PDF Editor"
+                      description="Upload a PDF to preview every page, annotate in the browser, then export. Files never leave this session."
+                      action={
+                        <Button variant="primary" onClick={() => fileInputRef.current?.click()} icon={<FileUp className="h-4 w-4" />}>
+                          Upload PDF
+                        </Button>
+                      }
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="inline-block min-h-full min-w-full p-6 sm:p-8" style={{ cursor }}>
+                  <PdfPageView
+                    pdf={pdf}
+                    page={activePage}
+                    annotations={pageAnnotations}
+                    selectedId={selectedId}
+                    zoom={zoom}
+                    draft={draft}
+                    interactive
+                    textRuns={tool === 'text' ? pageTextRuns : undefined}
+                    hoveredRunId={tool === 'text' ? hoveredRunId : null}
+                    editingId={editingId}
+                    editText={editDraft}
+                    onTextChange={setEditDraft}
+                    onApplyEdit={applyTextEdit}
+                    onCancelEdit={cancelTextEdit}
+                    onHoverEnd={() => setHoveredRunId(null)}
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -622,9 +716,9 @@ export default function PdfEditorPage() {
                   variant="secondary"
                   size="sm"
                   onClick={() => {
+                    cancelTextEdit();
                     set((doc) => rotatePage(doc, activePage.id, -90));
                     setHoveredRunId(null);
-                    setEditingId(null);
                   }}
                   icon={<RotateCcw className="h-3.5 w-3.5" />}
                 >
@@ -634,9 +728,9 @@ export default function PdfEditorPage() {
                   variant="secondary"
                   size="sm"
                   onClick={() => {
+                    cancelTextEdit();
                     set((doc) => rotatePage(doc, activePage.id, 90));
                     setHoveredRunId(null);
-                    setEditingId(null);
                   }}
                   icon={<RotateCw className="h-3.5 w-3.5" />}
                 >
@@ -680,8 +774,7 @@ export default function PdfEditorPage() {
                     return nextRuns;
                   });
                   setActivePageId(next?.id ?? null);
-                  setSelectedId(null);
-                  setEditingId(null);
+                  cancelTextEdit();
                   setHoveredRunId(null);
                 }}
                 icon={<Trash2 className="h-3.5 w-3.5" />}
@@ -699,32 +792,62 @@ export default function PdfEditorPage() {
             <div className="space-y-3">
               <PropertyInput
                 label="Text"
-                value={selected.text}
+                value={editingId === selected.id ? editDraft : selected.text}
                 textarea
-                onChange={(v) => set((doc) => updateAnnotation(doc, selected.id, { text: v } as Partial<PdfAnnotation>))}
+                onChange={(v) => {
+                  if (editingId === selected.id) {
+                    setEditDraft(v);
+                    return;
+                  }
+                  set((doc) => updateAnnotation(doc, selected.id, { text: v } as Partial<PdfAnnotation>));
+                }}
               />
+              {editingId === selected.id && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button variant="success" size="sm" onClick={applyTextEdit}>
+                    Apply
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={cancelTextEdit}>
+                    Cancel
+                  </Button>
+                </div>
+              )}
               <PropertySlider
                 label="Font size"
                 value={Math.round(selected.fontSize * 1000)}
                 min={12}
                 max={80}
-                onChange={(v) =>
-                  set((doc) => updateAnnotation(doc, selected.id, { fontSize: v / 1000 } as Partial<PdfAnnotation>))
-                }
+                onChange={(v) => {
+                  const fontSize = v / 1000;
+                  if (pendingNative?.id === selected.id) {
+                    setPendingNative({ ...pendingNative, fontSize });
+                    return;
+                  }
+                  set((doc) => updateAnnotation(doc, selected.id, { fontSize } as Partial<PdfAnnotation>));
+                }}
               />
               <FieldLabel>Color</FieldLabel>
               <input
                 type="color"
                 value={selected.color}
-                onChange={(e) =>
-                  set((doc) => updateAnnotation(doc, selected.id, { color: e.target.value } as Partial<PdfAnnotation>))
-                }
+                onChange={(e) => {
+                  const color = e.target.value;
+                  if (pendingNative?.id === selected.id) {
+                    setPendingNative({ ...pendingNative, color });
+                    return;
+                  }
+                  set((doc) => updateAnnotation(doc, selected.id, { color } as Partial<PdfAnnotation>));
+                }}
                 className="h-9 w-full cursor-pointer rounded-lg border border-line bg-surface-raised"
               />
               <Button
                 variant="danger"
                 size="sm"
                 onClick={() => {
+                  if (pendingNative?.id === selected.id) {
+                    cancelTextEdit();
+                    return;
+                  }
                   set((doc) => removeAnnotation(doc, selected.id));
                   setSelectedId(null);
                   setEditingId(null);

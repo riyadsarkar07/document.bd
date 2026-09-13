@@ -29,8 +29,10 @@ export function PdfPageView({
   textRuns,
   hoveredRunId,
   editingId,
+  editText,
   onTextChange,
-  onEditEnd,
+  onApplyEdit,
+  onCancelEdit,
   onHoverEnd,
   className,
   onPointerDown,
@@ -48,8 +50,10 @@ export function PdfPageView({
   textRuns?: NativeTextRun[];
   hoveredRunId?: string | null;
   editingId?: string | null;
-  onTextChange?: (id: string, text: string) => void;
-  onEditEnd?: () => void;
+  editText?: string;
+  onTextChange?: (text: string) => void;
+  onApplyEdit?: () => void;
+  onCancelEdit?: () => void;
   onHoverEnd?: () => void;
   className?: string;
   onPointerDown?: (e: React.PointerEvent<HTMLDivElement>, point: PdfPoint) => void;
@@ -102,8 +106,8 @@ export function PdfPageView({
     <div
       ref={wrapRef}
       className={cn(
-        'relative overflow-hidden bg-white shadow-deep',
-        thumbnail ? 'rounded-lg border border-line' : 'touch-none rounded-[6px] border border-line-strong',
+        'relative bg-white shadow-deep',
+        thumbnail ? 'overflow-hidden rounded-lg border border-line' : 'overflow-visible touch-none rounded-[6px] border border-line-strong',
         className,
       )}
       style={{ width: cssSize.width, height: cssSize.height }}
@@ -149,8 +153,8 @@ export function PdfPageView({
         <div
           key={run.id}
           className={cn(
-            'pointer-events-none absolute rounded-[2px]',
-            run.id === hoveredRunId && 'bg-info/18 ring-1 ring-info/70',
+            'pointer-events-none absolute',
+            run.id === hoveredRunId && 'outline outline-1 outline-accent/70',
           )}
           style={{
             left: `${run.x * 100}%`,
@@ -163,34 +167,62 @@ export function PdfPageView({
       <div className="pointer-events-none absolute inset-0">
         {items.map((annotation) =>
           annotation.type === 'text' && annotation.id === editingId ? (
-            <textarea
+            <div
               key={annotation.id}
-              autoFocus
-              value={annotation.text}
-              onChange={(e) => onTextChange?.(annotation.id, e.target.value)}
-              onBlur={() => onEditEnd?.()}
-              onPointerDown={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  e.preventDefault();
-                  onEditEnd?.();
-                }
-              }}
-              className="pointer-events-auto absolute z-10 resize-none overflow-hidden rounded-[2px] border-2 border-accent bg-white p-0 text-primary shadow-glow outline-none"
+              className="pointer-events-none absolute z-10"
               style={{
                 left: `${annotation.x * 100}%`,
                 top: `${annotation.y * 100}%`,
-                width: `${Math.max(annotation.width, 0.04) * 100}%`,
-                height: `${Math.max(annotation.height, annotation.fontSize * 1.2) * 100}%`,
-                color: annotation.color,
-                fontSize: Math.max(4, annotation.fontSize * cssSize.height),
-                fontWeight: annotation.bold ? 700 : 400,
-                fontFamily: annotation.fontFamily || 'Helvetica, Arial, sans-serif',
-                textAlign: annotation.align || 'left',
-                lineHeight: 1.1,
+                minWidth: `${Math.max(annotation.width, 0.04) * 100}%`,
               }}
-              aria-label="Edit PDF text"
-            />
+            >
+              <textarea
+                autoFocus
+                value={editText ?? annotation.text}
+                onChange={(e) => onTextChange?.(e.target.value)}
+                onPointerDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancelEdit?.();
+                  }
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    onApplyEdit?.();
+                  }
+                }}
+                className="pointer-events-auto block w-full resize-none overflow-hidden rounded-[2px] border border-accent bg-white p-0 text-primary outline-none"
+                style={{
+                  width: `${Math.max(annotation.width, 0.04) * cssSize.width}px`,
+                  height: `${Math.max(annotation.height, annotation.fontSize) * cssSize.height}px`,
+                  color: annotation.color,
+                  fontSize: Math.max(4, annotation.fontSize * cssSize.height),
+                  fontWeight: annotation.bold ? 700 : 400,
+                  fontFamily: annotation.fontFamily || 'Helvetica, Arial, sans-serif',
+                  textAlign: annotation.align || 'left',
+                  lineHeight: 1,
+                }}
+                aria-label="Edit PDF text"
+              />
+              <div className="pointer-events-auto mt-1 flex gap-1">
+                <button
+                  type="button"
+                  className="rounded bg-accent px-2 py-0.5 text-[10px] font-semibold text-canvas"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => onApplyEdit?.()}
+                >
+                  Apply
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-line bg-surface px-2 py-0.5 text-[10px] font-semibold text-muted"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => onCancelEdit?.()}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           ) : (
             <AnnotationSvg
               key={annotation.id}

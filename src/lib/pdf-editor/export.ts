@@ -109,11 +109,11 @@ async function drawAnnotation(
     const font = annotation.bold ? fonts.bold : fonts.regular;
     const size = Math.max(4, annotation.fontSize * height);
     const boxX = nx(page, annotation.x);
-    const boxW = Math.max(8, annotation.width * width);
-    const boxH = Math.max(size, annotation.height * height);
+    const boxW = Math.max(1, annotation.width * width);
+    const boxH = Math.max(1, annotation.height * height);
     const boxY = nyTop(page, annotation.y + annotation.height);
     if (annotation.coverOriginal) {
-      const pad = Math.max(0.4, size * 0.08);
+      const pad = Math.max(0.2, size * 0.03);
       outPage.drawRectangle({
         x: boxX - pad,
         y: boxY - pad,

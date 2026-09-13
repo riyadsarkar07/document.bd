@@ -42,28 +42,21 @@ export async function extractNativeTextRuns(
     const text = raw.str.replace(/\s+$/g, '');
     if (!text.trim()) continue;
     const m = raw.transform as number[];
-    const a = m[0] ?? 0;
-    const b = m[1] ?? 0;
     const c = m[2] ?? 0;
     const d = m[3] ?? 0;
     const e = m[4] ?? 0;
     const f = m[5] ?? 0;
     const fontHeight = Math.hypot(c, d) || Math.abs(d) || raw.height || 10;
-    const fontWidth = Math.hypot(a, b) || raw.width || fontHeight;
-    const width = raw.width || fontWidth * Math.max(1, text.length * 0.5);
-    const height = raw.height || fontHeight;
-    const corners = [
-      viewport.convertToViewportPoint(e, f),
-      viewport.convertToViewportPoint(e + width, f),
-      viewport.convertToViewportPoint(e, f + height),
-      viewport.convertToViewportPoint(e + width, f + height),
-    ];
-    const xs = corners.map((p) => p[0]);
-    const ys = corners.map((p) => p[1]);
+    const advance = raw.width || Math.hypot(m[0] ?? 0, m[1] ?? 0) || fontHeight * Math.max(1, text.length * 0.45);
+    const baselineLeft = viewport.convertToViewportPoint(e, f);
+    const baselineRight = viewport.convertToViewportPoint(e + advance, f);
+    const capLeft = viewport.convertToViewportPoint(e, f + fontHeight);
+    const xs = [baselineLeft[0], baselineRight[0], capLeft[0]];
+    const ys = [baselineLeft[1], baselineRight[1], capLeft[1]];
     const x = Math.min(...xs);
     const y = Math.min(...ys);
-    const boxW = Math.max(Math.max(...xs) - x, width * 0.35);
-    const boxH = Math.max(Math.max(...ys) - y, height * 0.55);
+    const boxW = Math.max(Math.abs(baselineRight[0] - baselineLeft[0]), 0.5);
+    const boxH = Math.max(Math.abs(capLeft[1] - baselineLeft[1]), fontHeight * 0.6);
     const style = styles[raw.fontName];
     const family = style?.fontFamily || 'Helvetica, Arial, sans-serif';
     runs.push({
@@ -95,7 +88,7 @@ function mergeNearbyRuns(runs: NativeTextRun[]): NativeTextRun[] {
       out.push({ ...run });
       continue;
     }
-    const sameLine = Math.abs(prev.y - run.y) <= Math.max(prev.height, run.height) * 0.45;
+    const sameLine = Math.abs(prev.y - run.y) <= Math.max(prev.fontSize, run.fontSize) * 0.28;
     const gap = run.x - (prev.x + prev.width);
     const close = gap >= -0.004 && gap <= Math.max(prev.fontSize, run.fontSize) * 1.8;
     if (sameLine && close && sameStyle(prev, run)) {
