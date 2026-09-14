@@ -48,10 +48,10 @@ const NAV: NavItem[] = [
   { href: '/studio/editor/nid', label: 'NID Card', icon: CreditCard, scope: 'nid', section: 'Studio' },
   { href: '/studio/editor/tin', label: 'TIN Record', icon: Landmark, scope: 'tin', section: 'Studio' },
   { href: '/studio/history', label: 'History', icon: History, scope: 'history', section: 'Studio' },
-  { href: '/studio/templates', label: 'Templates', icon: Shapes, scope: 'templates' },
-  { href: '/studio/projects', label: 'Projects', icon: FolderKanban, scope: 'projects' },
+  { href: '/studio/templates', label: 'Templates', icon: Shapes, scope: 'templates', section: 'Studio' },
+  { href: '/studio/projects', label: 'Projects', icon: FolderKanban, scope: 'projects', section: 'Studio' },
+  { href: '/studio/settings', label: 'Settings', icon: Settings, scope: 'settings', section: 'Studio' },
   { href: '/studio/assets', label: 'Assets', icon: Package, scope: 'assets', section: 'Workspace' },
-  { href: '/studio/settings', label: 'Settings', icon: Settings, scope: 'settings' },
   { href: '/studio/users', label: 'Users', icon: Users, admin: true },
   { href: '/studio/activity', label: 'Activity Logs', icon: Activity, admin: true },
 ];
