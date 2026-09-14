@@ -43,7 +43,7 @@ import { FieldLabel } from '@/components/ui/input';
 import { useHistory } from '@/lib/hooks/useHistory';
 import { useToast } from '@/lib/toast/toast-provider';
 import { cn, clamp } from '@/lib/utils';
-import { boxesOverlap, moveAnnotation } from '@/lib/pdf-editor/geometry';
+import { boxesOverlap, moveAnnotation, pageVisualSize } from '@/lib/pdf-editor/geometry';
 import {
   addAnnotation,
   annotationsForPage,
@@ -263,7 +263,7 @@ export default function PdfEditorPage() {
     setEditDraft('');
     setPendingNative(null);
     if (pending) {
-      set((doc) => addAnnotation(doc, { ...pending, text: next }));
+      set((doc) => addAnnotation(doc, { ...pending, text: next, coverOriginal: true }));
       setSelectedId(pending.id);
       return;
     }
@@ -289,6 +289,7 @@ export default function PdfEditorPage() {
       return;
     }
     const annotation = nativeRunToTextAnnotation(activePage.id, run);
+    annotation.coverOriginal = false;
     setPendingNative(annotation);
     startTextEdit(annotation);
   };
@@ -325,16 +326,8 @@ export default function PdfEditorPage() {
         ? [{ x: item.x, y: item.y, width: item.width, height: item.height }]
         : [],
     );
-    if (pendingNative && pendingNative.pageId === activePage.id) {
-      committed.push({
-        x: pendingNative.x,
-        y: pendingNative.y,
-        width: pendingNative.width,
-        height: pendingNative.height,
-      });
-    }
     return committed;
-  }, [present, activePage, pendingNative]);
+  }, [present, activePage]);
 
   const pageTextRuns = useMemo(() => {
     if (!activePage) return [];
@@ -814,16 +807,21 @@ export default function PdfEditorPage() {
               )}
               <PropertySlider
                 label="Font size"
-                value={Math.round(selected.fontSize * 1000)}
-                min={12}
-                max={80}
+                value={Math.round(selected.fontSize * (activePage ? pageVisualSize(activePage).height : 1000))}
+                min={4}
+                max={96}
                 onChange={(v) => {
-                  const fontSize = v / 1000;
+                  const pageH = activePage ? pageVisualSize(activePage).height : 1000;
+                  const fontSize = v / Math.max(1, pageH);
                   if (pendingNative?.id === selected.id) {
-                    setPendingNative({ ...pendingNative, fontSize });
+                    setPendingNative({ ...pendingNative, fontSize, height: Math.max(pendingNative.height, fontSize) });
                     return;
                   }
-                  set((doc) => updateAnnotation(doc, selected.id, { fontSize } as Partial<PdfAnnotation>));
+                  set((doc) =>
+                    updateAnnotation(doc, selected.id, (prev) =>
+                      prev.type === 'text' ? { ...prev, fontSize, height: Math.max(prev.height, fontSize) } : prev,
+                    ),
+                  );
                 }}
               />
               <FieldLabel>Color</FieldLabel>

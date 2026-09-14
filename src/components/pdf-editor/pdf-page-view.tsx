@@ -191,11 +191,12 @@ export function PdfPageView({
                     onApplyEdit?.();
                   }
                 }}
-                className="pointer-events-auto block w-full resize-none overflow-hidden rounded-[2px] border border-accent bg-white p-0 text-primary outline-none"
+                className="pointer-events-auto block w-full resize-none overflow-hidden rounded-[2px] border border-accent p-0 outline-none"
                 style={{
                   width: `${Math.max(annotation.width, 0.04) * cssSize.width}px`,
                   height: `${Math.max(annotation.height, annotation.fontSize) * cssSize.height}px`,
                   color: annotation.color,
+                  background: annotation.source === 'native' ? 'transparent' : '#fff',
                   fontSize: Math.max(4, annotation.fontSize * cssSize.height),
                   fontWeight: annotation.bold ? 700 : 400,
                   fontFamily: annotation.fontFamily || 'Helvetica, Arial, sans-serif',

@@ -229,7 +229,7 @@ export function nativeRunToTextAnnotation(pageId: string, run: NativeTextRun): T
     height: Math.max(run.height, run.fontSize),
     text: run.text,
     fontSize: run.fontSize,
-    color: '#111827',
+    color: run.color || '#111827',
     bold: run.bold,
     source: 'native',
     coverOriginal: true,

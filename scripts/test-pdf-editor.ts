@@ -3,12 +3,14 @@
  * Creates a multi-page PDF, applies edits, and checks the exported file.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
 import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { addAnnotation, deletePage, movePage, nativeRunToTextAnnotation, rotatePage } from '../src/lib/pdf-editor/document';
 import { exportEditedPdf } from '../src/lib/pdf-editor/export';
 import { pageVisualSize } from '../src/lib/pdf-editor/geometry';
-import { hitTestNativeRun, visibleNativeRuns } from '../src/lib/pdf-editor/native-text';
+import { extractNativeTextRuns, hitTestNativeRun, visibleNativeRuns } from '../src/lib/pdf-editor/native-text';
 import type { NativeTextRun, PdfEditorDocument } from '../src/lib/pdf-editor/types';
 
 function ok(cond: boolean, msg: string) {
@@ -175,7 +177,14 @@ async function makeBillFixture(): Promise<{
   });
   page.drawText('TOP_EDGE', { x: cropX + width / 2 - 28, y: cropY + height - 14, size: 9, font, color: rgb(0.1, 0.1, 0.1) });
   page.drawText('BOTTOM_EDGE', { x: cropX + width / 2 - 36, y: cropY + 10, size: 9, font, color: rgb(0.1, 0.1, 0.1) });
-  page.drawText('VALUE & RULE', { x: valuePdfX, y: valuePdfY, size: fontSize, font, color: rgb(0.1, 0.1, 0.1) });
+  page.drawText('MONTH', {
+    x: cropX + 72,
+    y: cropY + height - 72,
+    size: 11,
+    font,
+    color: rgb(0.78, 0.12, 0.16),
+  });
+  page.drawText('VALUE & RULE', { x: valuePdfX, y: valuePdfY, size: fontSize, font, color: rgb(0.12, 0.35, 0.72) });
   const glyphW = font.widthOfTextAtSize('VALUE & RULE', fontSize);
   return {
     bytes: await doc.save(),
@@ -330,6 +339,7 @@ async function main() {
     fontSize: 0.028,
     fontFamily: 'Helvetica, Arial, sans-serif',
     bold: false,
+    color: '#c41e3a',
   };
   ok(hitTestNativeRun([run], { x: 0.12, y: 0.06 })?.id === 'ntext_1', 'hit-test finds native run under click');
   ok(hitTestNativeRun([run], { x: 0.9, y: 0.9 }) === null, 'hit-test misses empty space');
@@ -339,6 +349,8 @@ async function main() {
   nativeAnn.id = 'native_edit';
   nativeAnn.text = 'NATIVE_EDIT_OK';
   ok(nativeAnn.source === 'native' && nativeAnn.coverOriginal === true, 'native annotation covers original glyphs');
+  ok(nativeAnn.color === '#c41e3a', 'native annotation keeps the extracted PDF fill color');
+  ok(Math.round(nativeAnn.fontSize * 792) === 22, 'inspector shows PDF points, not a 0-1 fraction that rounds to 1');
 
   const nativeDoc: PdfEditorDocument = {
     fileName: 'native-edit.pdf',
@@ -523,10 +535,28 @@ async function main() {
     fontSize: bill.valueBox.fontSize,
     fontFamily: 'Helvetica, Arial, sans-serif',
     bold: false,
+    color: '#1f59b8',
+  };
+  const monthRun: NativeTextRun = {
+    id: 'ntext_month',
+    text: 'MONTH',
+    x: 72 / bill.width,
+    y: (72 - 11) / bill.height,
+    width: 0.12,
+    height: 11 / bill.height,
+    fontSize: 11 / bill.height,
+    fontFamily: 'Helvetica, Arial, sans-serif',
+    bold: false,
+    color: '#c71f29',
   };
   ok(hitTestNativeRun([billRun], { x: bill.valueBox.x + 0.01, y: bill.valueBox.y + 0.005 })?.id === 'ntext_value', 'VALUE & RULE is selectable on the A4 fixture');
   const billAnn = nativeRunToTextAnnotation('page_bill', billRun);
   billAnn.id = 'bill_edit';
+  const monthAnn = nativeRunToTextAnnotation('page_bill', monthRun);
+  ok(monthAnn.color === '#c71f29', 'MONTH keeps its extracted red fill instead of turning white');
+  ok(Math.round(monthAnn.fontSize * bill.height) === 11, 'MONTH inspector size stays 11pt, not 1');
+  ok(billAnn.color === '#1f59b8', 'VALUE & RULE keeps its extracted blue fill');
+  ok(Math.round(billAnn.fontSize * bill.height) === 14, 'VALUE & RULE inspector size stays 14pt');
   billAnn.text = 'VALUE & RULE EDITED';
   const billDoc: PdfEditorDocument = {
     fileName: 'utility-bill-fixture.pdf',
@@ -583,6 +613,34 @@ async function main() {
   ok(Math.abs(rotatedBillSize.height - bill.width) < 0.5, 'editor-rotated A4 export swaps to visual height');
 
   console.log('\nA4 bill fixture export checks passed.\n');
+
+  console.log('[pdf-editor] real utility bill native text extraction\n');
+  const billBytes = new Uint8Array(readFileSync('tests/fixtures/utility-bill-regression.pdf'));
+  const billPdf = await getDocument({ data: billBytes, isEvalSupported: false, useSystemFonts: true }).promise;
+  const billSource = await billPdf.getPage(1);
+  const billViewport = billSource.getViewport({ scale: 1 });
+  const extracted = await extractNativeTextRuns(billPdf, {
+    id: 'page_real',
+    sourceIndex: 0,
+    rotation: 0,
+    sourceRotate: 0,
+    widthPt: billViewport.width,
+    heightPt: billViewport.height,
+  });
+  const monthRuns = extracted.filter((run) => run.text === 'MONTH');
+  const valueRuns = extracted.filter((run) => run.text === 'VALUE & RULE');
+  ok(monthRuns.length >= 1, 'real bill exposes a MONTH run');
+  ok(valueRuns.length >= 1, 'real bill exposes a VALUE & RULE run');
+  for (const run of [...monthRuns, ...valueRuns]) {
+    ok(Math.abs(run.fontSize * billViewport.height - 8) < 0.6, `${run.text} size is ~8pt, not 1pt`);
+    ok(run.color !== '#000000' && run.color !== '#ffffff', `${run.text} keeps a visible original color (${run.color})`);
+  }
+  const headerMonth = monthRuns.find((run) => Math.abs(run.x * billViewport.width - 341.16) < 1.5);
+  ok(Boolean(headerMonth), 'header MONTH keeps its original x position');
+  ok(monthRuns.some((run) => run.color === '#247896'), 'header MONTH keeps its extracted teal fill');
+  ok(valueRuns.some((run) => run.color === '#247896'), 'VALUE & RULE keeps its extracted teal fill');
+
+  console.log('\nReal utility bill native text checks passed.\n');
 }
 
 main().catch((err) => {

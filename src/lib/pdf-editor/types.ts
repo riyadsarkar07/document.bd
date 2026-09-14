@@ -64,6 +64,7 @@ export interface NativeTextRun {
   fontSize: number;
   fontFamily: string;
   bold: boolean;
+  color: string;
 }
 
 export interface HighlightAnnotation extends AnnotationBase {

@@ -40,7 +40,7 @@ export function AnnotationSvg({
           fontWeight: annotation.bold ? 700 : 400,
           fontFamily: annotation.fontFamily || 'Helvetica, Arial, sans-serif',
           textAlign: annotation.align || 'left',
-          background: native ? '#fff' : undefined,
+          background: native && annotation.coverOriginal ? '#fff' : undefined,
         }}
       >
         {annotation.text || (native ? '' : 'Text')}
