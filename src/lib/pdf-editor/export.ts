@@ -1,6 +1,6 @@
 import { BlendMode, LineCapStyle, PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
-import { pageVisualSize } from '@/lib/pdf-editor/geometry';
-import type { PdfAnnotation, PdfEditorDocument, PdfPageMeta } from '@/lib/pdf-editor/types';
+import { asRotation, visualPageSize } from '@/lib/pdf-editor/geometry';
+import type { PdfAnnotation, PdfEditorDocument, PdfPageMeta, PdfRotation } from '@/lib/pdf-editor/types';
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const raw = hex.replace('#', '').trim();
@@ -45,7 +45,22 @@ function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } | nu
 }
 
 function pagePt(page: PdfPageMeta) {
-  return pageVisualSize(page);
+  return visualPageSize(page.widthPt, page.heightPt, page.rotation);
+}
+
+function sourceCropBox(srcPage: PDFPage) {
+  const media = srcPage.getMediaBox();
+  const crop = srcPage.getCropBox();
+  const left = Math.max(media.x, crop.x);
+  const bottom = Math.max(media.y, crop.y);
+  const right = Math.min(media.x + media.width, crop.x + crop.width);
+  const top = Math.min(media.y + media.height, crop.y + crop.height);
+  return {
+    left,
+    bottom,
+    right: right > left ? right : left + Math.max(1, media.width),
+    top: top > bottom ? top : bottom + Math.max(1, media.height),
+  };
 }
 
 function nx(page: PdfPageMeta, x: number): number {
@@ -77,18 +92,22 @@ async function embedImage(doc: PDFDocument, dataUrl: string) {
   }
 }
 
-function drawPageContent(outPage: PDFPage, embedded: Awaited<ReturnType<PDFDocument['embedPage']>>, page: PdfPageMeta) {
-  const srcW = page.widthPt;
-  const srcH = page.heightPt;
-  if (page.rotation === 90) {
+function drawPageContent(
+  outPage: PDFPage,
+  embedded: Awaited<ReturnType<PDFDocument['embedPage']>>,
+  rotation: PdfRotation,
+) {
+  const srcW = embedded.width;
+  const srcH = embedded.height;
+  if (rotation === 90) {
     outPage.drawPage(embedded, { x: 0, y: srcW, rotate: degrees(270) });
     return;
   }
-  if (page.rotation === 180) {
+  if (rotation === 180) {
     outPage.drawPage(embedded, { x: srcW, y: srcH, rotate: degrees(180) });
     return;
   }
-  if (page.rotation === 270) {
+  if (rotation === 270) {
     outPage.drawPage(embedded, { x: srcH, y: 0, rotate: degrees(90) });
     return;
   }
@@ -249,14 +268,22 @@ export async function exportEditedPdf(sourceBytes: Uint8Array, documentState: Pd
   for (const pageMeta of documentState.pages) {
     if (pageMeta.sourceIndex < 0 || pageMeta.sourceIndex >= source.getPageCount()) continue;
     const srcPage = source.getPage(pageMeta.sourceIndex);
-    const embedded = await out.embedPage(srcPage);
-    const size = pageVisualSize(pageMeta);
+    const embedded = await out.embedPage(srcPage, sourceCropBox(srcPage));
+    const totalRotation = asRotation(asRotation(srcPage.getRotation().angle) + pageMeta.rotation);
+    const size = visualPageSize(embedded.width, embedded.height, totalRotation);
     const outPage = out.addPage([size.width, size.height]);
-    drawPageContent(outPage, embedded, pageMeta);
+    drawPageContent(outPage, embedded, totalRotation);
 
+    const exportPage: PdfPageMeta = {
+      ...pageMeta,
+      widthPt: size.width,
+      heightPt: size.height,
+      rotation: 0,
+      sourceRotate: 0,
+    };
     const annotations = documentState.annotations.filter((a) => a.pageId === pageMeta.id);
     for (const annotation of annotations) {
-      await drawAnnotation(out, outPage, pageMeta, annotation, { regular, bold });
+      await drawAnnotation(out, outPage, exportPage, annotation, { regular, bold });
     }
   }
 

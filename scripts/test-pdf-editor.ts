@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { inflateSync } from 'node:zlib';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib';
 import { addAnnotation, deletePage, movePage, nativeRunToTextAnnotation, rotatePage } from '../src/lib/pdf-editor/document';
 import { exportEditedPdf } from '../src/lib/pdf-editor/export';
 import { pageVisualSize } from '../src/lib/pdf-editor/geometry';
@@ -14,6 +14,16 @@ import type { NativeTextRun, PdfEditorDocument } from '../src/lib/pdf-editor/typ
 function ok(cond: boolean, msg: string) {
   assert.equal(cond, true, msg);
   console.log(`  ok  ${msg}`);
+}
+
+function decodePdfHexStrings(text: string): string {
+  let out = '';
+  const re = /<([0-9A-Fa-f]+)>/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    out += Buffer.from(match[1], 'hex').toString('latin1');
+  }
+  return out;
 }
 
 function pdfContains(bytes: Uint8Array, needle: string): boolean {
@@ -45,6 +55,7 @@ function pdfContains(bytes: Uint8Array, needle: string): boolean {
       const inflated = inflateSync(payload);
       const text = inflated.toString('latin1');
       if (text.includes(needle) || text.toUpperCase().includes(hex)) return true;
+      if (decodePdfHexStrings(text).includes(needle)) return true;
     } catch {
       // not a flate stream
     }
@@ -71,6 +82,115 @@ async function makeSource(): Promise<Uint8Array> {
 
 function samplePng(): string {
   return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8BQzwAEjDAGACpgBUHAgvQdAAAAAElFTkSuQmCC';
+}
+
+function decodePdfStreams(bytes: Uint8Array): string {
+  const buf = Buffer.from(bytes);
+  const latin = buf.toString('latin1');
+  const parts: string[] = [latin];
+  let idx = 0;
+  while (idx < latin.length) {
+    const start = latin.indexOf('stream', idx);
+    if (start < 0) break;
+    const after = start + 6;
+    const dataStart =
+      latin[after] === '\r' && latin[after + 1] === '\n'
+        ? after + 2
+        : latin[after] === '\n' || latin[after] === '\r'
+          ? after + 1
+          : -1;
+    if (dataStart < 0) {
+      idx = after;
+      continue;
+    }
+    const end = latin.indexOf('endstream', dataStart);
+    if (end < 0) break;
+    let payloadEnd = end;
+    if (latin[end - 1] === '\n') payloadEnd = latin[end - 2] === '\r' ? end - 2 : end - 1;
+    const payload = buf.subarray(dataStart, payloadEnd);
+    try {
+      parts.push(inflateSync(payload).toString('latin1'));
+    } catch {
+      parts.push(Buffer.from(payload).toString('latin1'));
+    }
+    idx = end + 9;
+  }
+  return parts.join('\n');
+}
+
+function parseTextMatrices(content: string): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  const re = /1 0 0 1 (-?[\d.]+) (-?[\d.]+) Tm/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content))) {
+    out.push({ x: Number(match[1]), y: Number(match[2]) });
+  }
+  return out;
+}
+
+function parseCoverRects(content: string): { x: number; y: number; width: number; height: number }[] {
+  const out: { x: number; y: number; width: number; height: number }[] = [];
+  const re =
+    /1 0 0 1 (-?[\d.]+) (-?[\d.]+) cm(?:\s+1 0 0 1 0 0 cm)*\s+0 0 m\s+0 (-?[\d.]+) l\s+(-?[\d.]+) (-?[\d.]+) l/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content))) {
+    out.push({
+      x: Number(match[1]),
+      y: Number(match[2]),
+      width: Number(match[4]),
+      height: Number(match[3]),
+    });
+  }
+  return out;
+}
+
+async function makeBillFixture(): Promise<{
+  bytes: Uint8Array;
+  width: number;
+  height: number;
+  cropX: number;
+  cropY: number;
+  valueBox: { x: number; y: number; width: number; height: number; fontSize: number };
+}> {
+  const width = 595.28;
+  const height = 841.89;
+  const cropX = 24;
+  const cropY = 36;
+  const fontSize = 14;
+  const valuePdfX = cropX + 72;
+  const valuePdfY = cropY + height - 120;
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([width, height]);
+  page.setMediaBox(cropX, cropY, width, height);
+  page.setCropBox(cropX, cropY, width, height);
+  page.drawRectangle({ x: cropX, y: cropY, width, height, color: rgb(1, 1, 1) });
+  page.drawText('LEFT_EDGE', { x: cropX + 8, y: cropY + height / 2, size: 9, font, color: rgb(0.1, 0.1, 0.1) });
+  page.drawText('RIGHT_EDGE', {
+    x: cropX + width - 72,
+    y: cropY + height / 2,
+    size: 9,
+    font,
+    color: rgb(0.1, 0.1, 0.1),
+  });
+  page.drawText('TOP_EDGE', { x: cropX + width / 2 - 28, y: cropY + height - 14, size: 9, font, color: rgb(0.1, 0.1, 0.1) });
+  page.drawText('BOTTOM_EDGE', { x: cropX + width / 2 - 36, y: cropY + 10, size: 9, font, color: rgb(0.1, 0.1, 0.1) });
+  page.drawText('VALUE & RULE', { x: valuePdfX, y: valuePdfY, size: fontSize, font, color: rgb(0.1, 0.1, 0.1) });
+  const glyphW = font.widthOfTextAtSize('VALUE & RULE', fontSize);
+  return {
+    bytes: await doc.save(),
+    width,
+    height,
+    cropX,
+    cropY,
+    valueBox: {
+      x: 72 / width,
+      y: (120 - fontSize) / height,
+      width: glyphW / width,
+      height: fontSize / height,
+      fontSize: fontSize / height,
+    },
+  };
 }
 
 async function main() {
@@ -265,6 +385,204 @@ async function main() {
   ok(hitTestNativeRun([], { x: 0.2, y: 0.4 }) === null, 'scanned PDF with no text layer misses native hits');
 
   console.log('\nNative text edit checks passed.\n');
+
+  console.log('[pdf-editor] crop box origin + source rotate\n');
+  const offsetDoc = await PDFDocument.create();
+  const offsetFont = await offsetDoc.embedFont(StandardFonts.Helvetica);
+  const offsetPage = offsetDoc.addPage([612, 792]);
+  offsetPage.setMediaBox(50, 80, 612, 792);
+  offsetPage.setCropBox(50, 80, 612, 792);
+  offsetPage.drawText('OFFSET_CROP', { x: 122, y: 800, size: 18, font: offsetFont, color: rgb(0.1, 0.1, 0.1) });
+  const offsetBytes = await offsetDoc.save();
+
+  const offsetState: PdfEditorDocument = {
+    fileName: 'offset-crop.pdf',
+    pages: [
+      {
+        id: 'page_offset',
+        sourceIndex: 0,
+        rotation: 0,
+        sourceRotate: 0,
+        widthPt: 612,
+        heightPt: 792,
+      },
+    ],
+    annotations: [
+      {
+        id: 'cover_offset',
+        pageId: 'page_offset',
+        type: 'text',
+        x: 72 / 612,
+        y: 72 / 792,
+        width: 0.3,
+        height: 0.04,
+        text: 'CROP_ORIGIN_OK',
+        fontSize: 0.024,
+        color: '#111827',
+        bold: false,
+        source: 'native',
+        coverOriginal: true,
+      },
+    ],
+  };
+  const offsetExported = await exportEditedPdf(offsetBytes, offsetState);
+  const offsetOut = await PDFDocument.load(offsetExported);
+  const offsetOutPage = offsetOut.getPage(0);
+  const offsetBox = offsetOutPage.getMediaBox();
+  ok(Math.abs(offsetOutPage.getSize().width - 612) < 0.5, 'offset crop export width uses crop size not media origin');
+  ok(Math.abs(offsetOutPage.getSize().height - 792) < 0.5, 'offset crop export height uses crop size not media origin');
+  ok(Math.abs(offsetBox.x) < 0.01 && Math.abs(offsetBox.y) < 0.01, 'offset crop export page origin is 0,0');
+  ok(pdfContains(offsetExported, 'CROP_ORIGIN_OK'), 'replacement text is written on offset-crop export');
+
+  const rotatedSrc = await PDFDocument.create();
+  const rotatedPage = rotatedSrc.addPage([612, 792]);
+  rotatedPage.setRotation(degrees(90));
+  rotatedPage.drawText('ROTATED_SRC', {
+    x: 72,
+    y: 720,
+    size: 18,
+    font: await rotatedSrc.embedFont(StandardFonts.Helvetica),
+    color: rgb(0.1, 0.1, 0.1),
+  });
+  const rotatedBytes = await rotatedSrc.save();
+  const rotatedState: PdfEditorDocument = {
+    fileName: 'source-rotate.pdf',
+    pages: [
+      {
+        id: 'page_rot',
+        sourceIndex: 0,
+        rotation: 0,
+        sourceRotate: 90,
+        widthPt: 612,
+        heightPt: 792,
+      },
+    ],
+    annotations: [],
+  };
+  const rotatedExported = await exportEditedPdf(rotatedBytes, rotatedState);
+  const rotatedOut = await PDFDocument.load(rotatedExported);
+  const rotatedSize = rotatedOut.getPage(0).getSize();
+  ok(Math.abs(rotatedSize.width - 792) < 0.5, 'source /Rotate 90 export width is visual crop width');
+  ok(Math.abs(rotatedSize.height - 612) < 0.5, 'source /Rotate 90 export height is visual crop height');
+
+  const rotatedVisualState: PdfEditorDocument = {
+    fileName: 'source-rotate-visual.pdf',
+    pages: [
+      {
+        id: 'page_rot',
+        sourceIndex: 0,
+        rotation: 0,
+        sourceRotate: 90,
+        widthPt: 792,
+        heightPt: 612,
+      },
+    ],
+    annotations: [
+      {
+        id: 'rot_text',
+        pageId: 'page_rot',
+        type: 'text',
+        x: 0.1,
+        y: 0.1,
+        width: 0.4,
+        height: 0.08,
+        text: 'ROT_VISUAL_OK',
+        fontSize: 0.04,
+        color: '#111827',
+        bold: false,
+        source: 'native',
+        coverOriginal: true,
+      },
+    ],
+  };
+  const rotatedVisualExported = await exportEditedPdf(rotatedBytes, rotatedVisualState);
+  const rotatedVisualSize = (await PDFDocument.load(rotatedVisualExported)).getPage(0).getSize();
+  ok(Math.abs(rotatedVisualSize.width - 792) < 0.5, 'PDF.js visual page size plus source rotate stays 792pt wide');
+  ok(Math.abs(rotatedVisualSize.height - 612) < 0.5, 'PDF.js visual page size plus source rotate stays 612pt tall');
+  ok(pdfContains(rotatedVisualExported, 'ROT_VISUAL_OK'), 'native replacement maps onto source-rotated visual page');
+
+  console.log('\nCrop box and source rotate checks passed.\n');
+
+  console.log('[pdf-editor] A4 bill fixture export coordinates\n');
+  const bill = await makeBillFixture();
+  const billPage = {
+    id: 'page_bill',
+    sourceIndex: 0,
+    rotation: 0 as const,
+    sourceRotate: 0 as const,
+    widthPt: bill.width,
+    heightPt: bill.height,
+  };
+  const billRun: NativeTextRun = {
+    id: 'ntext_value',
+    text: 'VALUE & RULE',
+    x: bill.valueBox.x,
+    y: bill.valueBox.y,
+    width: bill.valueBox.width,
+    height: bill.valueBox.height,
+    fontSize: bill.valueBox.fontSize,
+    fontFamily: 'Helvetica, Arial, sans-serif',
+    bold: false,
+  };
+  ok(hitTestNativeRun([billRun], { x: bill.valueBox.x + 0.01, y: bill.valueBox.y + 0.005 })?.id === 'ntext_value', 'VALUE & RULE is selectable on the A4 fixture');
+  const billAnn = nativeRunToTextAnnotation('page_bill', billRun);
+  billAnn.id = 'bill_edit';
+  billAnn.text = 'VALUE & RULE EDITED';
+  const billDoc: PdfEditorDocument = {
+    fileName: 'utility-bill-fixture.pdf',
+    pages: [billPage],
+    annotations: [billAnn],
+  };
+
+  const zoomLevels = [0.5, 1, 1.35, 2];
+  let firstContent = '';
+  for (const zoom of zoomLevels) {
+    void zoom;
+    const exported = await exportEditedPdf(bill.bytes, billDoc);
+    const out = await PDFDocument.load(exported);
+    const page = out.getPage(0);
+    const size = page.getSize();
+    const box = page.getMediaBox();
+    ok(Math.abs(size.width - bill.width) < 0.5, `zoom-independent export width stays A4 (${size.width})`);
+    ok(Math.abs(size.height - bill.height) < 0.5, `zoom-independent export height stays A4 (${size.height})`);
+    ok(Math.abs(box.x) < 0.01 && Math.abs(box.y) < 0.01, 'exported A4 page origin is 0,0 not crop origin');
+    ok(page.getRotation().angle === 0, 'unrotated A4 fixture keeps rotation 0');
+    ok(pdfContains(exported, 'VALUE & RULE EDITED') || pdfContains(exported, 'RULE EDITED'), 'edited VALUE & RULE text is in the export');
+    ok(pdfContains(exported, 'LEFT_EDGE') && pdfContains(exported, 'RIGHT_EDGE'), 'left/right edge text survives export');
+    ok(pdfContains(exported, 'TOP_EDGE') && pdfContains(exported, 'BOTTOM_EDGE'), 'top/bottom edge text survives export');
+    ok(pdfContains(exported, 'VALUE & RULE'), 'original VALUE & RULE glyphs remain under the cover');
+
+    const content = decodePdfStreams(exported);
+    const texts = parseTextMatrices(content);
+    const covers = parseCoverRects(content);
+    const expectedX = bill.valueBox.x * bill.width;
+    const expectedCoverY = bill.height - (bill.valueBox.y + bill.valueBox.height) * bill.height;
+    const expectedTextY = expectedCoverY + bill.valueBox.height * bill.height - bill.valueBox.fontSize * bill.height;
+    const edited = texts.find((t) => Math.abs(t.x - expectedX) < 1.5 && Math.abs(t.y - expectedTextY) < 1.5);
+    ok(Boolean(edited), `replacement text is at PDF-space (${expectedX.toFixed(2)}, ${expectedTextY.toFixed(2)}) not screen space`);
+    const cover = covers.find(
+      (c) => Math.abs(c.x - expectedX) < 2 && Math.abs(c.y - expectedCoverY) < 2,
+    );
+    ok(Boolean(cover), 'white cover sits on the original glyph box');
+    if (cover) {
+      ok(cover.width < bill.width * 0.35, 'white cover is not an oversized page block');
+      ok(cover.height < bill.height * 0.08, 'white cover height stays near the glyph height');
+    }
+    if (!firstContent) firstContent = content;
+    else ok(content === firstContent, 'export content is identical across editor zoom levels');
+  }
+
+  const rotatedBillDoc: PdfEditorDocument = {
+    fileName: 'utility-bill-fixture-rotated.pdf',
+    pages: [{ ...billPage, rotation: 90 }],
+    annotations: [],
+  };
+  const rotatedBillExported = await exportEditedPdf(bill.bytes, rotatedBillDoc);
+  const rotatedBillSize = (await PDFDocument.load(rotatedBillExported)).getPage(0).getSize();
+  ok(Math.abs(rotatedBillSize.width - bill.height) < 0.5, 'editor-rotated A4 export swaps to visual width');
+  ok(Math.abs(rotatedBillSize.height - bill.width) < 0.5, 'editor-rotated A4 export swaps to visual height');
+
+  console.log('\nA4 bill fixture export checks passed.\n');
 }
 
 main().catch((err) => {
