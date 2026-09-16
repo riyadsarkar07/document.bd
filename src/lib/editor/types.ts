@@ -85,6 +85,8 @@ export interface TMSnapshot {
   signY: number;
   signSize: number;
   logoDataUrl?: string | null;
+  /** Distinguishes TM Certificate vs YouTube Trademark vault/history rows. */
+  docKind?: 'tm' | 'youtube-trademark';
 }
 
 export interface NIDSnapshot {

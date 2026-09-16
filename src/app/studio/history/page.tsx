@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Ban, Download, ExternalLink, History, Rocket, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, Download, ExternalLink, FilePen, History, Rocket, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import {
   listVaultRecords,
@@ -37,6 +37,11 @@ import { useToast } from '@/lib/toast/toast-provider';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 20;
+
+function editorHref(record: VaultRecord): string {
+  const kind = record.docKind === 'youtube-trademark' ? 'youtube-trademark' : 'tm';
+  return `/studio/editor/${kind}?record=${encodeURIComponent(record.trademarkNo)}`;
+}
 
 export default function HistoryPage() {
   const toast = useToast();
@@ -454,7 +459,7 @@ export default function HistoryPage() {
             description={
               view === 'trashed'
                 ? 'Records you move to the trash appear here until restored or permanently deleted.'
-                : 'Export a certificate from the TM editor to secure it in the Cloud Vault.'
+                : 'Export a certificate from the TM Certificate or YouTube Trademark editor to secure it in the Cloud Vault.'
             }
           />
         )
@@ -490,7 +495,14 @@ export default function HistoryPage() {
                       >
                         <td className="px-4 py-3 font-mono text-[11px] text-dimm">{rowNum}</td>
                         <td className="px-4 py-3 font-mono text-xs font-semibold text-accent-bright">
-                          {r.trademarkNo}
+                          <div className="flex flex-col gap-1">
+                            <span>{r.trademarkNo}</span>
+                            {r.docKind === 'youtube-trademark' ? (
+                              <Badge tone="red">YouTube</Badge>
+                            ) : (
+                              <Badge tone="gold">TM</Badge>
+                            )}
+                          </div>
                         </td>
                         <td className="max-w-[220px] truncate px-4 py-3 text-primary" title={r.companyName}>
                           {r.companyName}
@@ -537,6 +549,13 @@ export default function HistoryPage() {
                             <Button size="sm" variant="outline" onClick={() => openPreview(r)}>
                               View
                             </Button>
+                            {view === 'active' && r.trademarkNo ? (
+                              <Link href={editorHref(r)}>
+                                <Button size="sm" variant="secondary" icon={<FilePen className="h-3.5 w-3.5" />}>
+                                  Open
+                                </Button>
+                              </Link>
+                            ) : null}
                             {view === 'trashed' ? (
                               <>
                                 <Button size="sm" variant="success" icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => setRestoreTarget(r)}>

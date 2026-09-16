@@ -269,6 +269,18 @@ function main() {
   assert(unpackedLayoutOnly.openingText === undefined, 'legacy layout-only embed does not invent openingText');
   assert(unpackedLayoutOnly.goodsDesc === GOODS, 'legacy layout-only embed still restores goods description');
 
+  console.log('\n[13] YouTube Trademark vault rows keep a distinct docKind tag\n');
+  const packedYt = packDetails(GOODS, stored, { docKind: 'youtube-trademark', openingText: CUSTOM_OPENING });
+  const unpackedYt = unpackDetails(packedYt);
+  assert(unpackedYt.docKind === 'youtube-trademark', 'YouTube Trademark pack stores docKind');
+  assert(unpackedYt.openingText === CUSTOM_OPENING, 'YouTube Trademark pack still stores openingText');
+  const packedTm = packDetails(GOODS, stored, { docKind: 'tm' });
+  const unpackedTm = unpackDetails(packedTm);
+  assert(unpackedTm.docKind === 'tm', 'TM Certificate pack stores docKind tm');
+  const packedLegacyKind = packDetails(GOODS, stored);
+  const unpackedLegacyKind = unpackDetails(packedLegacyKind);
+  assert(unpackedLegacyKind.docKind === undefined, 'legacy TM rows without docKind stay untagged');
+
   console.log(`\n${failures === 0 ? '✓ ALL PUBLISH CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

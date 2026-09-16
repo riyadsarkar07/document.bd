@@ -146,7 +146,7 @@ export default function ProjectsPage() {
                 Saved {timeAgo(p.updated_at ?? p.created_at)}
               </div>
               <div className="mt-4 flex items-center gap-2">
-                <Link href={`/studio/editor/${p.kind}?project=${encodeURIComponent(p.id ?? p.name)}`} className="flex-1">
+                <Link href={`/studio/editor/${p.state?.docKind === 'youtube-trademark' ? 'youtube-trademark' : p.kind}?project=${encodeURIComponent(p.id ?? p.name)}`} className="flex-1">
                   <Button variant="secondary" size="sm" icon={<FolderOpen className="h-3.5 w-3.5" />} className="w-full">
                     Open Project
                   </Button>

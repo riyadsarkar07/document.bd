@@ -16,7 +16,7 @@ const TITLES: Record<string, string> = {
   '/studio/editor/nid': 'NID Card Editor',
   '/studio/editor/tin': 'TIN Record Editor',
   '/studio/editor/page-recover': 'Hacked Page Recover',
-  '/studio/editor/youtube-trademark': 'YouTube Trademark',
+  '/studio/editor/youtube-trademark': 'YouTube Trademark Editor',
   '/studio/editor/business-manager': 'Business Manager Access',
   '/studio/templates': 'Templates',
   '/studio/projects': 'Projects',
@@ -34,7 +34,7 @@ const SUBS: Record<string, string> = {
   '/studio/editor/nid': 'National ID card canvas',
   '/studio/editor/tin': 'TIN information record canvas',
   '/studio/editor/page-recover': 'Hacked page recovery workspace',
-  '/studio/editor/youtube-trademark': 'YouTube trademark workspace',
+  '/studio/editor/youtube-trademark': 'YouTube trademark certificate canvas',
   '/studio/editor/business-manager': 'Business manager access workspace',
 };
 

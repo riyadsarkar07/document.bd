@@ -62,6 +62,7 @@ export interface PackedDetailsExtra {
   openingText?: string;
   middleTextArial?: string;
   logoText?: string;
+  docKind?: 'tm' | 'youtube-trademark';
 }
 
 export interface PackedDetails extends PackedDetailsExtra {
@@ -76,6 +77,7 @@ function extraFromLayout(layout: unknown): PackedDetailsExtra {
   if (typeof src.openingText === 'string') extra.openingText = src.openingText;
   if (typeof src.middleTextArial === 'string') extra.middleTextArial = src.middleTextArial;
   if (typeof src.logoText === 'string') extra.logoText = src.logoText;
+  if (src.docKind === 'youtube-trademark' || src.docKind === 'tm') extra.docKind = src.docKind;
   return extra;
 }
 

@@ -12,8 +12,11 @@ import type { TMSnapshot } from '@/lib/editor/types';
 /** Publication state of a vault record against the public verification portal. */
 export type PublishStatus = 'published' | 'pending' | 'failed' | 'unpublished';
 
+export type CertificateDocKind = 'tm' | 'youtube-trademark';
+
 export interface VaultRecord extends TMSnapshot {
   timestamp: string;
+  docKind?: CertificateDocKind;
   /** UUID of the authenticated user who created/exported the record. */
   createdBy?: string | null;
   /** Resolved display email for `createdBy` (null when unknown / not visible). */
@@ -88,6 +91,7 @@ function mapVaultRow(row: VaultRow): VaultRecord {
           : '',
     ...layoutFromVaultSources(row.layout_json, row.details),
     logoDataUrl: row.logo_data_url || null,
+    docKind: unpacked.docKind === 'youtube-trademark' ? 'youtube-trademark' : 'tm',
     createdBy: row.created_by || null,
     timestamp: row.synced_at ? formatTimestamp(new Date(row.synced_at)) : '—',
     publishStatus: (row.publish_status as PublishStatus) || null,
@@ -110,9 +114,14 @@ function isMissingDeletedAt(err: { message?: string } | null): boolean {
 export async function commitCertificate(
   entry: TMSnapshot,
   createdBy?: string | null,
+  options?: { docKind?: CertificateDocKind },
 ): Promise<{ error: string | null }> {
   const fallbackNumericId = Math.floor(Date.now() / 1000);
   const trademarkNo = entry.trademarkNo || 'N/A';
+  const docKind: CertificateDocKind =
+    options?.docKind === 'youtube-trademark' || entry.docKind === 'youtube-trademark'
+      ? 'youtube-trademark'
+      : 'tm';
   const payload: Record<string, unknown> = {
     trademark_no: trademarkNo,
     reg_date: entry.regDate || '',
@@ -126,6 +135,7 @@ export async function commitCertificate(
       middleTextArial:
         typeof entry.middleTextArial === 'string' ? entry.middleTextArial : TM_DEFAULTS.middleTextArial,
       logoText: typeof entry.logoText === 'string' ? entry.logoText : '',
+      docKind,
     }),
     sealed_date: entry.sealedDate || '',
     sealed_text_phrase:
@@ -313,6 +323,19 @@ export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultLis
   if (error) return { records: [], total: 0, page, pageSize, error: error.message };
   const records = (data ?? []).map(mapVaultRow);
   return { records, total: count ?? records.length, page, pageSize, error: null };
+}
+
+/** Load one vault certificate by trademark number for History → editor reopen. */
+export async function getVaultRecord(
+  trademarkNo: string,
+): Promise<{ record: VaultRecord | null; error: string | null }> {
+  const tm = trademarkNo.trim();
+  if (!tm) return { record: null, error: 'Missing Trademark No.' };
+  const { data, error } = await supabase.from('certificates').select('*').eq('trademark_no', tm).limit(1);
+  if (error) return { record: null, error: error.message };
+  const row = data?.[0];
+  if (!row) return { record: null, error: 'Record not found.' };
+  return { record: mapVaultRow(row as VaultRow), error: null };
 }
 
 /**
