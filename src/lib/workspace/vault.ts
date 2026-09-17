@@ -8,15 +8,26 @@ import { VERIFY_BASE_URL } from '@/lib/verify-base';
 import { sealedTextFromVault } from '@/lib/publish/sealed-text';
 import { layoutFromSnapshot, layoutFromVaultSources, packDetails, unpackDetails } from '@/lib/publish/layout';
 import type { TMSnapshot } from '@/lib/editor/types';
+import {
+  DOCUMENT_KINDS,
+  isDocumentKind,
+  type DocumentKind,
+} from '@/lib/workspace/document-kinds';
 
 /** Publication state of a vault record against the public verification portal. */
 export type PublishStatus = 'published' | 'pending' | 'failed' | 'unpublished';
 
+/** Certificate-family kinds that reuse the TM canvas/renderer. */
 export type CertificateDocKind = 'tm' | 'youtube-trademark';
 
 export interface VaultRecord extends TMSnapshot {
   timestamp: string;
-  docKind?: CertificateDocKind;
+  docKind?: DocumentKind;
+  /**
+   * Generic editor payload for non-certificate vault rows (NID, TIN, PDF,
+   * service records). `null`/absent for TM and YouTube certificate rows.
+   */
+  doc?: unknown;
   /** UUID of the authenticated user who created/exported the record. */
   createdBy?: string | null;
   /** Resolved display email for `createdBy` (null when unknown / not visible). */
@@ -91,7 +102,8 @@ function mapVaultRow(row: VaultRow): VaultRecord {
           : '',
     ...layoutFromVaultSources(row.layout_json, row.details),
     logoDataUrl: row.logo_data_url || null,
-    docKind: unpacked.docKind === 'youtube-trademark' ? 'youtube-trademark' : 'tm',
+    docKind: isDocumentKind(unpacked.docKind) ? unpacked.docKind : 'tm',
+    doc: unpacked.doc ?? null,
     createdBy: row.created_by || null,
     timestamp: row.synced_at ? formatTimestamp(new Date(row.synced_at)) : '—',
     publishStatus: (row.publish_status as PublishStatus) || null,
@@ -108,6 +120,66 @@ function isMissingDeletedAt(err: { message?: string } | null): boolean {
 }
 
 /**
+ * Shared vault upsert keyed by the natural `trademark_no`.
+ *
+ * Finds the existing row, preserves its `registration_no` and original creator,
+ * inserts a fresh row when absent, and retries without any column an older
+ * deployment is missing (the extra data persists once its migration is run).
+ * Re-saving a trashed record also clears `deleted_at` so it returns to the
+ * active vault.
+ */
+async function writeVaultRow(
+  trademarkNo: string,
+  payload: Record<string, unknown>,
+  createdBy?: string | null,
+): Promise<{ error: { message: string } | null }> {
+  const existing = await supabase
+    .from('certificates')
+    .select('registration_no, created_by')
+    .eq('trademark_no', trademarkNo)
+    .limit(1);
+
+  const existingRow = existing.data?.[0];
+
+  // Insert path carries the creator; update path preserves the original one
+  // UNLESS the existing (legacy) row has no creator yet — then adopt the
+  // current user so re-saving the default/legacy record captures who saved it.
+  if (createdBy) payload.created_by = createdBy;
+
+  let result: { error: { message: string } | null };
+  if (existingRow) {
+    if (existingRow.registration_no) payload.registration_no = existingRow.registration_no;
+    if (existingRow.created_by) delete payload.created_by;
+    result = await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo);
+  } else {
+    payload.registration_no = Math.floor(Date.now() / 1000);
+    result = await supabase.from('certificates').insert([payload]);
+  }
+
+  let attempts = 0;
+  while (result.error && attempts < 5) {
+    const msg = result.error.message ?? '';
+    const drops: string[] = [];
+    if (/created_by/i.test(msg)) drops.push('created_by');
+    if (/logo_data_url/i.test(msg)) drops.push('logo_data_url');
+    if (/deleted_at/i.test(msg)) drops.push('deleted_at');
+    if (/sealed_text_phrase/i.test(msg)) drops.push('sealed_text_phrase');
+    if (/layout_json/i.test(msg)) drops.push('layout_json');
+    if (/opening_text/i.test(msg)) drops.push('opening_text');
+    if (/middle_text_arial/i.test(msg)) drops.push('middle_text_arial');
+    if (/logo_text/i.test(msg)) drops.push('logo_text');
+    if (drops.length === 0) break;
+    for (const key of drops) delete payload[key];
+    result = existingRow
+      ? await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo)
+      : await supabase.from('certificates').insert([payload]);
+    attempts += 1;
+  }
+
+  return result;
+}
+
+/**
  * Cloud Vault — the original app stored certificate exports in the Supabase
  * `certificates` table. Column mapping is preserved exactly.
  */
@@ -116,7 +188,6 @@ export async function commitCertificate(
   createdBy?: string | null,
   options?: { docKind?: CertificateDocKind },
 ): Promise<{ error: string | null }> {
-  const fallbackNumericId = Math.floor(Date.now() / 1000);
   const trademarkNo = entry.trademarkNo || 'N/A';
   const docKind: CertificateDocKind =
     options?.docKind === 'youtube-trademark' || entry.docKind === 'youtube-trademark'
@@ -151,32 +222,11 @@ export async function commitCertificate(
   };
   if (entry.logoDataUrl) payload.logo_data_url = entry.logoDataUrl;
 
-  // Existing trademark_no → UPDATE the existing certificate row so repeated
-  // Saves never create duplicate rows. New trademark_no → INSERT a fresh one.
-  // The `id` surrogate is not exposed by the production vault schema, so the
+  // Existing trademark_no → UPDATE the existing row so repeated saves never
+  // create duplicate rows. New trademark_no → INSERT a fresh one. The `id`
+  // surrogate is not exposed by the production vault schema, so the
   // trademark_no is used as the natural key.
-  const existing = await supabase
-    .from('certificates')
-    .select('registration_no, created_by')
-    .eq('trademark_no', trademarkNo)
-    .limit(1);
-
-  const existingRow = existing.data?.[0];
-
-  // Insert path carries the creator; update path preserves the original one
-  // UNLESS the existing (legacy) row has no creator yet — then adopt the
-  // current user so re-saving the default/legacy TM number records who saved it.
-  if (createdBy) payload.created_by = createdBy;
-
-  let result: { error: { message: string } | null };
-  if (existingRow) {
-    if (existingRow.registration_no) payload.registration_no = existingRow.registration_no;
-    if (existingRow.created_by) delete payload.created_by;
-    result = await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo);
-  } else {
-    payload.registration_no = fallbackNumericId;
-    result = await supabase.from('certificates').insert([payload]);
-  }
+  const result = await writeVaultRow(trademarkNo, payload, createdBy);
 
   // A unique-violation on trademark_no means another account (or a legacy
   // record) already owns this number. Under RLS the row is invisible to the
@@ -189,29 +239,6 @@ export async function commitCertificate(
     return { error: `TM No. ${trademarkNo} is already archived in the vault. Use a different Trademark No. to save your own record.` };
   }
 
-  // Retry without any column the schema does not have yet (e.g. created_by,
-  // logo_data_url, deleted_at before its migration is applied) so the vault
-  // write still succeeds; the extra data persists once the migration is run.
-  let attempts = 0;
-  while (result.error && attempts < 5) {
-    const msg = result.error.message ?? '';
-    const drops: string[] = [];
-    if (/created_by/i.test(msg)) drops.push('created_by');
-    if (/logo_data_url/i.test(msg)) drops.push('logo_data_url');
-    if (/deleted_at/i.test(msg)) drops.push('deleted_at');
-    if (/sealed_text_phrase/i.test(msg)) drops.push('sealed_text_phrase');
-    if (/layout_json/i.test(msg)) drops.push('layout_json');
-    if (/opening_text/i.test(msg)) drops.push('opening_text');
-    if (/middle_text_arial/i.test(msg)) drops.push('middle_text_arial');
-    if (/logo_text/i.test(msg)) drops.push('logo_text');
-    if (drops.length === 0) break;
-    for (const key of drops) delete payload[key];
-    result = existingRow
-      ? await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo)
-      : await supabase.from('certificates').insert([payload]);
-    attempts += 1;
-  }
-
   if (!result.error) {
     void logAudit({
       action: 'vault.saved',
@@ -222,6 +249,77 @@ export async function commitCertificate(
   }
 
   return { error: result.error ? result.error.message : null };
+}
+
+export interface DocumentCommitInput {
+  docKind: DocumentKind;
+  /** Stable natural key / record id; the same id updates the same row. */
+  recordId: string;
+  /** Display title shown in the History "Company" column. */
+  title: string;
+  /** Optional secondary line shown in the History "Owner" column. */
+  subtitle?: string;
+  /** Editor snapshot restored verbatim when the record is reopened. */
+  payload: unknown;
+  createdBy?: string | null;
+}
+
+/**
+ * Persist any Studio document (NID, TIN, PDF, service records, and the
+ * certificate family) into the same Cloud Vault used by History. The editor
+ * snapshot travels in the packed `details` payload together with its
+ * `docKind`, so History can reopen the record in the editor that created it.
+ */
+export async function commitDocument(
+  input: DocumentCommitInput,
+): Promise<{ error: string | null; recordId: string | null }> {
+  const recordId = input.recordId.trim();
+  if (!recordId) return { error: 'Missing record id.', recordId: null };
+
+  const layout = layoutFromSnapshot(TM_DEFAULTS);
+  const kindMeta = DOCUMENT_KINDS[input.docKind];
+  const payload: Record<string, unknown> = {
+    trademark_no: recordId,
+    reg_date: '',
+    name: input.title || '',
+    owner_name: input.subtitle || '',
+    address: '',
+    company_type: kindMeta.label,
+    app_date: '',
+    details: packDetails('', layout, { docKind: input.docKind, doc: input.payload }),
+    sealed_date: '',
+    sealed_text_phrase: TM_DEFAULTS.sealedTextPhrase,
+    opening_text: TM_DEFAULTS.openingText,
+    middle_text_arial: TM_DEFAULTS.middleTextArial,
+    logo_text: '',
+    layout_json: layout,
+    synced_at: new Date().toISOString(),
+    deleted_at: null,
+  };
+
+  const result = await writeVaultRow(recordId, payload, input.createdBy);
+
+  if (
+    result.error &&
+    /duplicate key value violates unique constraint/i.test(result.error.message ?? '') &&
+    /trademark_no/i.test(result.error.message ?? '')
+  ) {
+    return {
+      error: `Record "${recordId}" is already archived by another account. Save with a different id.`,
+      recordId: null,
+    };
+  }
+
+  if (!result.error) {
+    void logAudit({
+      action: 'vault.saved',
+      targetType: input.docKind,
+      targetId: recordId,
+      metadata: { name: input.title || '', kind: input.docKind },
+    });
+  }
+
+  return { error: result.error ? result.error.message : null, recordId: result.error ? null : recordId };
 }
 
 /**

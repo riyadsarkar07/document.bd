@@ -1,3 +1,5 @@
+import type { DocumentKind } from '@/lib/workspace/document-kinds';
+
 export type DocKind = 'tm' | 'nid' | 'tin';
 
 export type TinAlign = 'left' | 'center' | 'right' | 'justify';
@@ -85,8 +87,8 @@ export interface TMSnapshot {
   signY: number;
   signSize: number;
   logoDataUrl?: string | null;
-  /** Distinguishes TM Certificate vs YouTube Trademark vault/history rows. */
-  docKind?: 'tm' | 'youtube-trademark';
+  /** Identifies which Studio editor created the vault/history row. */
+  docKind?: DocumentKind;
 }
 
 export interface NIDSnapshot {

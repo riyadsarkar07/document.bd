@@ -31,6 +31,8 @@ import { loadDataUrlImage, loadImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { encodeDemoQr, buildTinQrPayload } from '@/lib/tinQr';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
+import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
+import { newRecordId } from '@/lib/workspace/document-kinds';
 import { checkLimit } from '@/lib/workspace/limits';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useToast } from '@/lib/toast/toast-provider';
@@ -82,6 +84,7 @@ function TINEditorInner() {
   const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
   const [activeField, setActiveField] = useState<TinFieldKey | 'qr'>('taxpayerName');
   const [moveStep, setMoveStep] = useState(5);
+  const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
 
   const externalCacheRef = useRef<TINSnapshot | null>(null);
 
@@ -104,11 +107,26 @@ function TINEditorInner() {
   const bgImgRef = useRef(bgImg);
   bgImgRef.current = bgImg;
 
-  // Load external project/template state
+  // Load external history/project/template state
   useEffect(() => {
     const projectId = searchParams.get('project');
     const templateName = searchParams.get('template');
+    const recordNo = searchParams.get('record');
     (async () => {
+      if (recordNo) {
+        const res = await getVaultRecord(recordNo);
+        if (res.error || !res.record) {
+          toast.error(res.error ?? 'Could not load History record');
+          return;
+        }
+        const next = normalizeTinSnapshot((res.record.doc as Partial<TINSnapshot>) ?? {});
+        externalCacheRef.current = next;
+        editor.replace(next);
+        setHistoryRecordId(res.record.trademarkNo);
+        setStatus(`History record ${recordNo} loaded`);
+        toast.success(`History record ${recordNo} loaded`);
+        return;
+      }
       if (projectId) {
         const res = await listProjects();
         const found = res.data.find((p) => String(p.id) === projectId || p.name === projectId);
@@ -291,6 +309,28 @@ function TINEditorInner() {
     [setLayout],
   );
 
+  // Save the current TIN snapshot into the unified Cloud Vault so it appears in
+  // History and can be reopened in this editor. Re-saves update the same row.
+  const persistToHistory = useCallback(async (): Promise<string | null> => {
+    if (!user) return null;
+    const snap = presentRef.current;
+    const recordId = historyRecordId ?? (snap.tinNo ? `TIN-${snap.tinNo}` : newRecordId('tin'));
+    const res = await commitDocument({
+      docKind: 'tin',
+      recordId,
+      title: `TIN ${snap.tinNo || 'Record'}`,
+      subtitle: snap.taxpayerName || snap.name,
+      payload: snap,
+      createdBy: user.id,
+    });
+    if (res.error) {
+      toast.error(`History save failed: ${res.error}`);
+      return null;
+    }
+    setHistoryRecordId(res.recordId);
+    return res.recordId;
+  }, [historyRecordId, user, toast]);
+
   const exportJpg = useCallback(async () => {
     const limit = await checkLimit('export');
     if (!limit.ok) {
@@ -310,8 +350,9 @@ function TINEditorInner() {
     link.href = canvas.toDataURL('image/jpeg', 0.96);
     link.click();
     void logActivity({ user_id: user?.id, email: user?.email, action: 'export.tin.jpg', detail: `TIN ${tin} (DEMO)` });
-    toast.success('JPG downloaded (DEMO record)');
-  }, [user, toast]);
+    const savedId = await persistToHistory();
+    toast.success(savedId ? 'JPG downloaded (DEMO record) · secured in History' : 'JPG downloaded (DEMO record)');
+  }, [user, toast, persistToHistory]);
 
   const exportPdf = useCallback(async () => {
     const limit = await checkLimit('export');
@@ -346,8 +387,9 @@ function TINEditorInner() {
     const tin = presentRef.current.tinNo || 'record';
     pdf.save(`TIN-${tin}-DEMO.pdf`);
     void logActivity({ user_id: user?.id, email: user?.email, action: 'export.tin.pdf', detail: `TIN ${tin} (DEMO)` });
-    toast.success('A4 PDF downloaded (DEMO record)');
-  }, [user, toast]);
+    const savedId = await persistToHistory();
+    toast.success(savedId ? 'A4 PDF downloaded (DEMO record) · secured in History' : 'A4 PDF downloaded (DEMO record)');
+  }, [user, toast, persistToHistory]);
 
   const preview = useCallback(async () => {
     const canvas = document.createElement('canvas');
@@ -383,8 +425,9 @@ function TINEditorInner() {
     }
     toast.success('Project saved');
     void logActivity({ user_id: user?.id, email: user?.email, action: 'project.save', detail: `TIN ${present.tinNo}` });
+    await persistToHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [present, user, toast]);
+  }, [present, user, toast, persistToHistory]);
 
   const activeMeta = isQr ? undefined : TIN_FIELDS.find((f) => f.key === activeField);
   const activeLabel = isQr ? 'QR Code' : (activeMeta?.label ?? '');

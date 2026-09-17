@@ -1,12 +1,15 @@
-import { Briefcase } from 'lucide-react';
-import { ServiceComingSoon } from '@/components/editor/service-coming-soon';
+'use client';
+
+import { Suspense } from 'react';
+import { ServiceRecordEditor } from '@/components/editor/service-record-editor';
+import { BUSINESS_MANAGER_CONFIG } from '@/lib/constants/services';
 
 export default function BusinessManagerAccessPage() {
   return (
-    <ServiceComingSoon
-      title="Business Manager Access"
-      description="Set up or restore Business Manager access for your pages and ad accounts."
-      icon={Briefcase}
-    />
+    <Suspense
+      fallback={<div className="flex flex-1 items-center justify-center text-sm text-dimm">Loading editor…</div>}
+    >
+      <ServiceRecordEditor config={BUSINESS_MANAGER_CONFIG} />
+    </Suspense>
   );
 }

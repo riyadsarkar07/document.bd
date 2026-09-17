@@ -19,6 +19,7 @@ import {
   apiPreflight,
   type PreflightResult,
 } from '@/lib/publish/publish-client';
+import { documentKindMeta } from '@/lib/workspace/document-kinds';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
 import { loadImage, loadDataUrlImage } from '@/lib/images';
 import { loadDocumentFonts, ensureTmFontsReady } from '@/lib/fonts';
@@ -39,8 +40,8 @@ import { cn } from '@/lib/utils';
 const PAGE_SIZE = 20;
 
 function editorHref(record: VaultRecord): string {
-  const kind = record.docKind === 'youtube-trademark' ? 'youtube-trademark' : 'tm';
-  return `/studio/editor/${kind}?record=${encodeURIComponent(record.trademarkNo)}`;
+  const meta = documentKindMeta(record.docKind);
+  return `${meta.editorPath}?record=${encodeURIComponent(record.trademarkNo)}`;
 }
 
 export default function HistoryPage() {
@@ -148,6 +149,8 @@ export default function HistoryPage() {
   const openPreview = async (record: VaultRecord) => {
     setPreview(record);
     setPreviewImg(null);
+    // Non-certificate records render as a structured detail view, not a canvas.
+    if (!documentKindMeta(record.docKind).certificate) return;
     const canvas = await renderHistoryCertificate(record, TM_EXPORT_SCALE);
     if (!canvas) {
       toast.error('Certificate fonts are not ready. Please try again.');
@@ -157,6 +160,20 @@ export default function HistoryPage() {
   };
 
   const downloadRecord = async (record: VaultRecord) => {
+    const meta = documentKindMeta(record.docKind);
+    if (!meta.certificate) {
+      const blob = new Blob(
+        [JSON.stringify({ record: record.trademarkNo, docKind: record.docKind, doc: record.doc ?? null }, null, 2)],
+        { type: 'application/json' },
+      );
+      const link = document.createElement('a');
+      link.download = `${meta.recordPrefix}-${record.trademarkNo || 'record'}.json`;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast.success(`Downloaded ${meta.label} record`);
+      return;
+    }
     toast.success('Preparing download…');
     const canvas = await renderHistoryCertificate(record, TM_EXPORT_SCALE);
     if (!canvas) {
@@ -207,6 +224,10 @@ export default function HistoryPage() {
   };
 
   const publishRecord = async (record: VaultRecord) => {
+    if (!documentKindMeta(record.docKind).certificate) {
+      toast.error('Only TM and YouTube Trademark certificates can be published to the verification portal.');
+      return;
+    }
     const ownRecord = record.createdBy === user?.id;
     if (!canPublish && !(userCanSelfPublish && ownRecord)) {
       toast.error(userCanSelfPublish ? 'You can only publish your own certificates.' : 'Only authorized admins/editors can publish.');
@@ -240,6 +261,7 @@ export default function HistoryPage() {
   };
 
   const unpublishRecord = async (record: VaultRecord) => {
+    if (!documentKindMeta(record.docKind).certificate) return;
     const ownRecord = record.createdBy === user?.id;
     if (!canPublish && !(userCanSelfPublish && ownRecord)) return;
     setPublishBusy(true);
@@ -308,11 +330,47 @@ export default function HistoryPage() {
 
   const ownerSelectOptions = [{ value: '', label: 'Created By — all users' }, ...ownerOptions.map((o) => ({ value: o.id, label: o.email }))];
 
+  // Structured detail view for non-certificate records (NID, TIN, PDF, service
+  // documents). Large embedded assets (base64 data URLs, page lists) are
+  // summarized instead of dumped into the modal.
+  const renderDocDetails = (doc: unknown) => {
+    if (!doc || typeof doc !== 'object') {
+      return <p className="text-sm text-dimm">This record has no saved details.</p>;
+    }
+    const entries = Object.entries(doc as Record<string, unknown>).filter(([, v]) => v !== '' && v != null);
+    return (
+      <div className="flex flex-col gap-2">
+        {entries.map(([key, value]) => {
+          let display: string;
+          if (typeof value === 'string') {
+            display = value.length > 120 ? `${value.slice(0, 80)}… (${value.length} chars)` : value;
+          } else if (Array.isArray(value)) {
+            display = `${value.length} item${value.length === 1 ? '' : 's'}`;
+          } else if (value && typeof value === 'object') {
+            const json = JSON.stringify(value);
+            display = json.length > 120 ? `${json.slice(0, 80)}…` : json;
+          } else {
+            display = String(value);
+          }
+          return (
+            <div key={key} className="flex items-start justify-between gap-4 border-b border-line pb-2">
+              <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-muted">{key}</span>
+              <span className="max-w-[68%] whitespace-pre-wrap break-words text-right text-[12.5px] text-primary">
+                {display}
+              </span>
+            </div>
+          );
+        })}
+        {entries.length === 0 && <p className="text-sm text-dimm">This record has no saved details.</p>}
+      </div>
+    );
+  };
+
   return (
     <div>
       <PageHeader
         title="Download History"
-        subtitle="Cloud Vault — archived certificate exports backed by Supabase"
+        subtitle="Cloud Vault — every Studio editor saves here so you can reopen and keep editing"
         icon={<History className="h-5 w-5" />}
         actions={
           <div className="flex items-center gap-2">
@@ -368,7 +426,7 @@ export default function HistoryPage() {
 
         <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
           <Input
-            placeholder="Search TM No. / company / owner"
+            placeholder="Search record / title / owner"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -459,7 +517,7 @@ export default function HistoryPage() {
             description={
               view === 'trashed'
                 ? 'Records you move to the trash appear here until restored or permanently deleted.'
-                : 'Export a certificate from the TM Certificate or YouTube Trademark editor to secure it in the Cloud Vault.'
+                : 'Save a document from any Studio editor (TM, YouTube, PDF, NID, TIN, or a service record) to secure it in the Cloud Vault.'
             }
           />
         )
@@ -484,10 +542,11 @@ export default function HistoryPage() {
                 </thead>
                 <tbody>
                   {records.map((r, i) => {
-                    const url = liveVerifyUrl(r.trademarkNo);
+                    const meta = documentKindMeta(r.docKind);
+                    const url = meta.certificate ? liveVerifyUrl(r.trademarkNo) : null;
                     const rowNum = (page - 1) * PAGE_SIZE + i + 1;
                     const isOwn = Boolean(user?.id && r.createdBy === user.id);
-                    const canPublishRow = canPublish || (userCanSelfPublish && isOwn);
+                    const canPublishRow = meta.certificate && (canPublish || (userCanSelfPublish && isOwn));
                     return (
                       <tr
                         key={r.trademarkNo || `${view}-${i}`}
@@ -497,11 +556,7 @@ export default function HistoryPage() {
                         <td className="px-4 py-3 font-mono text-xs font-semibold text-accent-bright">
                           <div className="flex flex-col gap-1">
                             <span>{r.trademarkNo}</span>
-                            {r.docKind === 'youtube-trademark' ? (
-                              <Badge tone="red">YouTube</Badge>
-                            ) : (
-                              <Badge tone="gold">TM</Badge>
-                            )}
+                            <Badge tone={meta.badgeTone}>{meta.short}</Badge>
                           </div>
                         </td>
                         <td className="max-w-[220px] truncate px-4 py-3 text-primary" title={r.companyName}>
@@ -534,7 +589,7 @@ export default function HistoryPage() {
                               View Live
                             </a>
                           ) : (
-                            <span className="font-mono text-[11px] italic text-dimm">No TM No.</span>
+                            <span className="font-mono text-[11px] italic text-dimm">—</span>
                           )}
                         </td>
                         <td className="px-4 py-3">
@@ -618,21 +673,31 @@ export default function HistoryPage() {
       <Modal
         open={Boolean(preview)}
         onClose={() => setPreview(null)}
-        title={`TM No. ${preview?.trademarkNo ?? ''}`}
+        title={
+          preview
+            ? `${documentKindMeta(preview.docKind).label} · ${preview.trademarkNo}`
+            : ''
+        }
+        meta={preview ? `Archived ${preview.timestamp}` : undefined}
         maxWidth="max-w-3xl"
         footer={
           <div className="flex w-full items-center justify-end">
             <Button variant="success" onClick={() => preview && downloadRecord(preview)}>
-              <Download className="h-4 w-4" /> Download JPG
+              <Download className="h-4 w-4" />
+              {preview && documentKindMeta(preview.docKind).certificate ? 'Download JPG' : 'Download JSON'}
             </Button>
           </div>
         }
       >
-        {previewImg ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={previewImg} alt={`Certificate TM ${preview?.trademarkNo ?? ''}`} className="mx-auto max-h-[70vh] w-auto rounded-md shadow-deep" />
+        {preview && documentKindMeta(preview.docKind).certificate ? (
+          previewImg ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={previewImg} alt={`Certificate TM ${preview.trademarkNo}`} className="mx-auto max-h-[70vh] w-auto rounded-md shadow-deep" />
+          ) : (
+            <div className="py-20 text-center text-sm text-dimm">Rendering preview…</div>
+          )
         ) : (
-          <div className="py-20 text-center text-sm text-dimm">Rendering preview…</div>
+          renderDocDetails(preview?.doc)
         )}
       </Modal>
 

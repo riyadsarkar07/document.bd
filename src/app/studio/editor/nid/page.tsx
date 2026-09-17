@@ -10,6 +10,8 @@ import { renderNIDCard } from '@/lib/renderers/nidRenderer';
 import { loadImage, loadDataUrlImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
+import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
+import { newRecordId } from '@/lib/workspace/document-kinds';
 import { checkLimit } from '@/lib/workspace/limits';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useToast } from '@/lib/toast/toast-provider';
@@ -41,6 +43,7 @@ function NIDEditorInner() {
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useDocumentEditor<NIDSnapshot>({
@@ -60,11 +63,26 @@ function NIDEditorInner() {
   const photoImageRef = useRef(photoImage);
   photoImageRef.current = photoImage;
 
-  // Load external project/template state
+  // Load external history/project/template state
   useEffect(() => {
     const projectId = searchParams.get('project');
     const templateName = searchParams.get('template');
+    const recordNo = searchParams.get('record');
     (async () => {
+      if (recordNo) {
+        const res = await getVaultRecord(recordNo);
+        if (res.error || !res.record) {
+          toast.error(res.error ?? 'Could not load History record');
+          return;
+        }
+        const next = { ...NID_DEFAULTS, ...((res.record.doc as Partial<NIDSnapshot>) ?? {}) };
+        externalCacheRef.current = next;
+        editor.replace(next);
+        setHistoryRecordId(res.record.trademarkNo);
+        setStatus(`History record ${recordNo} loaded`);
+        toast.success(`History record ${recordNo} loaded`);
+        return;
+      }
       if (projectId) {
         const res = await listProjects();
         const found = res.data.find((p) => String(p.id) === projectId || p.name === projectId);
@@ -151,6 +169,28 @@ function NIDEditorInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Save the current NID snapshot into the unified Cloud Vault so it appears in
+  // History and can be reopened in this editor. Re-saves update the same row.
+  const persistToHistory = useCallback(async (): Promise<string | null> => {
+    if (!user) return null;
+    const snap = presentRef.current;
+    const recordId = historyRecordId ?? (snap.idNo ? `NID-${snap.idNo}` : newRecordId('nid'));
+    const res = await commitDocument({
+      docKind: 'nid',
+      recordId,
+      title: `NID ${snap.idNo || 'Card'}`,
+      subtitle: snap.nameEnglish,
+      payload: snap,
+      createdBy: user.id,
+    });
+    if (res.error) {
+      toast.error(`History save failed: ${res.error}`);
+      return null;
+    }
+    setHistoryRecordId(res.recordId);
+    return res.recordId;
+  }, [historyRecordId, user, toast]);
+
   const exportJpg = useCallback(async () => {
     const limit = await checkLimit('export');
     if (!limit.ok) {
@@ -171,8 +211,11 @@ function NIDEditorInner() {
     link.href = canvas.toDataURL('image/jpeg', 0.97);
     link.click();
     void logActivity({ user_id: user?.id, email: user?.email, action: 'export.nid.jpg', detail: `NID ${idNo}` });
-    toast.success(`Downloaded NID-${idNo}.jpg`);
-  }, [user, toast]);
+    const savedId = await persistToHistory();
+    toast.success(
+      savedId ? `Downloaded NID-${idNo}.jpg · secured in History` : `Downloaded NID-${idNo}.jpg`,
+    );
+  }, [user, toast, persistToHistory]);
 
   const preview = useCallback(async () => {
     const bg = await loadImage(NID_BACKGROUND);
@@ -251,8 +294,9 @@ function NIDEditorInner() {
     }
     toast.success('Project saved');
     void logActivity({ user_id: user?.id, email: user?.email, action: 'project.save', detail: `NID ${present.idNo}` });
+    await persistToHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [present, user, toast]);
+  }, [present, user, toast, persistToHistory]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">

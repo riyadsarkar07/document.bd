@@ -1,12 +1,15 @@
-import { RotateCcw } from 'lucide-react';
-import { ServiceComingSoon } from '@/components/editor/service-coming-soon';
+'use client';
+
+import { Suspense } from 'react';
+import { ServiceRecordEditor } from '@/components/editor/service-record-editor';
+import { PAGE_RECOVER_CONFIG } from '@/lib/constants/services';
 
 export default function PageRecoverPage() {
   return (
-    <ServiceComingSoon
-      title="Hacked Page Recover"
-      description="Restore access to a hacked or compromised Facebook page."
-      icon={RotateCcw}
-    />
+    <Suspense
+      fallback={<div className="flex flex-1 items-center justify-center text-sm text-dimm">Loading editor…</div>}
+    >
+      <ServiceRecordEditor config={PAGE_RECOVER_CONFIG} />
+    </Suspense>
   );
 }

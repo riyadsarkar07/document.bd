@@ -26,6 +26,15 @@ import { isGenerationLimited, generationPeriodLabel } from '../src/lib/workspace
 import { sealedTextFromVault } from '../src/lib/publish/sealed-text';
 import { layoutFromSnapshot, layoutFromVault, layoutFromVaultSources, packDetails, unpackDetails } from '../src/lib/publish/layout';
 import { TM_DEFAULTS } from '../src/lib/constants/tm';
+import {
+  DOCUMENT_KINDS,
+  DOCUMENT_KIND_ORDER,
+  documentKindMeta,
+  isDocumentKind,
+  newRecordId,
+} from '../src/lib/workspace/document-kinds';
+import { PAGE_RECOVER_CONFIG, BUSINESS_MANAGER_CONFIG, normalizeServiceSnapshot } from '../src/lib/constants/services';
+import { bytesToPdfDataUrl, pdfDataUrlToBytes } from '../src/lib/pdf-editor/serialize';
 
 const ROOT = process.cwd();
 
@@ -280,6 +289,82 @@ function main() {
   const packedLegacyKind = packDetails(GOODS, stored);
   const unpackedLegacyKind = unpackDetails(packedLegacyKind);
   assert(unpackedLegacyKind.docKind === undefined, 'legacy TM rows without docKind stay untagged');
+
+  console.log('\n[14] Unified History document-kind registry\n');
+  assert(DOCUMENT_KIND_ORDER.length === 7, 'registry lists all 7 Studio editors');
+  assert(DOCUMENT_KIND_ORDER.every(isDocumentKind), 'every ordered kind is a valid DocumentKind');
+  assert(documentKindMeta('tm').certificate === true, 'TM is a certificate kind');
+  assert(documentKindMeta('youtube-trademark').certificate === true, 'YouTube Trademark is a certificate kind');
+  assert(documentKindMeta('nid').certificate === false, 'NID is not a certificate kind');
+  assert(documentKindMeta('tin').certificate === false, 'TIN is not a certificate kind');
+  assert(documentKindMeta('pdf').certificate === false, 'PDF is not a certificate kind');
+  assert(documentKindMeta('page-recover').certificate === false, 'Hacked Page Recover is not a certificate kind');
+  assert(documentKindMeta('business-manager').certificate === false, 'Business Manager is not a certificate kind');
+  assert(documentKindMeta(undefined).kind === 'tm', 'unknown kinds fall back to TM');
+  assert(documentKindMeta('not-a-kind' as never).kind === 'tm', 'invalid kinds fall back to TM');
+  assert(documentKindMeta('nid').editorPath === '/studio/editor/nid', 'NID reopens in the NID editor');
+  assert(documentKindMeta('tin').editorPath === '/studio/editor/tin', 'TIN reopens in the TIN editor');
+  assert(documentKindMeta('pdf').editorPath === '/studio/editor/pdf', 'PDF reopens in the PDF editor');
+  assert(documentKindMeta('page-recover').editorPath === '/studio/editor/page-recover', 'Recover reopens in its editor');
+  assert(documentKindMeta('business-manager').editorPath === '/studio/editor/business-manager', 'Business Manager reopens in its editor');
+  assert(isDocumentKind('nid') && !isDocumentKind('certificate'), 'isDocumentKind accepts only registered kinds');
+  const generated = newRecordId('pdf');
+  assert(generated.startsWith(`${DOCUMENT_KINDS.pdf.recordPrefix}-`), 'generated PDF ids use the PDF prefix');
+  assert(generated !== newRecordId('pdf'), 'generated record ids are unique');
+
+  console.log('\n[15] Generic editor payload round-trips through packed details\n');
+  const nidDoc = { idNo: '1990123456789', nameEnglish: 'Test Citizen', nameBangla: 'টেস্ট' };
+  const packedNid = packDetails('', stored, { docKind: 'nid', doc: nidDoc });
+  const unpackedNid = unpackDetails(packedNid);
+  assert(unpackedNid.docKind === 'nid', 'NID pack stores docKind');
+  assert((unpackedNid.doc as { idNo: string }).idNo === '1990123456789', 'NID pack restores idNo');
+  assert((unpackedNid.doc as { nameEnglish: string }).nameEnglish === 'Test Citizen', 'NID pack restores nameEnglish');
+
+  const tinDoc = { tinNo: '123456789012', taxpayerName: 'Demo Taxpayer' };
+  const packedTin = packDetails('', stored, { docKind: 'tin', doc: tinDoc });
+  const unpackedTin = unpackDetails(packedTin);
+  assert(unpackedTin.docKind === 'tin', 'TIN pack stores docKind');
+  assert((unpackedTin.doc as { tinNo: string }).tinNo === '123456789012', 'TIN pack restores tinNo');
+
+  const pdfDoc = {
+    fileName: 'brief.pdf',
+    pages: [{ id: 'p1', sourceIndex: 0, rotation: 0, sourceRotate: 0, widthPt: 612, heightPt: 792 }],
+    annotations: [{ id: 'a1', pageId: 'p1', type: 'text', x: 10, y: 20, width: 80, height: 16, text: 'Hello', fontSize: 12, color: '#000', bold: false }],
+    sourceDataUrl: 'data:application/pdf;base64,AAAA',
+  };
+  const packedPdf = packDetails('', stored, { docKind: 'pdf', doc: pdfDoc });
+  const unpackedPdf = unpackDetails(packedPdf);
+  assert(unpackedPdf.docKind === 'pdf', 'PDF pack stores docKind');
+  assert((unpackedPdf.doc as { fileName: string }).fileName === 'brief.pdf', 'PDF pack restores fileName');
+  assert(Array.isArray((unpackedPdf.doc as { annotations: unknown[] }).annotations) && (unpackedPdf.doc as { annotations: unknown[] }).annotations.length === 1, 'PDF pack restores annotations');
+
+  const recoverDoc = normalizeServiceSnapshot(PAGE_RECOVER_CONFIG, { pageName: 'Demo Page', contactEmail: 'a@b.c', issueType: 'hacked' });
+  const packedRecover = packDetails('', stored, { docKind: 'page-recover', doc: recoverDoc });
+  const unpackedRecover = unpackDetails(packedRecover);
+  assert(unpackedRecover.docKind === 'page-recover', 'Recover pack stores docKind');
+  assert((unpackedRecover.doc as { pageName: string }).pageName === 'Demo Page', 'Recover pack restores pageName');
+  assert((unpackedRecover.doc as { issueType: string }).issueType === 'hacked', 'Recover pack restores issueType');
+
+  const bmDoc = normalizeServiceSnapshot(BUSINESS_MANAGER_CONFIG, { businessName: 'Acme Ltd', requestType: 'restore' });
+  const packedBm = packDetails('', stored, { docKind: 'business-manager', doc: bmDoc });
+  const unpackedBm = unpackDetails(packedBm);
+  assert(unpackedBm.docKind === 'business-manager', 'Business Manager pack stores docKind');
+  assert((unpackedBm.doc as { businessName: string }).businessName === 'Acme Ltd', 'Business Manager pack restores businessName');
+  assert((unpackedBm.doc as { requestType: string }).requestType === 'restore', 'Business Manager pack restores requestType');
+
+  const packedNoDoc = packDetails(GOODS, stored, { docKind: 'tm' });
+  const unpackedNoDoc = unpackDetails(packedNoDoc);
+  assert(unpackedNoDoc.doc === undefined, 'certificate rows without a generic doc stay untagged');
+
+  console.log('\n[16] PDF vault serialization round-trips raw bytes\n');
+  const sample = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0xff, 0x00, 0x80]);
+  const dataUrl = bytesToPdfDataUrl(sample);
+  assert(dataUrl.startsWith('data:application/pdf;base64,'), 'PDF data URL uses the pdf mime prefix');
+  const restoredBytes = pdfDataUrlToBytes(dataUrl);
+  assert(Boolean(restoredBytes) && restoredBytes!.length === sample.length, 'decoded PDF bytes keep the original length');
+  assert(Boolean(restoredBytes) && Array.from(restoredBytes!).every((b, i) => b === sample[i]), 'decoded PDF bytes match the original');
+  assert(pdfDataUrlToBytes('data:image/png;base64,AAAA') === null, 'non-PDF data URLs are rejected');
+  assert(pdfDataUrlToBytes('not-a-data-url') === null, 'malformed data URLs are rejected');
 
   console.log(`\n${failures === 0 ? '✓ ALL PUBLISH CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);

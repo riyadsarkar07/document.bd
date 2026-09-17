@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import {
   ArrowDown,
@@ -41,7 +42,16 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { FieldLabel } from '@/components/ui/input';
 import { useHistory } from '@/lib/hooks/useHistory';
+import { useAuth } from '@/lib/auth/auth-context';
 import { useToast } from '@/lib/toast/toast-provider';
+import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
+import { newRecordId } from '@/lib/workspace/document-kinds';
+import { logActivity } from '@/lib/workspace/store';
+import {
+  bytesToPdfDataUrl,
+  pdfDataUrlToBytes,
+  type PdfVaultPayload,
+} from '@/lib/pdf-editor/serialize';
 import { cn, clamp } from '@/lib/utils';
 import { boxesOverlap, moveAnnotation, pageVisualSize } from '@/lib/pdf-editor/geometry';
 import {
@@ -90,9 +100,21 @@ const TOOLS: { id: PdfTool; label: string; icon: typeof Type }[] = [
 ];
 
 export default function PdfEditorPage() {
+  return (
+    <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-dimm">Loading editor…</div>}>
+      <PdfEditorInner />
+    </Suspense>
+  );
+}
+
+function PdfEditorInner() {
   const toast = useToast();
+  const searchParams = useSearchParams();
+  const { user } = useAuth();
   const history = useHistory<PdfEditorDocument>(EMPTY_PDF_DOCUMENT);
   const { present, set, replace, undo, redo, canUndo, canRedo, reset } = history;
+  const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const sourceBytesRef = useRef<Uint8Array | null>(null);
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
@@ -150,8 +172,39 @@ export default function PdfEditorPage() {
     setEditingId(null);
     setEditDraft('');
     setPendingNative(null);
+    setHistoryRecordId(null);
     setStatus('Upload a PDF to begin');
   }, [reset]);
+
+  const hydratePdf = useCallback(
+    async (bytes: Uint8Array, fileName: string, restored?: PdfEditorDocument) => {
+      const loaded = await loadPdfDocument(bytes);
+      const pages = restored?.pages.length ? restored.pages : await readPdfPages(loaded);
+      pdfRef.current?.destroy().catch(() => undefined);
+      pdfRef.current = loaded;
+      sourceBytesRef.current = bytes;
+      setPdf(loaded);
+      replace({ fileName, pages, annotations: restored?.annotations ?? [] });
+      setActivePageId(pages[0]?.id ?? null);
+      setSelectedId(null);
+      setDraft(null);
+      setEditingId(null);
+      setEditDraft('');
+      setPendingNative(null);
+      setHoveredRunId(null);
+      setZoom(1);
+      const runsByPage: Record<string, NativeTextRun[]> = {};
+      let nativeCount = 0;
+      for (const page of pages) {
+        const runs = await extractNativeTextRuns(loaded, page);
+        runsByPage[page.id] = runs;
+        nativeCount += runs.length;
+      }
+      setNativeRuns(runsByPage);
+      return { pageCount: pages.length, nativeCount };
+    },
+    [replace],
+  );
 
   const loadFile = useCallback(
     async (file: File) => {
@@ -162,42 +215,16 @@ export default function PdfEditorPage() {
       }
       setBusy(true);
       setStatus('Loading PDF…');
+      setHistoryRecordId(null);
       try {
-        const buffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        const loaded = await loadPdfDocument(bytes);
-        const pages = await readPdfPages(loaded);
-        pdfRef.current?.destroy().catch(() => undefined);
-        pdfRef.current = loaded;
-        sourceBytesRef.current = bytes;
-        setPdf(loaded);
-        replace({
-          fileName: file.name,
-          pages,
-          annotations: [],
-        });
-        setActivePageId(pages[0]?.id ?? null);
-        setSelectedId(null);
-        setDraft(null);
-        setEditingId(null);
-        setEditDraft('');
-        setPendingNative(null);
-        setHoveredRunId(null);
-        setZoom(1);
-        const runsByPage: Record<string, NativeTextRun[]> = {};
-        let nativeCount = 0;
-        for (const page of pages) {
-          const runs = await extractNativeTextRuns(loaded, page);
-          runsByPage[page.id] = runs;
-          nativeCount += runs.length;
-        }
-        setNativeRuns(runsByPage);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const { pageCount, nativeCount } = await hydratePdf(bytes, file.name);
         setStatus(
-          `${file.name} · ${pages.length} page${pages.length === 1 ? '' : 's'}` +
+          `${file.name} · ${pageCount} page${pageCount === 1 ? '' : 's'}` +
             (nativeCount ? ` · ${nativeCount} text run${nativeCount === 1 ? '' : 's'}` : ' · no text layer') +
             ' · stays in this session',
         );
-        toast.success(`Loaded ${pages.length} page${pages.length === 1 ? '' : 's'}`);
+        toast.success(`Loaded ${pageCount} page${pageCount === 1 ? '' : 's'}`);
       } catch {
         toast.error('Could not read this PDF');
         setStatus('Upload a PDF to begin');
@@ -205,8 +232,99 @@ export default function PdfEditorPage() {
         setBusy(false);
       }
     },
-    [replace, toast],
+    [hydratePdf, toast],
   );
+
+  // Reopen a saved PDF History record, restoring the original PDF plus its
+  // editable annotation layer so editing can continue and re-save updates the
+  // same vault row.
+  useEffect(() => {
+    const recordNo = searchParams.get('record');
+    if (!recordNo) return;
+    let cancelled = false;
+    (async () => {
+      setBusy(true);
+      setStatus('Loading History record…');
+      try {
+        const res = await getVaultRecord(recordNo);
+        if (cancelled) return;
+        if (res.error || !res.record) {
+          toast.error(res.error ?? 'Could not load History record');
+          setStatus('Upload a PDF to begin');
+          return;
+        }
+        const payload = res.record.doc as PdfVaultPayload | undefined;
+        const bytes = payload?.sourceDataUrl ? pdfDataUrlToBytes(payload.sourceDataUrl) : null;
+        if (!payload || !bytes) {
+          toast.error('Saved PDF data is missing from this record');
+          setStatus('Upload a PDF to begin');
+          return;
+        }
+        const { pageCount } = await hydratePdf(
+          bytes,
+          payload.fileName || `History-${recordNo}.pdf`,
+          { fileName: payload.fileName, pages: payload.pages ?? [], annotations: payload.annotations ?? [] },
+        );
+        if (cancelled) return;
+        setHistoryRecordId(res.record.trademarkNo);
+        setStatus(`History record ${recordNo} · ${pageCount} page${pageCount === 1 ? '' : 's'}`);
+        toast.success(`History record ${recordNo} loaded`);
+      } catch {
+        if (!cancelled) {
+          toast.error('Could not read this PDF');
+          setStatus('Upload a PDF to begin');
+        }
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Persist the current PDF (original bytes + annotation state) into the unified
+  // Cloud Vault so it appears in History and reopens in this editor.
+  const persistToHistory = useCallback(async (): Promise<string | null> => {
+    const bytes = sourceBytesRef.current;
+    if (!user) {
+      toast.error('Sign in to save to History');
+      return null;
+    }
+    if (!bytes || !present.pages.length) {
+      toast.error('Upload a PDF first');
+      return null;
+    }
+    setSaving(true);
+    try {
+      const payload: PdfVaultPayload = {
+        fileName: present.fileName || 'document.pdf',
+        pages: present.pages,
+        annotations: present.annotations,
+        sourceDataUrl: bytesToPdfDataUrl(bytes),
+      };
+      const recordId = historyRecordId ?? newRecordId('pdf');
+      const res = await commitDocument({
+        docKind: 'pdf',
+        recordId,
+        title: `PDF ${payload.fileName}`,
+        subtitle: `${present.pages.length} page${present.pages.length === 1 ? '' : 's'} · ${present.annotations.length} edit${present.annotations.length === 1 ? '' : 's'}`,
+        payload,
+        createdBy: user.id,
+      });
+      if (res.error) {
+        toast.error(`History save failed: ${res.error}`);
+        return null;
+      }
+      setHistoryRecordId(res.recordId);
+      setStatus(`Saved to History · ${res.recordId}`);
+      void logActivity({ user_id: user.id, email: user.email, action: 'history.save.pdf', detail: `PDF ${payload.fileName}` });
+      return res.recordId;
+    } finally {
+      setSaving(false);
+    }
+  }, [historyRecordId, present, user, toast]);
 
   useEffect(() => {
     return () => {
@@ -474,7 +592,8 @@ export default function PdfEditorPage() {
       const out = await exportEditedPdf(bytes, present);
       downloadPdfBytes(out, present.fileName);
       setStatus(`Exported ${present.pages.length} page${present.pages.length === 1 ? '' : 's'}`);
-      toast.success('Edited PDF downloaded');
+      const savedId = await persistToHistory();
+      toast.success(savedId ? 'Edited PDF downloaded · secured in History' : 'Edited PDF downloaded');
     } catch {
       toast.error('Export failed');
       setStatus('Export failed');
@@ -562,6 +681,21 @@ export default function PdfEditorPage() {
 
           <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()} icon={<FileUp className="h-3.5 w-3.5" />}>
             {pdf ? 'Replace PDF' : 'Upload PDF'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              void persistToHistory().then((id) => {
+                if (id) toast.success(`Saved to History · ${id}`);
+              });
+            }}
+            loading={saving}
+            disabled={!pdf || saving}
+            icon={<FileText className="h-3.5 w-3.5" />}
+            title="Save to History"
+          >
+            Save
           </Button>
           <Button variant="success" size="sm" onClick={handleExport} loading={exporting} disabled={!pdf} icon={<Download className="h-3.5 w-3.5" />}>
             Export PDF

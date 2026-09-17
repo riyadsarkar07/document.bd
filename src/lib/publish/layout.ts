@@ -62,7 +62,13 @@ export interface PackedDetailsExtra {
   openingText?: string;
   middleTextArial?: string;
   logoText?: string;
-  docKind?: 'tm' | 'youtube-trademark';
+  docKind?: string;
+  /**
+   * Generic editor payload for non-certificate documents (NID, TIN, PDF,
+   * service records). Stored inside the same packed `details` JSON so History
+   * can reopen the record in the editor that created it.
+   */
+  doc?: unknown;
 }
 
 export interface PackedDetails extends PackedDetailsExtra {
@@ -77,7 +83,8 @@ function extraFromLayout(layout: unknown): PackedDetailsExtra {
   if (typeof src.openingText === 'string') extra.openingText = src.openingText;
   if (typeof src.middleTextArial === 'string') extra.middleTextArial = src.middleTextArial;
   if (typeof src.logoText === 'string') extra.logoText = src.logoText;
-  if (src.docKind === 'youtube-trademark' || src.docKind === 'tm') extra.docKind = src.docKind;
+  if (typeof src.docKind === 'string') extra.docKind = src.docKind;
+  if (src.doc && typeof src.doc === 'object') extra.doc = src.doc;
   return extra;
 }
 
