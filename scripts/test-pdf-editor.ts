@@ -146,6 +146,22 @@ function parseCoverRects(content: string): { x: number; y: number; width: number
   return out;
 }
 
+/** Returns the text-show operators emitted for the text drawn at a given PDF baseline. */
+function textShowsAtBaseline(content: string, x: number, y: number): { lines: number; block: string } | null {
+  const re = /1 0 0 1 (-?[\d.]+) (-?[\d.]+) Tm/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content))) {
+    if (Math.abs(Number(match[1]) - x) > 0.6 || Math.abs(Number(match[2]) - y) > 0.6) continue;
+    const end = content.indexOf('ET', match.index);
+    const bt = content.lastIndexOf('BT', match.index);
+    const start = bt >= 0 && match.index - bt < 400 ? bt : match.index;
+    const block = content.slice(start, end < 0 ? content.length : end);
+    const lines = block.match(/<[0-9A-Fa-f]+>\s*Tj/g)?.length ?? 0;
+    return { lines, block };
+  }
+  return null;
+}
+
 async function makeBillFixture(): Promise<{
   bytes: Uint8Array;
   width: number;
@@ -616,7 +632,7 @@ async function main() {
 
   console.log('[pdf-editor] real utility bill native text extraction\n');
   const billBytes = new Uint8Array(readFileSync('tests/fixtures/utility-bill-regression.pdf'));
-  const billPdf = await getDocument({ data: billBytes, isEvalSupported: false, useSystemFonts: true }).promise;
+  const billPdf = await getDocument({ data: billBytes.slice(), isEvalSupported: false, useSystemFonts: true }).promise;
   const billSource = await billPdf.getPage(1);
   const billViewport = billSource.getViewport({ scale: 1 });
   const extracted = await extractNativeTextRuns(billPdf, {
@@ -639,6 +655,73 @@ async function main() {
   ok(Boolean(headerMonth), 'header MONTH keeps its original x position');
   ok(monthRuns.some((run) => run.color === '#247896'), 'header MONTH keeps its extracted teal fill');
   ok(valueRuns.some((run) => run.color === '#247896'), 'VALUE & RULE keeps its extracted teal fill');
+
+  const headerValue = valueRuns[0];
+  const monthAnnotation = nativeRunToTextAnnotation('page_real', headerMonth!);
+  monthAnnotation.id = 'bill_month';
+  monthAnnotation.coverOriginal = true;
+  monthAnnotation.text = 'MONTH EDITED';
+  const valueAnnotation = nativeRunToTextAnnotation('page_real', headerValue);
+  valueAnnotation.id = 'bill_value';
+  valueAnnotation.coverOriginal = true;
+  valueAnnotation.text = 'VALUE EDITED';
+  const realBillState: PdfEditorDocument = {
+    fileName: 'utility-bill-regression.pdf',
+    pages: [
+      {
+        id: 'page_real',
+        sourceIndex: 0,
+        rotation: 0,
+        sourceRotate: 0,
+        widthPt: billViewport.width,
+        heightPt: billViewport.height,
+      },
+    ],
+    annotations: [monthAnnotation, valueAnnotation],
+  };
+  const realExported = await exportEditedPdf(billBytes, realBillState);
+  const realOut = await PDFDocument.load(realExported);
+  const realSize = realOut.getPage(0).getSize();
+  ok(Math.abs(realSize.width - 595.28) < 0.5 && Math.abs(realSize.height - 841.89) < 0.5, 'real bill export keeps A4 size');
+  ok(pdfContains(realExported, 'MONTH EDITED'), 'real bill export keeps edited MONTH text');
+  ok(pdfContains(realExported, 'VALUE EDITED'), 'real bill export keeps edited VALUE text');
+  const reopenedPdf = await getDocument({
+    data: realExported.slice(),
+    isEvalSupported: false,
+    useSystemFonts: true,
+  }).promise;
+  const reopenedRuns = await extractNativeTextRuns(reopenedPdf, {
+    id: 'page_real',
+    sourceIndex: 0,
+    rotation: 0,
+    sourceRotate: 0,
+    widthPt: billViewport.width,
+    heightPt: billViewport.height,
+  });
+  ok(reopenedRuns.some((run) => run.text === 'MONTH'), 'original MONTH glyphs remain under the cover');
+  ok(reopenedRuns.some((run) => run.text === 'VALUE & RULE'), 'original VALUE & RULE glyphs remain under the cover');
+  ok(reopenedRuns.some((run) => run.text.includes('MONTH EDITED')), 'reopened export exposes edited MONTH text');
+  ok(reopenedRuns.some((run) => run.text.includes('VALUE EDITED')), 'reopened export exposes edited VALUE text');
+
+  const realContent = decodePdfStreams(realExported);
+  const monthBaselineY = billViewport.height - (headerMonth!.y + headerMonth!.height) * billViewport.height;
+  const valueBaselineY = billViewport.height - (headerValue.y + headerValue.height) * billViewport.height;
+  const monthText = textShowsAtBaseline(realContent, headerMonth!.x * billViewport.width, monthBaselineY);
+  const valueText = textShowsAtBaseline(realContent, headerValue.x * billViewport.width, valueBaselineY);
+  ok(Boolean(monthText), 'MONTH replacement is drawn at the original baseline');
+  ok(Boolean(valueText), 'VALUE & RULE replacement is drawn at the original baseline');
+  ok(monthText?.lines === 1, 'MONTH replacement stays on one line');
+  ok(valueText?.lines === 1, 'VALUE & RULE replacement stays on one line instead of wrapping below the cover');
+  const teal = '0.1411764705882353 0.47058823529411764 0.5882352941176471 rg';
+  ok(Boolean(monthText?.block.includes(teal)), 'exported MONTH keeps its teal fill');
+  ok(Boolean(valueText?.block.includes(teal)), 'exported VALUE & RULE keeps its teal fill');
+  ok(Boolean(monthText?.block.includes(' 8 Tf')), 'exported MONTH keeps 8pt size');
+  ok(Boolean(valueText?.block.includes(' 8 Tf')), 'exported VALUE & RULE keeps 8pt size');
+  const billCovers = parseCoverRects(realContent);
+  ok(
+    billCovers.some((c) => Math.abs(c.x - headerMonth!.x * billViewport.width) < 2 && Math.abs(c.y - (monthBaselineY - 0.3)) < 1.5),
+    'white cover sits on the MONTH glyph box',
+  );
 
   console.log('\nReal utility bill native text checks passed.\n');
 }

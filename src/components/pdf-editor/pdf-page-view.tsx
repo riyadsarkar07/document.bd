@@ -174,10 +174,13 @@ export function PdfPageView({
                 left: `${annotation.x * 100}%`,
                 top: `${annotation.y * 100}%`,
                 minWidth: `${Math.max(annotation.width, 0.04) * 100}%`,
+                overflow: 'visible',
               }}
             >
               <textarea
                 autoFocus
+                rows={1}
+                wrap={annotation.source === 'native' ? 'off' : undefined}
                 value={editText ?? annotation.text}
                 onChange={(e) => onTextChange?.(e.target.value)}
                 onPointerDown={(e) => e.stopPropagation()}
@@ -191,9 +194,16 @@ export function PdfPageView({
                     onApplyEdit?.();
                   }
                 }}
-                className="pointer-events-auto block w-full resize-none overflow-hidden rounded-[2px] border border-accent p-0 outline-none"
+                className={cn(
+                  'pointer-events-auto block resize-none rounded-[2px] border border-accent p-0 outline-none',
+                  annotation.source === 'native' ? 'overflow-visible whitespace-pre' : 'w-full overflow-hidden',
+                )}
                 style={{
-                  width: `${Math.max(annotation.width, 0.04) * cssSize.width}px`,
+                  width:
+                    annotation.source === 'native'
+                      ? `${Math.max((editText ?? annotation.text).length + 1, 4)}ch`
+                      : `${Math.max(annotation.width, 0.04) * cssSize.width}px`,
+                  minWidth: `${Math.max(annotation.width, 0.04) * cssSize.width}px`,
                   height: `${Math.max(annotation.height, annotation.fontSize) * cssSize.height}px`,
                   color: annotation.color,
                   background: annotation.source === 'native' ? 'transparent' : '#fff',

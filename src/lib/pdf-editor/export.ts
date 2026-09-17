@@ -143,6 +143,7 @@ async function drawAnnotation(
     }
     const lines = winAnsi(annotation.text || '').split('\n');
     const lineHeight = size * 1.15;
+    const wrapToBox = annotation.source !== 'native';
     lines.forEach((line, index) => {
       const widthOf = font.widthOfTextAtSize(line || ' ', size);
       let x = boxX;
@@ -154,7 +155,7 @@ async function drawAnnotation(
         size,
         font,
         color: toPdfColor(annotation.color),
-        maxWidth: boxW,
+        ...(wrapToBox ? { maxWidth: boxW } : {}),
       });
     });
     return;
