@@ -27,7 +27,6 @@ export function PdfPageView({
   interactive,
   thumbnail,
   textRuns,
-  hoveredRunId,
   editingId,
   editText,
   onTextChange,
@@ -152,10 +151,7 @@ export function PdfPageView({
       {textRuns?.map((run) => (
         <div
           key={run.id}
-          className={cn(
-            'pointer-events-none absolute',
-            run.id === hoveredRunId && 'outline outline-1 outline-accent/70',
-          )}
+          className="pointer-events-none absolute"
           style={{
             left: `${run.x * 100}%`,
             top: `${run.y * 100}%`,

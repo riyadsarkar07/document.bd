@@ -29,7 +29,6 @@ export function AnnotationSvg({
           'pointer-events-none absolute whitespace-pre leading-none',
           native ? 'overflow-visible' : 'overflow-hidden',
           selected && !native && 'ring-2 ring-accent',
-          selected && native && 'outline outline-1 outline-accent',
         )}
         style={{
           left: `${annotation.x * 100}%`,

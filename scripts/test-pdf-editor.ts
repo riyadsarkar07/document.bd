@@ -723,6 +723,55 @@ async function main() {
     'white cover sits on the MONTH glyph box',
   );
 
+  const untouchedState: PdfEditorDocument = {
+    fileName: 'utility-bill-regression.pdf',
+    pages: realBillState.pages,
+    annotations: [],
+  };
+  const untouchedExported = await exportEditedPdf(billBytes, untouchedState);
+  const untouchedContent = decodePdfStreams(untouchedExported);
+  const untouchedMonth = textShowsAtBaseline(untouchedContent, headerMonth!.x * billViewport.width, monthBaselineY);
+  ok(!pdfContains(untouchedExported, 'MONTH EDITED'), 'export without edits does not inject replacement MONTH text');
+  ok(!pdfContains(untouchedExported, 'VALUE EDITED'), 'export without edits does not inject replacement VALUE text');
+  ok(!untouchedMonth?.block.includes('Helvetica'), 'unedited MONTH is not redrawn with a Helvetica overlay');
+  ok(
+    !parseCoverRects(untouchedContent).some(
+      (c) => Math.abs(c.x - headerMonth!.x * billViewport.width) < 2 && Math.abs(c.y - (monthBaselineY - 0.3)) < 1.5,
+    ),
+    'unedited MONTH has no white cover box',
+  );
+
+  const noopMonth = nativeRunToTextAnnotation('page_real', headerMonth!);
+  noopMonth.id = 'noop_month';
+  noopMonth.coverOriginal = true;
+  noopMonth.text = headerMonth!.text;
+  const noopExported = await exportEditedPdf(billBytes, { ...realBillState, annotations: [noopMonth] });
+  ok(pdfContains(noopExported, 'MONTH'), 'no-op native apply still keeps original MONTH glyphs');
+  const noopContent = decodePdfStreams(noopExported);
+  const noopMonthText = textShowsAtBaseline(noopContent, headerMonth!.x * billViewport.width, monthBaselineY);
+  ok(Boolean(noopMonthText), 'no-op apply still draws replacement text at the original baseline');
+  ok(noopMonthText?.lines === 1, 'no-op replacement stays on one line');
+
+  let pageOps: PdfEditorDocument = {
+    fileName: 'utility-bill-regression.pdf',
+    pages: [
+      { id: 'page_a', sourceIndex: 0, rotation: 0, sourceRotate: 0, widthPt: billViewport.width, heightPt: billViewport.height },
+      { id: 'page_b', sourceIndex: 0, rotation: 0, sourceRotate: 0, widthPt: billViewport.width, heightPt: billViewport.height },
+    ],
+    annotations: [monthAnnotation],
+  };
+  pageOps = rotatePage(pageOps, 'page_a', 90);
+  ok(pageOps.pages[0].rotation === 90, 'rotate page records 90 degrees');
+  pageOps = movePage(pageOps, 'page_b', -1);
+  ok(pageOps.pages.map((p) => p.id).join(',') === 'page_b,page_a', 'pages panel reorder moves the selected page');
+  pageOps = deletePage(pageOps, 'page_b');
+  ok(pageOps.pages.map((p) => p.id).join(',') === 'page_a', 'delete page removes the selected page');
+  ok(pageOps.annotations.every((a) => a.pageId !== 'page_b'), 'delete page drops annotations on the removed page');
+  const rotatedOpsExport = await exportEditedPdf(billBytes, pageOps);
+  const rotatedOpsSize = (await PDFDocument.load(rotatedOpsExport)).getPage(0).getSize();
+  ok(Math.abs(rotatedOpsSize.width - billViewport.height) < 0.5, 'rotate+export swaps to visual width');
+  ok(Math.abs(rotatedOpsSize.height - billViewport.width) < 0.5, 'rotate+export swaps to visual height');
+
   console.log('\nReal utility bill native text checks passed.\n');
 }
 

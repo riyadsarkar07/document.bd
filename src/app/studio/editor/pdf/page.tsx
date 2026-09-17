@@ -381,12 +381,16 @@ function PdfEditorInner() {
     setEditDraft('');
     setPendingNative(null);
     if (pending) {
+      if (next === pending.text) {
+        setSelectedId(null);
+        return;
+      }
       set((doc) => addAnnotation(doc, { ...pending, text: next, coverOriginal: true }));
-      setSelectedId(pending.id);
+      setSelectedId(null);
       return;
     }
     set((doc) => updateAnnotation(doc, editingId, { text: next } as Partial<PdfAnnotation>));
-    setSelectedId(editingId);
+    setSelectedId(null);
   };
 
   const cancelTextEdit = () => {
@@ -673,7 +677,27 @@ function PdfEditorInner() {
             <Button size="icon-sm" variant="ghost" onClick={() => setZoom((z) => clamp(z / 1.15, 0.35, 3))} title="Zoom out">
               <ZoomOut className="h-3.5 w-3.5" />
             </Button>
-            <span className="min-w-[46px] text-center font-mono text-[10.5px] text-muted">{Math.round(zoom * 100)}%</span>
+            <select
+              aria-label="Zoom"
+              title="Zoom"
+              value={
+                [0.5, 1, 1.35, 2].some((preset) => Math.abs(preset - zoom) < 0.001) ? String(zoom) : 'custom'
+              }
+              onChange={(e) => {
+                const next = Number(e.target.value);
+                if (Number.isFinite(next)) setZoom(next);
+              }}
+              className="h-7 min-w-[58px] rounded-md bg-transparent px-1 text-center font-mono text-[10.5px] text-muted outline-none"
+            >
+              {[0.5, 1, 1.35, 2].map((preset) => (
+                <option key={preset} value={preset}>
+                  {Math.round(preset * 100)}%
+                </option>
+              ))}
+              {![0.5, 1, 1.35, 2].some((preset) => Math.abs(preset - zoom) < 0.001) && (
+                <option value="custom">{Math.round(zoom * 100)}%</option>
+              )}
+            </select>
             <Button size="icon-sm" variant="ghost" onClick={() => setZoom((z) => clamp(z * 1.15, 0.35, 3))} title="Zoom in">
               <ZoomIn className="h-3.5 w-3.5" />
             </Button>
