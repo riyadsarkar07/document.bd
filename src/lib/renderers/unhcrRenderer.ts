@@ -1,7 +1,7 @@
 import type { UnhcrFieldKey, UnhcrLayout, UnhcrSnapshot } from '../editor/types';
 import { UNHCR_DEFAULT_LAYOUTS, UNHCR_DOC_HEIGHT, UNHCR_DOC_WIDTH, UNHCR_FIELD_ORDER } from '../constants/unhcr';
 
-const INK = '#0b3a5b';
+const INK = '#000000';
 const ARIAL = "'Arial Regular',Arial,sans-serif";
 const ARIAL_BOLD = "'Arial Bold MT','Arial Bold',Arial,sans-serif";
 
