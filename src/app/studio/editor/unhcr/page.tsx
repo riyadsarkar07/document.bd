@@ -26,6 +26,7 @@ import {
 import type { UnhcrCodeKey, UnhcrFieldKey, UnhcrLayout, UnhcrOverlayKey, UnhcrSnapshot } from '@/lib/editor/types';
 import { UNHCR_CODE_KEYS } from '@/lib/editor/types';
 import { renderUnhcrCard } from '@/lib/renderers/unhcrRenderer';
+import { syncUnhcrCodePayloads } from '@/lib/unhcrCodes';
 import { loadDataUrlImage, loadImage } from '@/lib/images';
 import { validateImageFile } from '@/lib/uploads';
 import { loadDocumentFonts } from '@/lib/fonts';
@@ -93,9 +94,20 @@ function UnhcrEditorInner() {
     autosaveKey: `studio.autosave.unhcr.${user?.id ?? 'anon'}`,
     loadExternal: () => externalCacheRef.current,
     normalize: (s) => normalizeUnhcrSnapshot(s as Partial<UnhcrSnapshot>),
+    restoreAutosave: false,
   });
 
   const { present, zoom, setField, setStatus, setBusy, setRendered, setDims, dims, set: setSnapshot } = editor;
+
+  const setIdentityField = useCallback(
+    (key: UnhcrFieldKey, value: string) => {
+      setSnapshot((prev) => {
+        const next = { ...prev, [key]: value };
+        return { ...next, ...syncUnhcrCodePayloads(next) };
+      });
+    },
+    [setSnapshot],
+  );
 
   const presentRef = useRef(present);
   presentRef.current = present;
@@ -348,9 +360,7 @@ function UnhcrEditorInner() {
         return;
       }
       const nextW = clamp(box.w + delta, UNHCR_BARCODE_RANGES.w.min, UNHCR_BARCODE_RANGES.w.max);
-      const ratio = box.w > 0 ? box.h / box.w : UNHCR_BARCODE_RANGES.h.default / UNHCR_BARCODE_RANGES.w.default;
-      const nextH = clamp(Math.round(nextW * ratio), UNHCR_BARCODE_RANGES.h.min, UNHCR_BARCODE_RANGES.h.max);
-      patchCode(field, { w: nextW, h: nextH });
+      patchCode(field, { w: nextW });
     },
     [patchCode],
   );
@@ -802,7 +812,7 @@ function UnhcrEditorInner() {
               value={present[f.key]}
               onChange={(v) => {
                 setActiveField(f.key);
-                setField(f.key, v);
+                setIdentityField(f.key, v);
               }}
             />
           ))}
@@ -829,8 +839,8 @@ function UnhcrEditorInner() {
             {isCodeField && (
               <p className="rounded-xl border border-line bg-surface-raised px-3 py-2 text-[10.5px] leading-relaxed text-muted">
                 {isBarcodeField
-                  ? `Both barcodes share the same Code 128 design. Scan returns only the TEST ID ${present.barcodePayload}.`
-                  : 'Square TEST QR. Scan returns sample test data only — not official identity.'}
+                  ? 'Both barcodes share the same Code 128 design and encode the ID number (TEST-UNHCR-REF-0001 when empty). The payload is not printed as text on the card.'
+                  : 'Square TEST QR. Encodes labeled ID fields from the form — sample data only, not official identity.'}
               </p>
             )}
 
@@ -839,7 +849,7 @@ function UnhcrEditorInner() {
                 <PropertyInput
                   label="Text"
                   value={present[activeField]}
-                  onChange={(v) => setField(activeField, v)}
+                  onChange={(v) => setIdentityField(activeField, v)}
                 />
 
                 <div className="flex flex-col gap-1.5">
@@ -892,14 +902,7 @@ function UnhcrEditorInner() {
                         max={UNHCR_BARCODE_RANGES.w.max}
                         step={UNHCR_BARCODE_RANGES.w.step}
                         mono
-                        onChange={(v) => {
-                          const box = unhcrCodeBox(present, barcodeField);
-                          const ratio = box.w > 0 ? box.h / box.w : UNHCR_BARCODE_RANGES.h.default / UNHCR_BARCODE_RANGES.w.default;
-                          patchCode(barcodeField, {
-                            w: v,
-                            h: clamp(Math.round(v * ratio), UNHCR_BARCODE_RANGES.h.min, UNHCR_BARCODE_RANGES.h.max),
-                          });
-                        }}
+                        onChange={(v) => patchCode(barcodeField, { w: v })}
                       />
                       <PropertySlider
                         label="Height"
@@ -908,14 +911,7 @@ function UnhcrEditorInner() {
                         max={UNHCR_BARCODE_RANGES.h.max}
                         step={UNHCR_BARCODE_RANGES.h.step}
                         mono
-                        onChange={(v) => {
-                          const box = unhcrCodeBox(present, barcodeField);
-                          const ratio = box.h > 0 ? box.w / box.h : UNHCR_BARCODE_RANGES.w.default / UNHCR_BARCODE_RANGES.h.default;
-                          patchCode(barcodeField, {
-                            h: v,
-                            w: clamp(Math.round(v * ratio), UNHCR_BARCODE_RANGES.w.min, UNHCR_BARCODE_RANGES.w.max),
-                          });
-                        }}
+                        onChange={(v) => patchCode(barcodeField, { h: v })}
                       />
                       <PropertySlider
                         label="X"

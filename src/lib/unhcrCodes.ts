@@ -1,11 +1,20 @@
 import QRCore from 'qrcode/lib/core/qrcode.js';
+import type { UnhcrSnapshot } from './editor/types';
 
-/** TEST-only Code 128 payload. A scan must return this string and nothing else. */
+/** TEST-only Code 128 payload. A scan must return this string when the ID field is empty. */
 export const UNHCR_BARCODE_TEST_PAYLOAD = 'TEST-UNHCR-REF-0001';
 
 /** TEST-only QR payload. Clearly labeled sample data — not official identity. */
-export const UNHCR_QR_TEST_PAYLOAD =
-  'TEST DATA — UNHCR ID EDITOR SAMPLE\nREF: TEST-UNHCR-QR-0001\nNOT AN OFFICIAL DOCUMENT';
+export const UNHCR_QR_TEST_PAYLOAD = [
+  `ID: ${UNHCR_BARCODE_TEST_PAYLOAD}`,
+  'Name: ',
+  'DOB: ',
+  'Sex: ',
+  'Country: ',
+  'Issued: ',
+  'Expires: ',
+  'Status: Valid',
+].join('\n');
 
 const START_B = 104;
 const STOP = 106;
@@ -58,6 +67,45 @@ export function unhcrBarcodePayload(raw?: string | null): string {
 export function unhcrQrPayload(raw?: string | null): string {
   const trimmed = (raw ?? '').trim();
   return trimmed || UNHCR_QR_TEST_PAYLOAD;
+}
+
+function fieldText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/** Code 128 payload: the ID number field, or the TEST ID when empty. */
+export function buildUnhcrBarcodePayload(
+  snap: Pick<UnhcrSnapshot, 'unhcrNo'> | Partial<UnhcrSnapshot> | string | null | undefined,
+): string {
+  if (typeof snap === 'string' || snap == null) return unhcrBarcodePayload(snap);
+  return unhcrBarcodePayload(fieldText(snap.unhcrNo));
+}
+
+/**
+ * QR payload from identity fields, formatted as labeled plain text.
+ * Empty ID falls back to the TEST reference so scans stay clearly test data.
+ */
+export function buildUnhcrQrPayload(
+  snap: Pick<UnhcrSnapshot, 'unhcrNo' | 'name' | 'dob' | 'sex' | 'origin' | 'issuedDate' | 'expiredDate'> | Partial<UnhcrSnapshot>,
+): string {
+  const id = fieldText(snap.unhcrNo) || UNHCR_BARCODE_TEST_PAYLOAD;
+  return [
+    `ID: ${id}`,
+    `Name: ${fieldText(snap.name)}`,
+    `DOB: ${fieldText(snap.dob)}`,
+    `Sex: ${fieldText(snap.sex)}`,
+    `Country: ${fieldText(snap.origin)}`,
+    `Issued: ${fieldText(snap.issuedDate)}`,
+    `Expires: ${fieldText(snap.expiredDate)}`,
+    'Status: Valid',
+  ].join('\n');
+}
+
+export function syncUnhcrCodePayloads(snap: UnhcrSnapshot): Pick<UnhcrSnapshot, 'barcodePayload' | 'qrPayload'> {
+  return {
+    barcodePayload: buildUnhcrBarcodePayload(snap),
+    qrPayload: buildUnhcrQrPayload(snap),
+  };
 }
 
 const PATTERN_INDEX = new Map<string, number>(PATTERNS.map((pattern, i) => [pattern, i]));
@@ -136,8 +184,6 @@ export function drawUnhcrBarcode(
   const width = Math.max(40, w);
   const height = Math.max(16, h);
   const modules = encodeCode128Modules(payload);
-  const textH = Math.max(10, Math.round(height * 0.18));
-  const barH = Math.max(8, height - textH);
   ctx.save();
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(x, y, width, height);
@@ -147,13 +193,8 @@ export function drawUnhcrBarcode(
     if (!modules[i]) continue;
     const x0 = x + Math.round((i * width) / n);
     const x1 = x + Math.round(((i + 1) * width) / n);
-    ctx.fillRect(x0, y, Math.max(1, x1 - x0), barH);
+    ctx.fillRect(x0, y, Math.max(1, x1 - x0), height);
   }
-  const label = unhcrBarcodePayload(payload);
-  ctx.font = `${Math.max(8, textH - 2)}px 'Arial Regular',Arial,sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, x + width / 2, y + barH + textH / 2);
   ctx.restore();
 }
 
@@ -166,12 +207,12 @@ export function sampleBarcodeModules(
   w: number,
   h: number,
   moduleCount: number,
+  sampleRatio = 0.5,
 ): boolean[] {
   const width = Math.max(40, w);
   const height = Math.max(16, h);
-  const textH = Math.max(10, Math.round(height * 0.18));
-  const barH = Math.max(8, height - textH);
-  const sampleY = Math.max(0, Math.round(y + barH / 2));
+  const ratio = Number.isFinite(sampleRatio) ? Math.min(0.95, Math.max(0.05, sampleRatio)) : 0.5;
+  const sampleY = Math.max(0, Math.round(y + height * ratio));
   const bits: boolean[] = [];
   for (let i = 0; i < moduleCount; i++) {
     const x0 = Math.round((i * width) / moduleCount);

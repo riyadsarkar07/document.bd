@@ -1,6 +1,6 @@
 import type { UnhcrLayout, UnhcrOverlayKey, UnhcrSnapshot } from '../editor/types';
 import { UNHCR_DEFAULT_LAYOUTS, UNHCR_DOC_HEIGHT, UNHCR_DOC_WIDTH, UNHCR_FIELD_ORDER } from '../constants/unhcr';
-import { drawUnhcrBarcode, drawUnhcrQr } from '../unhcrCodes';
+import { buildUnhcrBarcodePayload, buildUnhcrQrPayload, drawUnhcrBarcode, drawUnhcrQr } from '../unhcrCodes';
 
 const INK = '#000000';
 const ARIAL = "'Arial Regular',Arial,sans-serif";
@@ -79,9 +79,11 @@ export function renderUnhcrCard(
     renderUnhcrValue(ctx, snap[key], layout);
   }
 
-  drawUnhcrBarcode(ctx, snap.barcodePayload, snap.barcode1X, snap.barcode1Y, snap.barcode1W, snap.barcode1H);
-  drawUnhcrBarcode(ctx, snap.barcodePayload, snap.barcode2X, snap.barcode2Y, snap.barcode2W, snap.barcode2H);
-  drawUnhcrQr(ctx, snap.qrPayload, snap.qrX, snap.qrY, snap.qrSize);
+  const barcodePayload = buildUnhcrBarcodePayload(snap);
+  const qrPayload = buildUnhcrQrPayload(snap);
+  drawUnhcrBarcode(ctx, barcodePayload, snap.barcode1X, snap.barcode1Y, snap.barcode1W, snap.barcode1H);
+  drawUnhcrBarcode(ctx, barcodePayload, snap.barcode2X, snap.barcode2Y, snap.barcode2W, snap.barcode2H);
+  drawUnhcrQr(ctx, qrPayload, snap.qrX, snap.qrY, snap.qrSize);
 
   if (highlight === 'photo') {
     ctx.save();

@@ -43,6 +43,8 @@ import {
 import {
   UNHCR_BARCODE_TEST_PAYLOAD,
   UNHCR_QR_TEST_PAYLOAD,
+  buildUnhcrBarcodePayload,
+  buildUnhcrQrPayload,
   createUnhcrQrMatrix,
   decodeCode128Modules,
   encodeCode128Modules,
@@ -853,8 +855,62 @@ async function main() {
   assert(decodeCode128Modules(encodeCode128Modules('TEST-UNHCR-REF-0002')) === 'TEST-UNHCR-REF-0002', 'UNHCR barcode encoder/decoder round-trips TEST IDs');
   assert(unhcrBarcodePayload('') === UNHCR_BARCODE_TEST_PAYLOAD, 'empty barcode payload falls back to TEST ID');
   assert(unhcrQrPayload('') === UNHCR_QR_TEST_PAYLOAD, 'empty QR payload falls back to TEST sample data');
-  assert(UNHCR_QR_TEST_PAYLOAD.includes('TEST DATA'), 'UNHCR QR payload is labeled as test data');
-  assert(!UNHCR_QR_TEST_PAYLOAD.toLowerCase().includes('official document') || UNHCR_QR_TEST_PAYLOAD.includes('NOT AN OFFICIAL'), 'UNHCR QR payload is not official identity');
+  assert(UNHCR_QR_TEST_PAYLOAD.includes('ID: TEST-UNHCR-REF-0001'), 'UNHCR QR payload is labeled TEST ID data');
+  assert(UNHCR_QR_TEST_PAYLOAD.includes('Status: Valid'), 'UNHCR QR payload includes Status: Valid');
+  assert(UNHCR_BARCODE1_DEFAULT.x === 54 && UNHCR_BARCODE1_DEFAULT.y === 1028, 'UNHCR barcode 1 default X/Y is 54,1028');
+  assert(UNHCR_BARCODE1_DEFAULT.w === 752 && UNHCR_BARCODE1_DEFAULT.h === 121, 'UNHCR barcode 1 default size is 752×121');
+  assert(UNHCR_BARCODE2_DEFAULT.x === 1724 && UNHCR_BARCODE2_DEFAULT.y === 99, 'UNHCR barcode 2 default X/Y is 1724,99');
+  assert(UNHCR_BARCODE2_DEFAULT.w === 750 && UNHCR_BARCODE2_DEFAULT.h === 121, 'UNHCR barcode 2 default size is 750×121');
+  assert(UNHCR_QR_DEFAULT.x === 1467 && UNHCR_QR_DEFAULT.y === 1369 && UNHCR_QR_DEFAULT.size === 263, 'UNHCR QR default is 1467,1369 size 263');
+  assert(UNHCR_DEFAULTS.qrSize === 263 && UNHCR_DEFAULTS.qrX === 1467 && UNHCR_DEFAULTS.qrY === 1369, 'UNHCR defaults open at configured QR state');
+  assert(normalizeUnhcrSnapshot({}).barcode1X === 54 && normalizeUnhcrSnapshot({}).qrSize === 263, 'opening without a History record uses editor defaults');
+
+  const liveFields = {
+    ...UNHCR_DEFAULTS,
+    unhcrNo: 'MY-TEST-42',
+    name: 'Sample Holder',
+    dob: '01 Jan 1990',
+    sex: 'M',
+    origin: 'MM',
+    issuedDate: '01 Jan 2024',
+    expiredDate: '01 Jan 2026',
+  };
+  assert(buildUnhcrBarcodePayload(liveFields) === 'MY-TEST-42', 'barcode encodes the ID number field');
+  assert(buildUnhcrBarcodePayload({ ...liveFields, unhcrNo: '' }) === UNHCR_BARCODE_TEST_PAYLOAD, 'empty ID number falls back to TEST barcode payload');
+  const liveQr = buildUnhcrQrPayload(liveFields);
+  assert(liveQr === [
+    'ID: MY-TEST-42',
+    'Name: Sample Holder',
+    'DOB: 01 Jan 1990',
+    'Sex: M',
+    'Country: MM',
+    'Issued: 01 Jan 2024',
+    'Expires: 01 Jan 2026',
+    'Status: Valid',
+  ].join('\n'), 'QR payload combines form fields in the required labeled format');
+  const emptyQr = buildUnhcrQrPayload({ ...UNHCR_DEFAULTS });
+  assert(emptyQr === UNHCR_QR_TEST_PAYLOAD, 'empty form QR matches TEST default payload');
+  const afterName = buildUnhcrQrPayload({ ...liveFields, name: 'Updated Name' });
+  assert(afterName.includes('Name: Updated Name') && afterName.includes('ID: MY-TEST-42'), 'QR re-renders when a form field changes');
+  const afterId = buildUnhcrBarcodePayload({ ...liveFields, unhcrNo: 'MY-TEST-99' });
+  assert(afterId === 'MY-TEST-99', 'barcode re-renders when the ID number changes');
+
+  const unhcrLiveCanvas = createCanvas(1, 1);
+  renderUnhcrCard(unhcrLiveCanvas as unknown as HTMLCanvasElement, liveFields, null, 1);
+  const livePx = unhcrLiveCanvas.getContext('2d')!.getImageData(0, 0, unhcrLiveCanvas.width, unhcrLiveCanvas.height);
+  const liveBits = encodeCode128Modules('MY-TEST-42');
+  const liveSample = sampleBarcodeModules(
+    livePx.data,
+    unhcrLiveCanvas.width,
+    UNHCR_BARCODE1_DEFAULT.x,
+    UNHCR_BARCODE1_DEFAULT.y,
+    UNHCR_BARCODE1_DEFAULT.w,
+    UNHCR_BARCODE1_DEFAULT.h,
+    liveBits.length,
+  );
+  assert(decodeCode128Modules(liveSample) === 'MY-TEST-42', 'rendered barcode scans to the typed ID number');
+  const liveQrMatrix = createUnhcrQrMatrix(buildUnhcrQrPayload(liveFields));
+  assert(liveQrMatrix.size >= 21, 'live QR from form fields stays square and scannable');
 
   const qrMatrix = createUnhcrQrMatrix(UNHCR_QR_TEST_PAYLOAD);
   assert(qrMatrix.size >= 21 && qrMatrix.dark.length === qrMatrix.size, 'UNHCR QR matrix is square and scannable size');
@@ -885,6 +941,17 @@ async function main() {
   assert(decodeCode128Modules(sampled1) === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR barcode 1 pixels scan to TEST ID only');
   assert(decodeCode128Modules(sampled2) === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR barcode 2 pixels scan to TEST ID only');
   assert(sampled1.join('') === sampled2.join(''), 'UNHCR barcodes share the same Code 128 design');
+  const sampled1Low = sampleBarcodeModules(
+    codesPx.data,
+    unhcrCodes.width,
+    UNHCR_BARCODE1_DEFAULT.x,
+    UNHCR_BARCODE1_DEFAULT.y,
+    UNHCR_BARCODE1_DEFAULT.w,
+    UNHCR_BARCODE1_DEFAULT.h,
+    barcodeBits.length,
+    0.88,
+  );
+  assert(decodeCode128Modules(sampled1Low) === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR barcode has no visible payload text under the bars');
 
   const qrWhite = codesCtx.getImageData(UNHCR_QR_DEFAULT.x + 2, UNHCR_QR_DEFAULT.y + 2, 1, 1).data;
   assert(qrWhite[0] > 240 && qrWhite[1] > 240 && qrWhite[2] > 240, 'UNHCR QR has a white quiet zone');
@@ -920,6 +987,19 @@ async function main() {
   assert(unhcrMovedSnap.qrX === 2100 && unhcrMovedSnap.qrY === 120 && unhcrMovedSnap.qrSize === 260, 'UNHCR QR X/Y/size persist through normalize');
   assert(unhcrMovedSnap.barcodePayload === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR barcode TEST payload survives missing saved payload');
   assert(unhcrMovedSnap.qrPayload === UNHCR_QR_TEST_PAYLOAD, 'UNHCR QR TEST payload survives missing saved payload');
+  const savedLive = normalizeUnhcrSnapshot({
+    ...liveFields,
+    barcode1X: 140,
+    barcode1Y: 1080,
+    barcode1W: 640,
+    barcode1H: 100,
+    qrX: 2100,
+    qrY: 120,
+    qrSize: 260,
+  });
+  assert(savedLive.barcodePayload === 'MY-TEST-42', 'History restore rebuilds barcode from ID number');
+  assert(savedLive.qrPayload.includes('Name: Sample Holder'), 'History restore rebuilds QR from form fields');
+  assert(savedLive.barcode1X === 140 && savedLive.qrSize === 260, 'History restore keeps QR/barcode position and size');
 
   const unhcrMoved = createCanvas(1, 1);
   renderUnhcrCard(unhcrMoved as unknown as HTMLCanvasElement, unhcrMovedSnap, null, 1);

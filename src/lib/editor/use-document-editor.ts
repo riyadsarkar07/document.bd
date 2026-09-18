@@ -16,6 +16,8 @@ interface UseDocumentEditorOptions<T> {
   /** Normalise a restored snapshot (e.g. merge missing layout keys) before use. */
   normalize?: (state: T) => T;
   onAutosave?: (state: T) => void;
+  /** When false, skip localStorage autosave restore so the editor opens on its own defaults. */
+  restoreAutosave?: boolean;
 }
 
 export function useDocumentEditor<T>({
@@ -25,6 +27,7 @@ export function useDocumentEditor<T>({
   loadExternal,
   normalize,
   onAutosave,
+  restoreAutosave = true,
 }: UseDocumentEditorOptions<T>) {
   const history = useHistory<T>(defaults);
   const [status, setStatus] = useState('System Ready');
@@ -49,7 +52,7 @@ export function useDocumentEditor<T>({
   // Initial load (localStorage autosave or external project/template)
   useEffect(() => {
     let loaded: T | null = null;
-    if (typeof window !== 'undefined') {
+    if (restoreAutosave && typeof window !== 'undefined') {
       try {
         const raw = window.localStorage.getItem(autosaveKey);
         if (raw) {

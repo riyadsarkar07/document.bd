@@ -395,12 +395,15 @@ function main() {
   assert(normalizedUnhcr.layouts.expiredDate.fontFamily === 'arial' && normalizedUnhcr.layouts.expiredDate.x === 1605 && normalizedUnhcr.layouts.expiredDate.y === 1251, 'UNHCR expired date defaults to Arial Regular at 1605,1251');
   assert(normalizedUnhcr.layouts.dob.x === 893 && normalizedUnhcr.layouts.dob.y === 760, 'UNHCR DOB defaults to 893,760');
   assert(normalizedUnhcr.barcodePayload === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR barcode defaults to TEST ID');
-  assert(normalizedUnhcr.barcode1X === UNHCR_BARCODE1_DEFAULT.x && normalizedUnhcr.barcode1Y === UNHCR_BARCODE1_DEFAULT.y, 'UNHCR barcode 1 defaults to 70,1028');
-  assert(normalizedUnhcr.barcode1W === UNHCR_BARCODE1_DEFAULT.w && normalizedUnhcr.barcode1H === UNHCR_BARCODE1_DEFAULT.h, 'UNHCR barcode 1 default size is 720×118');
-  assert(normalizedUnhcr.barcode2X === UNHCR_BARCODE2_DEFAULT.x && normalizedUnhcr.barcode2Y === UNHCR_BARCODE2_DEFAULT.y, 'UNHCR barcode 2 defaults to 70,1164');
-  assert(normalizedUnhcr.barcode2W === UNHCR_BARCODE2_DEFAULT.w && normalizedUnhcr.barcode2H === UNHCR_BARCODE2_DEFAULT.h, 'UNHCR barcode 2 matches barcode 1 size');
+  assert(normalizedUnhcr.barcode1X === 54 && normalizedUnhcr.barcode1Y === 1028, 'UNHCR barcode 1 defaults to 54,1028');
+  assert(normalizedUnhcr.barcode1W === 752 && normalizedUnhcr.barcode1H === 121, 'UNHCR barcode 1 default size is 752×121');
+  assert(normalizedUnhcr.barcode2X === 1724 && normalizedUnhcr.barcode2Y === 99, 'UNHCR barcode 2 defaults to 1724,99');
+  assert(normalizedUnhcr.barcode2W === 750 && normalizedUnhcr.barcode2H === 121, 'UNHCR barcode 2 default size is 750×121');
   assert(normalizedUnhcr.qrPayload === UNHCR_QR_TEST_PAYLOAD, 'UNHCR QR defaults to TEST sample data');
-  assert(normalizedUnhcr.qrX === UNHCR_QR_DEFAULT.x && normalizedUnhcr.qrY === UNHCR_QR_DEFAULT.y && normalizedUnhcr.qrSize === UNHCR_QR_DEFAULT.size, 'UNHCR QR defaults to 2188,86 size 236');
+  assert(normalizedUnhcr.qrX === 1467 && normalizedUnhcr.qrY === 1369 && normalizedUnhcr.qrSize === 263, 'UNHCR QR defaults to 1467,1369 size 263');
+  assert(UNHCR_BARCODE1_DEFAULT.x === 54 && UNHCR_BARCODE1_DEFAULT.y === 1028, 'UNHCR_BARCODE1_DEFAULT is 54,1028');
+  assert(UNHCR_BARCODE2_DEFAULT.x === 1724 && UNHCR_BARCODE2_DEFAULT.y === 99, 'UNHCR_BARCODE2_DEFAULT is 1724,99');
+  assert(UNHCR_QR_DEFAULT.x === 1467 && UNHCR_QR_DEFAULT.y === 1369 && UNHCR_QR_DEFAULT.size === 263, 'UNHCR_QR_DEFAULT is 1467,1369 size 263');
   const editedUnhcr = {
     ...restoredUnhcr,
     name: 'Updated Subject',
@@ -441,6 +444,12 @@ function main() {
   assert(restoredUnhcrEdit.barcode2W === 680 && restoredUnhcrEdit.barcode2H === 108, 'UNHCR re-save persists barcode 2 size');
   assert(restoredUnhcrEdit.qrPayload.includes('TEST DATA'), 'UNHCR re-save persists QR TEST payload');
   assert(restoredUnhcrEdit.qrX === 2210 && restoredUnhcrEdit.qrY === 110 && restoredUnhcrEdit.qrSize === 250, 'UNHCR re-save persists QR X/Y/size');
+  const reopenedUnhcr = normalizeUnhcrSnapshot(restoredUnhcrEdit as Parameters<typeof normalizeUnhcrSnapshot>[0]);
+  assert(reopenedUnhcr.barcode1X === 100 && reopenedUnhcr.barcode1W === 680, 'UNHCR History reopen restores barcode 1 position/size');
+  assert(reopenedUnhcr.barcode2X === 110 && reopenedUnhcr.barcode2H === 108, 'UNHCR History reopen restores barcode 2 position/size');
+  assert(reopenedUnhcr.qrX === 2210 && reopenedUnhcr.qrY === 110 && reopenedUnhcr.qrSize === 250, 'UNHCR History reopen restores QR position/size');
+  assert(reopenedUnhcr.barcodePayload === 'MY-1001', 'UNHCR History reopen rebuilds barcode from ID number');
+  assert(reopenedUnhcr.qrPayload.includes('ID: MY-1001') && reopenedUnhcr.qrPayload.includes('Name: Updated Subject'), 'UNHCR History reopen rebuilds QR from form fields');
 
   const pdfDoc = {
     fileName: 'brief.pdf',
