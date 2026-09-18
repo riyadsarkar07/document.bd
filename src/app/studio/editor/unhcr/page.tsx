@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { jsPDF } from 'jspdf';
-import { Download, PanelRightOpen, ShieldAlert, Type } from 'lucide-react';
+import { Download, PanelRightOpen, Type } from 'lucide-react';
 import { useDocumentEditor } from '@/lib/editor/use-document-editor';
 import {
   UNHCR_BACKGROUND,
@@ -514,26 +514,6 @@ function UnhcrEditorInner() {
           lastSavedAt={editor.lastSavedAt}
         />
 
-        <div
-          className="z-10 shrink-0 border-b-2 border-danger/50 bg-danger px-4 py-3 text-white shadow-pop"
-          role="status"
-          aria-label={`Case label ${UNHCR_CASE_LABEL}`}
-        >
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-2 rounded-md bg-white px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-danger">
-              <ShieldAlert className="h-3.5 w-3.5" />
-              Case
-            </span>
-            <span className="font-display text-lg font-black tracking-tight sm:text-xl">
-              {UNHCR_CASE_LABEL}
-            </span>
-            <span className="hidden h-5 w-px bg-white/40 sm:block" />
-            <span className="text-[11px] font-medium leading-snug text-white/90 sm:text-xs">
-              Workflow label only — not part of the identity document
-            </span>
-          </div>
-        </div>
-
         <EditorViewport
           canvasRef={canvasRef}
           containerRef={editor.containerRef}
@@ -564,18 +544,11 @@ function UnhcrEditorInner() {
 
       <InspectorPanel
         title="ID Card Inspector"
-        subtitle="Arial overlay · absolute X/Y"
         open={editor.inspectorOpen}
         onToggle={editor.toggleInspector}
         sheetBodyClassName="max-h-[58vh] min-h-[38vh]"
         footer={
           <div className="flex flex-col gap-2 p-4">
-            <div className="flex items-start gap-2 rounded-xl border border-danger/25 bg-danger/5 px-3 py-2.5">
-              <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-danger" />
-              <p className="text-[10.5px] font-medium leading-relaxed text-danger">
-                {UNHCR_CASE_LABEL} is a case/workflow label shown above the editor. It is not printed on the identity document. Do not invent official identity data.
-              </p>
-            </div>
             <div className="flex items-center gap-2 font-mono text-[10.5px] text-dimm">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
               {editor.status}
@@ -584,8 +557,7 @@ function UnhcrEditorInner() {
         }
       >
         <div className="border-b border-line bg-surface-raised px-4 py-3">
-          <p className="text-[10.5px] font-bold uppercase tracking-wide text-danger">{UNHCR_CASE_LABEL}</p>
-          <p className="mt-1 text-xs text-muted">
+          <p className="text-xs text-muted">
             Edit field text, switch Arial / Arial Bold, resize, and drag. Position and font settings autosave and restore on reopen.
           </p>
         </div>
@@ -732,7 +704,7 @@ function UnhcrEditorInner() {
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
         title="ID Preview"
-        meta={`${UNHCR_CASE_LABEL} · ${UNHCR_DOC_WIDTH}×${UNHCR_DOC_HEIGHT}px`}
+        meta={`${UNHCR_DOC_WIDTH}×${UNHCR_DOC_HEIGHT}px`}
         maxWidth="max-w-3xl"
         footer={
           <div className="flex w-full items-center justify-between">

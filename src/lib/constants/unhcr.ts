@@ -15,6 +15,11 @@ export const UNHCR_DOC_HEIGHT = 1800;
 export const UNHCR_BACKGROUND = '/assets/Unchar.png';
 export const UNHCR_CASE_LABEL = 'Facebook Imposter';
 
+export const UNHCR_FONT_FACES = [
+  { family: 'Arial Regular', url: '/assets/arial-regular.ttf' },
+  { family: 'Arial Bold MT', url: '/assets/arial-bold.ttf' },
+] as const;
+
 export const UNHCR_FIELD_ORDER: readonly UnhcrFieldKey[] = UNHCR_FIELD_KEYS;
 
 export interface UnhcrFieldMeta {

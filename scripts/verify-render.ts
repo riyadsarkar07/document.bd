@@ -30,6 +30,8 @@ import { renderTMCertificate } from '../src/lib/renderers/tmRenderer';
 import { layoutFromSnapshot, layoutFromVault, layoutFromVaultSources, packDetails } from '../src/lib/publish/layout';
 import { renderNIDCard } from '../src/lib/renderers/nidRenderer';
 import { renderTINDocument, wrapTinText } from '../src/lib/renderers/tinRenderer';
+import { renderUnhcrCard } from '../src/lib/renderers/unhcrRenderer';
+import { UNHCR_DEFAULTS, UNHCR_DEFAULT_LAYOUTS } from '../src/lib/constants/unhcr';
 import { buildTinQrPayload, encodeDemoQr } from '../src/lib/tinQr';
 import type { NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
 
@@ -40,6 +42,7 @@ const legacyHtml = readFileSync(join(ROOT, 'legacy/index.html'), 'utf-8');
 const FONT_FILES: Record<string, string> = {
   'Arial Regular': 'public/assets/arial-regular.ttf',
   'Arial Bold': 'public/assets/arial-regular.ttf',
+  'Arial Bold MT': 'public/assets/arial-bold.ttf',
   'Monotype Corsiva Bold Italic': 'public/assets/monotype-corsiva-bold-italic.otf',
   Kalpurush: 'public/assets/kalpurush.ttf',
   'Kalpurush Bold': 'public/assets/kalpurush.ttf',
@@ -777,6 +780,48 @@ async function main() {
     !regionOf(baseline, TIN_ROW_BOXES.name).equals(regionOf(nameMoved, { ...TIN_ROW_BOXES.name, y: 1198, h: 48 })),
     'Name X/Y/font-size change moves the rendered Name text',
   );
+
+  console.log('\n[10] UNHCR Arial Regular vs real Arial Bold\n');
+  const sample = 'UNHCR SAMPLE';
+  const measure = (family: string) => {
+    const c = createCanvas(400, 80);
+    const ctx = c.getContext('2d');
+    ctx.font = `36px ${family}`;
+    return ctx.measureText(sample).width;
+  };
+  const regularWidth = measure("'Arial Regular'");
+  const boldWidth = measure("'Arial Bold MT'");
+  const fakeBoldWidth = measure("'Arial Bold'");
+  assert(regularWidth > 0 && boldWidth > 0, 'UNHCR Arial Regular and Arial Bold faces measure text');
+  assert(boldWidth !== regularWidth, 'UNHCR Arial Bold is a distinct face from Arial Regular');
+  assert(fakeBoldWidth === regularWidth, 'legacy Arial Bold alias stays Regular (NID pixel identity)');
+
+  const unhcrRegular = createCanvas(1, 1);
+  renderUnhcrCard(
+    unhcrRegular as unknown as HTMLCanvasElement,
+    {
+      ...UNHCR_DEFAULTS,
+      name: sample,
+      layouts: { ...UNHCR_DEFAULT_LAYOUTS, name: { ...UNHCR_DEFAULT_LAYOUTS.name, fontFamily: 'arial' } },
+    },
+    null,
+    1,
+  );
+  const unhcrBold = createCanvas(1, 1);
+  renderUnhcrCard(
+    unhcrBold as unknown as HTMLCanvasElement,
+    {
+      ...UNHCR_DEFAULTS,
+      name: sample,
+      layouts: { ...UNHCR_DEFAULT_LAYOUTS, name: { ...UNHCR_DEFAULT_LAYOUTS.name, fontFamily: 'arial-bold' } },
+    },
+    null,
+    1,
+  );
+  const regularPx = Buffer.from(unhcrRegular.getContext('2d')!.getImageData(0, 0, unhcrRegular.width, unhcrRegular.height).data.buffer);
+  const boldPx = Buffer.from(unhcrBold.getContext('2d')!.getImageData(0, 0, unhcrBold.width, unhcrBold.height).data.buffer);
+  assert(unhcrRegular.width === unhcrBold.width && unhcrRegular.height === unhcrBold.height, 'UNHCR Regular/Bold canvases match size');
+  assert(!regularPx.equals(boldPx), 'UNHCR Arial Bold selection paints different pixels than Arial Regular');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);

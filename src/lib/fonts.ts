@@ -1,6 +1,7 @@
 'use client';
 
 import { FONT_FACES } from '@/lib/constants/nid';
+import { UNHCR_FONT_FACES } from '@/lib/constants/unhcr';
 
 let loadPromise: Promise<boolean> | null = null;
 
@@ -64,9 +65,10 @@ export function loadDocumentFonts(): Promise<boolean> {
   if (loadPromise) return loadPromise;
 
   loadPromise = (async () => {
-    for (const face of FONT_FACES) {
+    const faces = [...FONT_FACES, ...UNHCR_FONT_FACES];
+    for (const face of faces) {
       try {
-        const descriptor: FontFaceDescriptors = face.weight
+        const descriptor: FontFaceDescriptors = 'weight' in face && face.weight
           ? { weight: face.weight }
           : {};
         const ff = new FontFace(face.family, `url(${face.url})`, descriptor);
@@ -75,6 +77,11 @@ export function loadDocumentFonts(): Promise<boolean> {
       } catch (err) {
         console.warn(`[fonts] Failed to load "${face.family}" from ${face.url}`, err);
       }
+    }
+    try {
+      await document.fonts.load("16px 'Arial Bold MT'");
+    } catch {
+      // ignore
     }
     await waitForDocumentFonts();
     await loadTmFontFaces();

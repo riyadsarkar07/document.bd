@@ -3,12 +3,11 @@ import { UNHCR_DEFAULT_LAYOUTS, UNHCR_DOC_HEIGHT, UNHCR_DOC_WIDTH, UNHCR_FIELD_O
 
 const INK = '#0b3a5b';
 const ARIAL = "'Arial Regular',Arial,sans-serif";
-const ARIAL_BOLD = "'Arial Bold','Arial Regular',Arial,sans-serif";
+const ARIAL_BOLD = "'Arial Bold MT','Arial Bold',Arial,sans-serif";
 
 function fontFor(layout: UnhcrLayout): string {
   const family = layout.fontFamily === 'arial-bold' ? ARIAL_BOLD : ARIAL;
-  const weight = layout.fontFamily === 'arial-bold' ? 'bold ' : '';
-  return `${weight}${layout.fontSize}px ${family}`;
+  return `${layout.fontSize}px ${family}`;
 }
 
 export function renderUnhcrValue(
@@ -71,9 +70,7 @@ export function renderUnhcrCard(
     const layout = snap.layouts[highlight] ?? UNHCR_DEFAULT_LAYOUTS[highlight];
     const text = snap[highlight] || ' ';
     ctx.save();
-    ctx.font = `${layout.fontFamily === 'arial-bold' ? 'bold ' : ''}${layout.fontSize}px ${
-      layout.fontFamily === 'arial-bold' ? ARIAL_BOLD : ARIAL
-    }`;
+    ctx.font = fontFor(layout);
     const w = Math.max(48, ctx.measureText(text).width);
     ctx.strokeStyle = '#2563eb';
     ctx.lineWidth = 2;
