@@ -170,4 +170,9 @@ export interface UnhcrSnapshot {
   issuedDate: string;
   expiredDate: string;
   layouts: Record<UnhcrFieldKey, UnhcrLayout>;
+  photoX: number;
+  photoY: number;
+  photoW: number;
+  photoH: number;
+  photoDataUrl?: string | null;
 }

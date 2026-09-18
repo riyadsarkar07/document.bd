@@ -62,12 +62,32 @@ const layout = (
 export const UNHCR_DEFAULT_LAYOUTS: Record<UnhcrFieldKey, UnhcrLayout> = {
   unhcrNo: layout(1288, 178, 36, { fontFamily: 'arial-bold' }),
   name: layout(852, 478, 36, { fontFamily: 'arial-bold' }),
-  dob: layout(852, 718, 32),
-  sex: layout(1768, 718, 32),
-  origin: layout(852, 918, 32),
+  dob: layout(893, 760, 32),
+  sex: layout(1865, 770, 50, { fontFamily: 'arial-bold' }),
+  origin: layout(852, 918, 46, { fontFamily: 'arial-bold' }),
   issuedDate: layout(852, 1188, 32),
-  expiredDate: layout(1568, 1188, 32),
+  expiredDate: layout(1605, 1251, 32),
 };
+
+export const UNHCR_PHOTO_DEFAULT = {
+  x: 62,
+  y: 91,
+  w: 748,
+  h: 900,
+};
+
+export const UNHCR_PHOTO_RANGES: Record<'x' | 'y' | 'w' | 'h', Omit<SliderSpec, 'key'>> = {
+  x: { label: 'X', min: 0, max: UNHCR_DOC_WIDTH, default: UNHCR_PHOTO_DEFAULT.x, mono: true },
+  y: { label: 'Y', min: 0, max: UNHCR_DOC_HEIGHT, default: UNHCR_PHOTO_DEFAULT.y, mono: true },
+  w: { label: 'Width', min: 40, max: UNHCR_DOC_WIDTH, default: UNHCR_PHOTO_DEFAULT.w, mono: true },
+  h: { label: 'Height', min: 40, max: UNHCR_DOC_HEIGHT, default: UNHCR_PHOTO_DEFAULT.h, mono: true },
+};
+
+function finiteNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
 
 export const UNHCR_DEFAULTS: UnhcrSnapshot = {
   unhcrNo: '',
@@ -78,6 +98,11 @@ export const UNHCR_DEFAULTS: UnhcrSnapshot = {
   issuedDate: '',
   expiredDate: '',
   layouts: UNHCR_DEFAULT_LAYOUTS,
+  photoX: UNHCR_PHOTO_DEFAULT.x,
+  photoY: UNHCR_PHOTO_DEFAULT.y,
+  photoW: UNHCR_PHOTO_DEFAULT.w,
+  photoH: UNHCR_PHOTO_DEFAULT.h,
+  photoDataUrl: null,
 };
 
 export function normalizeUnhcrSnapshot(s: Partial<UnhcrSnapshot>): UnhcrSnapshot {
@@ -93,10 +118,18 @@ export function normalizeUnhcrSnapshot(s: Partial<UnhcrSnapshot>): UnhcrSnapshot
   for (const key of UNHCR_FIELD_KEYS) {
     if (typeof s[key] === 'string') (root as Record<string, string>)[key] = s[key] as string;
   }
+  const photoDataUrl = typeof s.photoDataUrl === 'string' && s.photoDataUrl.startsWith('data:image/')
+    ? s.photoDataUrl
+    : null;
   return {
     ...UNHCR_DEFAULTS,
     ...root,
     layouts: layouts as Record<UnhcrFieldKey, UnhcrLayout>,
+    photoX: finiteNumber(s.photoX, UNHCR_PHOTO_DEFAULT.x, UNHCR_PHOTO_RANGES.x.min, UNHCR_PHOTO_RANGES.x.max),
+    photoY: finiteNumber(s.photoY, UNHCR_PHOTO_DEFAULT.y, UNHCR_PHOTO_RANGES.y.min, UNHCR_PHOTO_RANGES.y.max),
+    photoW: finiteNumber(s.photoW, UNHCR_PHOTO_DEFAULT.w, UNHCR_PHOTO_RANGES.w.min, UNHCR_PHOTO_RANGES.w.max),
+    photoH: finiteNumber(s.photoH, UNHCR_PHOTO_DEFAULT.h, UNHCR_PHOTO_RANGES.h.min, UNHCR_PHOTO_RANGES.h.max),
+    photoDataUrl,
   };
 }
 

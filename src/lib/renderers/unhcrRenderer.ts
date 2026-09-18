@@ -30,7 +30,8 @@ export function renderUnhcrCard(
   snap: UnhcrSnapshot,
   bgImg: HTMLImageElement | null,
   scale = 1,
-  highlight?: UnhcrFieldKey,
+  highlight?: UnhcrFieldKey | 'photo',
+  photoImg: HTMLImageElement | null = null,
 ): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -61,12 +62,30 @@ export function renderUnhcrCard(
     ctx.restore();
   }
 
+  const photoW = Math.min(Math.max(snap.photoW || 40, 40), W);
+  const photoH = Math.min(Math.max(snap.photoH || 40, 40), H);
+  const photoX = Number.isFinite(snap.photoX) ? snap.photoX : 0;
+  const photoY = Number.isFinite(snap.photoY) ? snap.photoY : 0;
+  if (photoImg && photoImg.complete && photoImg.naturalWidth > 0) {
+    ctx.drawImage(photoImg, photoX, photoY, photoW, photoH);
+  } else {
+    ctx.fillStyle = '#00ffff';
+    ctx.fillRect(photoX, photoY, photoW, photoH);
+  }
+
   for (const key of UNHCR_FIELD_ORDER) {
     const layout = snap.layouts[key] ?? UNHCR_DEFAULT_LAYOUTS[key];
     renderUnhcrValue(ctx, snap[key], layout);
   }
 
-  if (highlight) {
+  if (highlight === 'photo') {
+    ctx.save();
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 6]);
+    ctx.strokeRect(photoX - 3, photoY - 3, photoW + 6, photoH + 6);
+    ctx.restore();
+  } else if (highlight) {
     const layout = snap.layouts[highlight] ?? UNHCR_DEFAULT_LAYOUTS[highlight];
     const text = snap[highlight] || ' ';
     ctx.save();

@@ -35,6 +35,7 @@ import {
 } from '../src/lib/workspace/document-kinds';
 import { PAGE_RECOVER_CONFIG, BUSINESS_MANAGER_CONFIG, normalizeServiceSnapshot } from '../src/lib/constants/services';
 import { bytesToPdfDataUrl, pdfDataUrlToBytes } from '../src/lib/pdf-editor/serialize';
+import { normalizeUnhcrSnapshot, UNHCR_PHOTO_DEFAULT } from '../src/lib/constants/unhcr';
 
 const ROOT = process.cwd();
 
@@ -345,6 +346,11 @@ function main() {
       issuedDate: { fontSize: 26, x: 852, y: 1188, fontFamily: 'arial' },
       expiredDate: { fontSize: 26, x: 1568, y: 1188, fontFamily: 'arial' },
     },
+    photoX: 80,
+    photoY: 110,
+    photoW: 640,
+    photoH: 820,
+    photoDataUrl: TINY_JPEG,
   };
   const packedUnhcr = packDetails('', stored, { docKind: 'unhcr', doc: unhcrDoc });
   const unpackedUnhcr = unpackDetails(packedUnhcr);
@@ -355,11 +361,26 @@ function main() {
   assert(restoredUnhcr.layouts.name.fontSize === 34, 'UNHCR pack restores font size');
   assert(restoredUnhcr.layouts.name.fontFamily === 'arial', 'UNHCR pack restores font style');
   assert(restoredUnhcr.layouts.name.x === 860 && restoredUnhcr.layouts.name.y === 490, 'UNHCR pack restores X/Y');
+  assert(restoredUnhcr.photoX === 80 && restoredUnhcr.photoY === 110, 'UNHCR pack restores photo X/Y');
+  assert(restoredUnhcr.photoW === 640 && restoredUnhcr.photoH === 820, 'UNHCR pack restores photo size');
+  assert(restoredUnhcr.photoDataUrl === TINY_JPEG, 'UNHCR pack restores photo data URL');
   assert(!JSON.stringify(unpackedUnhcr).includes('Facebook Imposter'), 'UNHCR vault payload omits the case banner');
+  const normalizedUnhcr = normalizeUnhcrSnapshot({});
+  assert(normalizedUnhcr.photoX === UNHCR_PHOTO_DEFAULT.x && normalizedUnhcr.photoY === UNHCR_PHOTO_DEFAULT.y, 'UNHCR photo defaults to cyan placeholder box');
+  assert(normalizedUnhcr.photoW === UNHCR_PHOTO_DEFAULT.w && normalizedUnhcr.photoH === UNHCR_PHOTO_DEFAULT.h, 'UNHCR photo default size is 748×900');
+  assert(normalizedUnhcr.layouts.origin.fontSize === 46 && normalizedUnhcr.layouts.origin.fontFamily === 'arial-bold', 'UNHCR origin defaults to 46px Arial Bold');
+  assert(normalizedUnhcr.layouts.sex.fontSize === 50 && normalizedUnhcr.layouts.sex.x === 1865 && normalizedUnhcr.layouts.sex.y === 770, 'UNHCR sex defaults to 50px at 1865,770');
+  assert(normalizedUnhcr.layouts.sex.fontFamily === 'arial-bold', 'UNHCR sex defaults to Arial Bold');
+  assert(normalizedUnhcr.layouts.expiredDate.fontFamily === 'arial' && normalizedUnhcr.layouts.expiredDate.x === 1605 && normalizedUnhcr.layouts.expiredDate.y === 1251, 'UNHCR expired date defaults to Arial Regular at 1605,1251');
+  assert(normalizedUnhcr.layouts.dob.x === 893 && normalizedUnhcr.layouts.dob.y === 760, 'UNHCR DOB defaults to 893,760');
   const editedUnhcr = {
     ...restoredUnhcr,
     name: 'Updated Subject',
     layouts: { ...restoredUnhcr.layouts, name: { ...restoredUnhcr.layouts.name, fontSize: 38, x: 870, y: 500, fontFamily: 'arial-bold' } },
+    photoX: 90,
+    photoY: 120,
+    photoW: 650,
+    photoH: 830,
   };
   const packedUnhcrEdit = packDetails('', stored, { docKind: 'unhcr', doc: editedUnhcr });
   const unpackedUnhcrEdit = unpackDetails(packedUnhcrEdit);
@@ -369,6 +390,9 @@ function main() {
   assert(restoredUnhcrEdit.layouts.name.fontSize === 38, 'UNHCR re-save persists updated font size');
   assert(restoredUnhcrEdit.layouts.name.fontFamily === 'arial-bold', 'UNHCR re-save persists updated font style');
   assert(restoredUnhcrEdit.layouts.name.x === 870 && restoredUnhcrEdit.layouts.name.y === 500, 'UNHCR re-save persists updated X/Y');
+  assert(restoredUnhcrEdit.photoX === 90 && restoredUnhcrEdit.photoY === 120, 'UNHCR re-save persists updated photo X/Y');
+  assert(restoredUnhcrEdit.photoW === 650 && restoredUnhcrEdit.photoH === 830, 'UNHCR re-save persists updated photo size');
+  assert(restoredUnhcrEdit.photoDataUrl === TINY_JPEG, 'UNHCR re-save persists photo data URL');
 
   const pdfDoc = {
     fileName: 'brief.pdf',

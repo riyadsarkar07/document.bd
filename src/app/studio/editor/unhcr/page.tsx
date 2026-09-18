@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { jsPDF } from 'jspdf';
-import { Download, PanelRightOpen, Type } from 'lucide-react';
+import { Camera, Download, PanelRightOpen, Type } from 'lucide-react';
 import { useDocumentEditor } from '@/lib/editor/use-document-editor';
 import {
   UNHCR_BACKGROUND,
@@ -15,11 +15,13 @@ import {
   UNHCR_FIELDS,
   UNHCR_FONT_OPTIONS,
   UNHCR_LAYOUT_RANGES,
+  UNHCR_PHOTO_RANGES,
   normalizeUnhcrSnapshot,
 } from '@/lib/constants/unhcr';
 import type { UnhcrFieldKey, UnhcrLayout, UnhcrSnapshot } from '@/lib/editor/types';
 import { renderUnhcrCard } from '@/lib/renderers/unhcrRenderer';
-import { loadImage } from '@/lib/images';
+import { loadDataUrlImage, loadImage } from '@/lib/images';
+import { validateImageFile } from '@/lib/uploads';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
@@ -69,10 +71,13 @@ function UnhcrEditorInner() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
-  const [activeField, setActiveField] = useState<UnhcrFieldKey>('unhcrNo');
+  const [activeField, setActiveField] = useState<UnhcrFieldKey | 'photo'>('unhcrNo');
   const [moveStep, setMoveStep] = useState(1);
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [photoImage, setPhotoImage] = useState<HTMLImageElement | null>(null);
+  const [photoName, setPhotoName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const externalCacheRef = useRef<UnhcrSnapshot | null>(null);
 
@@ -84,7 +89,7 @@ function UnhcrEditorInner() {
     normalize: (s) => normalizeUnhcrSnapshot(s as Partial<UnhcrSnapshot>),
   });
 
-  const { present, zoom, setField, setStatus, setBusy, setRendered, setDims, dims } = editor;
+  const { present, zoom, setField, setStatus, setBusy, setRendered, setDims, dims, set: setSnapshot } = editor;
 
   const presentRef = useRef(present);
   presentRef.current = present;
@@ -92,8 +97,10 @@ function UnhcrEditorInner() {
   bgImgRef.current = bgImg;
   const activeFieldRef = useRef(activeField);
   activeFieldRef.current = activeField;
+  const photoImageRef = useRef(photoImage);
+  photoImageRef.current = photoImage;
   const dragRef = useRef<{
-    field: UnhcrFieldKey;
+    field: UnhcrFieldKey | 'photo';
     startX: number;
     startY: number;
     origX: number;
@@ -114,6 +121,7 @@ function UnhcrEditorInner() {
         const next = normalizeUnhcrSnapshot((res.record.doc as Partial<UnhcrSnapshot>) ?? {});
         externalCacheRef.current = next;
         editor.replace(next);
+        setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
         setHistoryRecordId(res.record.trademarkNo);
         setStatus(`History record ${recordNo} loaded`);
         toast.success(`History record ${recordNo} loaded`);
@@ -126,6 +134,7 @@ function UnhcrEditorInner() {
           const next = normalizeUnhcrSnapshot(found.state as Partial<UnhcrSnapshot>);
           externalCacheRef.current = next;
           editor.replace(next);
+          setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
           setStatus(`Project "${found.name}" loaded`);
           toast.success(`Project "${found.name}" loaded`);
         }
@@ -136,6 +145,7 @@ function UnhcrEditorInner() {
           const next = normalizeUnhcrSnapshot(found.state as Partial<UnhcrSnapshot>);
           externalCacheRef.current = next;
           editor.replace(next);
+          setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
           setStatus(`Template "${found.name}" applied`);
           toast.success(`Template "${found.name}" applied`);
         }
@@ -167,7 +177,7 @@ function UnhcrEditorInner() {
 
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
-      renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, scale, activeFieldRef.current);
+      renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, scale, activeFieldRef.current, photoImageRef.current);
       setDims((prev) =>
         prev && prev.w === UNHCR_DOC_WIDTH && prev.h === UNHCR_DOC_HEIGHT
           ? prev
@@ -186,7 +196,7 @@ function UnhcrEditorInner() {
       if (canvas) void draw(canvas, liveScaleRef.current);
     });
     return () => cancelAnimationFrame(rafRef.current);
-  }, [present, fontsLoaded, bgImg, zoom, draw, activeField]);
+  }, [present, fontsLoaded, bgImg, photoImage, zoom, draw, activeField]);
 
   const forceRender = useCallback(async () => {
     const canvas = canvasRef.current;
@@ -201,16 +211,22 @@ function UnhcrEditorInner() {
 
   const reset = useCallback(() => {
     editor.reset();
+    setPhotoImage(null);
+    setPhotoName(null);
+    setActiveField('unhcrNo');
     setStatus('Defaults applied');
     toast.info('ID editor reset — identity fields cleared');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const activeLayout = present.layouts[activeField] ?? UNHCR_DEFAULT_LAYOUTS[activeField];
+  const activeLayout = activeField === 'photo'
+    ? UNHCR_DEFAULT_LAYOUTS.unhcrNo
+    : (present.layouts[activeField] ?? UNHCR_DEFAULT_LAYOUTS[activeField]);
 
   const setLayout = useCallback(
     <K extends keyof UnhcrLayout>(key: K, value: UnhcrLayout[K]) => {
       const field = activeFieldRef.current;
+      if (field === 'photo') return;
       const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
       setField('layouts', {
         ...presentRef.current.layouts,
@@ -220,9 +236,31 @@ function UnhcrEditorInner() {
     [setField],
   );
 
+  const setPhoto = useCallback(
+    (patch: Partial<Pick<UnhcrSnapshot, 'photoX' | 'photoY' | 'photoW' | 'photoH' | 'photoDataUrl'>>) => {
+      setSnapshot((prev) => ({
+        ...prev,
+        photoX: patch.photoX ?? prev.photoX,
+        photoY: patch.photoY ?? prev.photoY,
+        photoW: patch.photoW ?? prev.photoW,
+        photoH: patch.photoH ?? prev.photoH,
+        photoDataUrl: patch.photoDataUrl === undefined ? prev.photoDataUrl : patch.photoDataUrl,
+      }));
+    },
+    [setSnapshot],
+  );
+
   const moveField = useCallback(
     (dx: number, dy: number) => {
       const field = activeFieldRef.current;
+      if (field === 'photo') {
+        const snap = presentRef.current;
+        setPhoto({
+          photoX: clamp(snap.photoX + dx * moveStep, 0, UNHCR_DOC_WIDTH),
+          photoY: clamp(snap.photoY + dy * moveStep, 0, UNHCR_DOC_HEIGHT),
+        });
+        return;
+      }
       const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
       setField('layouts', {
         ...presentRef.current.layouts,
@@ -233,12 +271,13 @@ function UnhcrEditorInner() {
         },
       });
     },
-    [setField, moveStep],
+    [setField, setPhoto, moveStep],
   );
 
   const bumpFont = useCallback(
     (delta: number) => {
       const field = activeFieldRef.current;
+      if (field === 'photo') return;
       const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
       setLayout(
         'fontSize',
@@ -246,6 +285,17 @@ function UnhcrEditorInner() {
       );
     },
     [setLayout],
+  );
+
+  const bumpPhotoSize = useCallback(
+    (delta: number) => {
+      const snap = presentRef.current;
+      const nextW = clamp(snap.photoW + delta, UNHCR_PHOTO_RANGES.w.min, UNHCR_PHOTO_RANGES.w.max);
+      const ratio = snap.photoW > 0 ? snap.photoH / snap.photoW : 1;
+      const nextH = clamp(Math.round(nextW * ratio), UNHCR_PHOTO_RANGES.h.min, UNHCR_PHOTO_RANGES.h.max);
+      setPhoto({ photoW: nextW, photoH: nextH });
+    },
+    [setPhoto],
   );
 
   const persistToHistory = useCallback(async (): Promise<string | null> => {
@@ -300,7 +350,7 @@ function UnhcrEditorInner() {
       return;
     }
     const canvas = document.createElement('canvas');
-    renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, 1);
+    renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, 1, undefined, photoImageRef.current);
     const link = document.createElement('a');
     const id = presentRef.current.unhcrNo || 'case';
     link.download = `UNHCR-${id}.jpg`;
@@ -328,7 +378,7 @@ function UnhcrEditorInner() {
       return;
     }
     const canvas = document.createElement('canvas');
-    renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, 1);
+    renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, 1, undefined, photoImageRef.current);
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [UNHCR_DOC_WIDTH, UNHCR_DOC_HEIGHT] });
     const pW = pdf.internal.pageSize.getWidth();
     const pH = pdf.internal.pageSize.getHeight();
@@ -347,7 +397,7 @@ function UnhcrEditorInner() {
 
   const preview = useCallback(async () => {
     const canvas = document.createElement('canvas');
-    renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, 1);
+    renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, 1, undefined, photoImageRef.current);
     setPreviewDataUrl(canvas.toDataURL('image/jpeg', 0.96));
     setPreviewOpen(true);
   }, []);
@@ -388,6 +438,49 @@ function UnhcrEditorInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [present, user, toast, persistToHistory]);
 
+  const handlePhotoUpload = useCallback(
+    async (file: File) => {
+      const invalid = await validateImageFile(file);
+      if (invalid) {
+        toast.error(invalid);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = String(e.target?.result);
+        const img = new Image();
+        img.onload = () => {
+          setPhotoImage(img);
+          setPhotoName(file.name);
+          setPhoto({ photoDataUrl: dataUrl });
+          setActiveField('photo');
+          toast.success('Photo loaded');
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    },
+    [toast, setPhoto],
+  );
+
+  useEffect(() => {
+    const dataUrl = present.photoDataUrl;
+    if (!dataUrl) {
+      if (photoImageRef.current) setPhotoImage(null);
+      return;
+    }
+    if (photoImageRef.current?.src === dataUrl) return;
+    let cancelled = false;
+    loadDataUrlImage(dataUrl).then((img) => {
+      if (cancelled) return;
+      if (img) setPhotoImage(img);
+      else if (photoImageRef.current?.src !== dataUrl) setPhotoImage(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [present.photoDataUrl]);
+
   const canvasToDoc = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
@@ -399,7 +492,17 @@ function UnhcrEditorInner() {
     };
   }, []);
 
-  const hitField = useCallback((x: number, y: number): UnhcrFieldKey | null => {
+  const hitPhoto = useCallback((x: number, y: number): boolean => {
+    const snap = presentRef.current;
+    return (
+      x >= snap.photoX &&
+      x <= snap.photoX + snap.photoW &&
+      y >= snap.photoY &&
+      y <= snap.photoY + snap.photoH
+    );
+  }, []);
+
+  const hitField = useCallback((x: number, y: number): UnhcrFieldKey | 'photo' | null => {
     const snap = presentRef.current;
     let best: { key: UnhcrFieldKey; dist: number } | null = null;
     for (const field of UNHCR_FIELDS) {
@@ -418,8 +521,10 @@ function UnhcrEditorInner() {
         if (!best || dist < best.dist) best = { key: field.key, dist };
       }
     }
-    return best?.key ?? null;
-  }, []);
+    if (best) return best.key;
+    if (hitPhoto(x, y)) return 'photo';
+    return null;
+  }, [hitPhoto]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -432,14 +537,24 @@ function UnhcrEditorInner() {
       const hit = hitField(pos.x, pos.y);
       const field = hit ?? activeFieldRef.current;
       if (hit) setActiveField(hit);
-      const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
-      dragRef.current = {
-        field,
-        startX: pos.x,
-        startY: pos.y,
-        origX: base.x,
-        origY: base.y,
-      };
+      if (field === 'photo') {
+        dragRef.current = {
+          field: 'photo',
+          startX: pos.x,
+          startY: pos.y,
+          origX: presentRef.current.photoX,
+          origY: presentRef.current.photoY,
+        };
+      } else {
+        const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
+        dragRef.current = {
+          field,
+          startX: pos.x,
+          startY: pos.y,
+          origX: base.x,
+          origY: base.y,
+        };
+      }
       setDragging(true);
       canvas.setPointerCapture(e.pointerId);
     };
@@ -451,6 +566,13 @@ function UnhcrEditorInner() {
       if (!pos) return;
       const dx = pos.x - drag.startX;
       const dy = pos.y - drag.startY;
+      if (drag.field === 'photo') {
+        setPhoto({
+          photoX: clamp(Math.round(drag.origX + dx), 0, UNHCR_DOC_WIDTH),
+          photoY: clamp(Math.round(drag.origY + dy), 0, UNHCR_DOC_HEIGHT),
+        });
+        return;
+      }
       const base = presentRef.current.layouts[drag.field] ?? UNHCR_DEFAULT_LAYOUTS[drag.field];
       setField('layouts', {
         ...presentRef.current.layouts,
@@ -483,7 +605,7 @@ function UnhcrEditorInner() {
       canvas.removeEventListener('pointerup', up);
       canvas.removeEventListener('pointercancel', up);
     };
-  }, [editor.rendered, canvasToDoc, hitField, setField]);
+  }, [editor.rendered, canvasToDoc, hitField, setField, setPhoto]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -491,7 +613,10 @@ function UnhcrEditorInner() {
     canvas.style.cursor = dragging ? 'grabbing' : 'grab';
   }, [dragging, editor.rendered]);
 
-  const activeMeta = useMemo(() => UNHCR_FIELDS.find((f) => f.key === activeField), [activeField]);
+  const activeMeta = useMemo(
+    () => (activeField === 'photo' ? { key: 'photo' as const, label: 'Photo' } : UNHCR_FIELDS.find((f) => f.key === activeField)),
+    [activeField],
+  );
   const fieldOptions = UNHCR_FIELDS.map((f) => ({ value: f.key, label: f.label }));
 
   return (
@@ -549,6 +674,20 @@ function UnhcrEditorInner() {
         sheetBodyClassName="max-h-[58vh] min-h-[38vh]"
         footer={
           <div className="flex flex-col gap-2 p-4">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void handlePhotoUpload(file);
+              }}
+            />
+            <Button variant="outline" icon={<Camera className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>
+              {photoName ? `Replace: ${photoName}` : 'Upload Photo'}
+            </Button>
             <div className="flex items-center gap-2 font-mono text-[10.5px] text-dimm">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
               {editor.status}
@@ -590,77 +729,135 @@ function UnhcrEditorInner() {
             <Select
               aria-label="Select field"
               value={activeField}
-              onChange={(e) => setActiveField(e.target.value as UnhcrFieldKey)}
-              options={fieldOptions}
+              onChange={(e) => setActiveField(e.target.value as UnhcrFieldKey | 'photo')}
+              options={[...fieldOptions, { value: 'photo', label: 'Photo' }]}
             />
 
-            <PropertyInput
-              label="Text"
-              value={present[activeField]}
-              onChange={(v) => setField(activeField, v)}
-            />
+            {activeField !== 'photo' && (
+              <>
+                <PropertyInput
+                  label="Text"
+                  value={present[activeField]}
+                  onChange={(v) => setField(activeField, v)}
+                />
 
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-muted">Font</span>
-              <div className="grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface-raised p-1">
-                {UNHCR_FONT_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setLayout('fontFamily', opt.value)}
-                    className={cn(
-                      'rounded-lg px-1 py-1.5 text-[10.5px] font-semibold transition',
-                      activeLayout.fontFamily === opt.value
-                        ? 'bg-info/15 text-info shadow-sm'
-                        : 'text-muted hover:text-primary',
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[11px] text-muted">Font</span>
+                  <div className="grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface-raised p-1">
+                    {UNHCR_FONT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setLayout('fontFamily', opt.value)}
+                        className={cn(
+                          'rounded-lg px-1 py-1.5 text-[10.5px] font-semibold transition',
+                          activeLayout.fontFamily === opt.value
+                            ? 'bg-info/15 text-info shadow-sm'
+                            : 'text-muted hover:text-primary',
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="flex flex-col gap-3 rounded-xl border border-info/20 bg-info/5 p-3">
               <span className="text-[10px] font-bold uppercase tracking-wide text-info">Position &amp; Size</span>
 
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => bumpFont(-1)} aria-label="Decrease font size">
-                  A-
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => bumpFont(1)} aria-label="Increase font size">
-                  A+
-                </Button>
-                <span className="ml-auto font-mono text-[11px] text-dimm">{activeLayout.fontSize}px</span>
-              </div>
+              {activeField === 'photo' ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => bumpPhotoSize(-10)} aria-label="Decrease photo size">
+                      -
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => bumpPhotoSize(10)} aria-label="Increase photo size">
+                      +
+                    </Button>
+                    <span className="ml-auto font-mono text-[11px] text-dimm">
+                      {present.photoW}×{present.photoH}
+                    </span>
+                  </div>
+                  <PropertySlider
+                    label="Width"
+                    value={present.photoW}
+                    min={UNHCR_PHOTO_RANGES.w.min}
+                    max={UNHCR_PHOTO_RANGES.w.max}
+                    step={UNHCR_PHOTO_RANGES.w.step}
+                    mono
+                    onChange={(v) => setPhoto({ photoW: v })}
+                  />
+                  <PropertySlider
+                    label="Height"
+                    value={present.photoH}
+                    min={UNHCR_PHOTO_RANGES.h.min}
+                    max={UNHCR_PHOTO_RANGES.h.max}
+                    step={UNHCR_PHOTO_RANGES.h.step}
+                    mono
+                    onChange={(v) => setPhoto({ photoH: v })}
+                  />
+                  <PropertySlider
+                    label="X"
+                    value={present.photoX}
+                    min={UNHCR_PHOTO_RANGES.x.min}
+                    max={UNHCR_PHOTO_RANGES.x.max}
+                    step={UNHCR_PHOTO_RANGES.x.step}
+                    mono
+                    onChange={(v) => setPhoto({ photoX: v })}
+                  />
+                  <PropertySlider
+                    label="Y"
+                    value={present.photoY}
+                    min={UNHCR_PHOTO_RANGES.y.min}
+                    max={UNHCR_PHOTO_RANGES.y.max}
+                    step={UNHCR_PHOTO_RANGES.y.step}
+                    mono
+                    onChange={(v) => setPhoto({ photoY: v })}
+                  />
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => bumpFont(-1)} aria-label="Decrease font size">
+                      A-
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => bumpFont(1)} aria-label="Increase font size">
+                      A+
+                    </Button>
+                    <span className="ml-auto font-mono text-[11px] text-dimm">{activeLayout.fontSize}px</span>
+                  </div>
 
-              <PropertySlider
-                label="Font Size"
-                value={activeLayout.fontSize}
-                min={UNHCR_LAYOUT_RANGES.fontSize.min}
-                max={UNHCR_LAYOUT_RANGES.fontSize.max}
-                step={UNHCR_LAYOUT_RANGES.fontSize.step}
-                mono
-                onChange={(v) => setLayout('fontSize', v)}
-              />
-              <PropertySlider
-                label="X"
-                value={activeLayout.x}
-                min={UNHCR_LAYOUT_RANGES.x.min}
-                max={UNHCR_LAYOUT_RANGES.x.max}
-                step={UNHCR_LAYOUT_RANGES.x.step}
-                mono
-                onChange={(v) => setLayout('x', v)}
-              />
-              <PropertySlider
-                label="Y"
-                value={activeLayout.y}
-                min={UNHCR_LAYOUT_RANGES.y.min}
-                max={UNHCR_LAYOUT_RANGES.y.max}
-                step={UNHCR_LAYOUT_RANGES.y.step}
-                mono
-                onChange={(v) => setLayout('y', v)}
-              />
+                  <PropertySlider
+                    label="Font Size"
+                    value={activeLayout.fontSize}
+                    min={UNHCR_LAYOUT_RANGES.fontSize.min}
+                    max={UNHCR_LAYOUT_RANGES.fontSize.max}
+                    step={UNHCR_LAYOUT_RANGES.fontSize.step}
+                    mono
+                    onChange={(v) => setLayout('fontSize', v)}
+                  />
+                  <PropertySlider
+                    label="X"
+                    value={activeLayout.x}
+                    min={UNHCR_LAYOUT_RANGES.x.min}
+                    max={UNHCR_LAYOUT_RANGES.x.max}
+                    step={UNHCR_LAYOUT_RANGES.x.step}
+                    mono
+                    onChange={(v) => setLayout('x', v)}
+                  />
+                  <PropertySlider
+                    label="Y"
+                    value={activeLayout.y}
+                    min={UNHCR_LAYOUT_RANGES.y.min}
+                    max={UNHCR_LAYOUT_RANGES.y.max}
+                    step={UNHCR_LAYOUT_RANGES.y.step}
+                    mono
+                    onChange={(v) => setLayout('y', v)}
+                  />
+                </>
+              )}
 
               <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-raised p-2">
                 <div className="flex flex-col gap-1">

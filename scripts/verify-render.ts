@@ -31,7 +31,7 @@ import { layoutFromSnapshot, layoutFromVault, layoutFromVaultSources, packDetail
 import { renderNIDCard } from '../src/lib/renderers/nidRenderer';
 import { renderTINDocument, wrapTinText } from '../src/lib/renderers/tinRenderer';
 import { renderUnhcrCard } from '../src/lib/renderers/unhcrRenderer';
-import { UNHCR_DEFAULTS, UNHCR_DEFAULT_LAYOUTS } from '../src/lib/constants/unhcr';
+import { UNHCR_DEFAULTS, UNHCR_DEFAULT_LAYOUTS, UNHCR_PHOTO_DEFAULT } from '../src/lib/constants/unhcr';
 import { buildTinQrPayload, encodeDemoQr } from '../src/lib/tinQr';
 import type { NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
 
@@ -822,6 +822,11 @@ async function main() {
   const boldPx = Buffer.from(unhcrBold.getContext('2d')!.getImageData(0, 0, unhcrBold.width, unhcrBold.height).data.buffer);
   assert(unhcrRegular.width === unhcrBold.width && unhcrRegular.height === unhcrBold.height, 'UNHCR Regular/Bold canvases match size');
   assert(!regularPx.equals(boldPx), 'UNHCR Arial Bold selection paints different pixels than Arial Regular');
+
+  const unhcrPhoto = createCanvas(1, 1);
+  renderUnhcrCard(unhcrPhoto as unknown as HTMLCanvasElement, { ...UNHCR_DEFAULTS }, null, 1);
+  const px = unhcrPhoto.getContext('2d')!.getImageData(UNHCR_PHOTO_DEFAULT.x + 8, UNHCR_PHOTO_DEFAULT.y + 8, 1, 1).data;
+  assert(px[0] === 0 && px[1] === 255 && px[2] === 255, 'UNHCR empty photo paints cyan placeholder at 62,91');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
