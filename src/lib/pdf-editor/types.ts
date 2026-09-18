@@ -50,6 +50,7 @@ export interface TextAnnotation extends AnnotationBase {
   bold: boolean;
   source?: 'overlay' | 'native';
   coverOriginal?: boolean;
+  coverBox?: PdfBox;
   fontFamily?: string;
   align?: 'left' | 'center' | 'right';
 }

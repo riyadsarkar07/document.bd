@@ -219,20 +219,23 @@ export function isMeaningfulDraft(draft: PdfAnnotation): boolean {
 }
 
 export function nativeRunToTextAnnotation(pageId: string, run: NativeTextRun): TextAnnotation {
+  const width = Math.max(run.width, 0.004);
+  const height = Math.max(run.height, run.fontSize);
   return {
     id: createPdfId('text'),
     pageId,
     type: 'text',
     x: run.x,
     y: run.y,
-    width: Math.max(run.width, 0.004),
-    height: Math.max(run.height, run.fontSize),
+    width,
+    height,
     text: run.text,
     fontSize: run.fontSize,
     color: run.color || '#111827',
     bold: run.bold,
     source: 'native',
     coverOriginal: true,
+    coverBox: { x: run.x, y: run.y, width, height },
     fontFamily: run.fontFamily,
     align: 'left',
   };

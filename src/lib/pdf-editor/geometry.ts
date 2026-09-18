@@ -74,6 +74,9 @@ export function rotateAnnotation(annotation: PdfAnnotation, rotation: PdfRotatio
     };
   }
   const next = rotateBox(annotation, rotation);
+  if (annotation.type === 'text' && annotation.coverBox) {
+    return { ...annotation, ...next, coverBox: rotateBox(annotation.coverBox, rotation) };
+  }
   return { ...annotation, ...next };
 }
 

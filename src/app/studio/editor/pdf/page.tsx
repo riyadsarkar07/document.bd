@@ -144,6 +144,8 @@ function PdfEditorInner() {
     pageId: string;
     annotationId?: string;
     draft?: PdfAnnotation;
+    clickToEdit?: boolean;
+    commitNative?: boolean;
   } | null>(null);
   const [draft, setDraft] = useState<PdfAnnotation | null>(null);
   const [movePreview, setMovePreview] = useState<{ id: string; dx: number; dy: number } | null>(null);
@@ -386,11 +388,11 @@ function PdfEditorInner() {
         return;
       }
       set((doc) => addAnnotation(doc, { ...pending, text: next, coverOriginal: true }));
-      setSelectedId(null);
+      setSelectedId(pending.id);
       return;
     }
     set((doc) => updateAnnotation(doc, editingId, { text: next } as Partial<PdfAnnotation>));
-    setSelectedId(null);
+    setSelectedId(editingId);
   };
 
   const cancelTextEdit = () => {
@@ -403,7 +405,7 @@ function PdfEditorInner() {
   const beginNativeEdit = (run: NativeTextRun) => {
     if (!activePage) return;
     const existing = annotationsForPage(present, activePage.id).find(
-      (item) => item.type === 'text' && item.source === 'native' && boxesOverlap(item, run, 0.35),
+      (item) => item.type === 'text' && item.source === 'native' && boxesOverlap(item.coverBox ?? item, run, 0.35),
     );
     if (existing && existing.type === 'text') {
       setPendingNative(null);
@@ -445,7 +447,7 @@ function PdfEditorInner() {
     if (!activePage) return [];
     const committed = annotationsForPage(present, activePage.id).flatMap((item) =>
       item.type === 'text' && item.source === 'native' && item.coverOriginal
-        ? [{ x: item.x, y: item.y, width: item.width, height: item.height }]
+        ? [item.coverBox ?? { x: item.x, y: item.y, width: item.width, height: item.height }]
         : [],
     );
     return committed;
@@ -467,6 +469,30 @@ function PdfEditorInner() {
       if (hit) {
         dragRef.current = { mode: 'move', start: point, last: point, pageId: activePage.id, annotationId: hit.id };
         setMovePreview({ id: hit.id, dx: 0, dy: 0 });
+        return;
+      }
+      const run = hitTestNativeRun(pageTextRuns, point);
+      if (run) {
+        const existing = annotationsForPage(present, activePage.id).find(
+          (item) => item.type === 'text' && item.source === 'native' && boxesOverlap(item.coverBox ?? item, run, 0.35),
+        );
+        if (existing && existing.type === 'text') {
+          setSelectedId(existing.id);
+          dragRef.current = { mode: 'move', start: point, last: point, pageId: activePage.id, annotationId: existing.id };
+          setMovePreview({ id: existing.id, dx: 0, dy: 0 });
+          return;
+        }
+        const annotation = nativeRunToTextAnnotation(activePage.id, run);
+        dragRef.current = {
+          mode: 'move',
+          start: point,
+          last: point,
+          pageId: activePage.id,
+          annotationId: annotation.id,
+          draft: annotation,
+          commitNative: true,
+        };
+        setMovePreview({ id: annotation.id, dx: 0, dy: 0 });
       }
       return;
     }
@@ -474,7 +500,16 @@ function PdfEditorInner() {
       const overlayHit = findAnnotationAt(present, activePage.id, point);
       if (overlayHit?.type === 'text') {
         setPendingNative(null);
-        startTextEdit(overlayHit);
+        setSelectedId(overlayHit.id);
+        dragRef.current = {
+          mode: 'move',
+          start: point,
+          last: point,
+          pageId: activePage.id,
+          annotationId: overlayHit.id,
+          clickToEdit: true,
+        };
+        setMovePreview({ id: overlayHit.id, dx: 0, dy: 0 });
         return;
       }
       const run = hitTestNativeRun(pageTextRuns, point);
@@ -540,10 +575,27 @@ function PdfEditorInner() {
     if (session.mode === 'move' && session.annotationId) {
       const dx = point.x - session.start.x;
       const dy = point.y - session.start.y;
+      const moved = Math.abs(dx) > 0.0005 || Math.abs(dy) > 0.0005;
       dragRef.current = null;
       setMovePreview(null);
-      if (Math.abs(dx) > 0.0005 || Math.abs(dy) > 0.0005) {
+      if (session.commitNative && session.draft?.type === 'text') {
+        if (moved) {
+          set((doc) => addAnnotation(doc, { ...moveAnnotation(session.draft!, dx, dy), coverOriginal: true } as TextAnnotation));
+          setSelectedId(session.annotationId);
+        } else {
+          setSelectedId(null);
+        }
+        setPendingNative(null);
+        return;
+      }
+      if (moved) {
         set((doc) => translateAnnotation(doc, session.annotationId!, dx, dy));
+        setSelectedId(session.annotationId);
+        return;
+      }
+      if (session.clickToEdit) {
+        const target = present.annotations.find((item) => item.id === session.annotationId);
+        if (target?.type === 'text') startTextEdit(target);
       }
       return;
     }
@@ -609,12 +661,20 @@ function PdfEditorInner() {
   const pageAnnotations = useMemo(() => {
     if (!activePage) return [];
     const items = annotationsForPage(present, activePage.id);
-    const withPending =
+    let withPending =
       pendingNative && pendingNative.pageId === activePage.id && !items.some((item) => item.id === pendingNative.id)
-        ? [...items, { ...pendingNative, text: editDraft }]
+        ? [...items, { ...pendingNative, text: editingId === pendingNative.id ? editDraft : pendingNative.text }]
         : items.map((item) =>
             item.id === editingId && item.type === 'text' ? { ...item, text: editDraft } : item,
           );
+    if (
+      movePreview &&
+      !withPending.some((item) => item.id === movePreview.id) &&
+      dragRef.current?.draft &&
+      (Math.abs(movePreview.dx) > 0.0005 || Math.abs(movePreview.dy) > 0.0005)
+    ) {
+      withPending = [...withPending, dragRef.current.draft];
+    }
     if (!movePreview) return withPending;
     return withPending.map((item) =>
       item.id === movePreview.id ? moveAnnotation(item, movePreview.dx, movePreview.dy) : item,

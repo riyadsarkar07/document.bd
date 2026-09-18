@@ -23,34 +23,51 @@ export function AnnotationSvg({
 
   if (annotation.type === 'text') {
     const native = annotation.source === 'native';
+    const cover = native && annotation.coverOriginal ? annotation.coverBox ?? annotation : null;
     return (
-      <div
-        className={cn(
-          'pointer-events-none absolute whitespace-pre leading-none',
-          native ? 'overflow-visible' : 'overflow-hidden',
-          selected && !native && 'ring-2 ring-accent',
-        )}
-        style={{
-          left: `${annotation.x * 100}%`,
-          top: `${annotation.y * 100}%`,
-          width: `${annotation.width * 100}%`,
-          height: `${annotation.fontSize * height}px`,
-          color: annotation.color,
-          fontSize: Math.max(4, annotation.fontSize * height),
-          fontWeight: annotation.bold ? 700 : 400,
-          fontFamily: annotation.fontFamily || 'Helvetica, Arial, sans-serif',
-          textAlign: annotation.align || 'left',
-          background: native && annotation.coverOriginal ? '#fff' : undefined,
-          border: 'none',
-          outline: 'none',
-          boxShadow: 'none',
-          textDecoration: 'none',
-          lineHeight: 1,
-          padding: 0,
-        }}
-      >
-        {annotation.text || (native ? '' : 'Text')}
-      </div>
+      <>
+        {cover ? (
+          <div
+            className="pointer-events-none absolute"
+            style={{
+              left: `${cover.x * 100}%`,
+              top: `${cover.y * 100}%`,
+              width: `${cover.width * 100}%`,
+              height: `${annotation.fontSize * height}px`,
+              background: '#fff',
+              border: 'none',
+              outline: 'none',
+              boxShadow: 'none',
+            }}
+          />
+        ) : null}
+        <div
+          className={cn(
+            'pointer-events-none absolute whitespace-pre leading-none',
+            native ? 'overflow-visible' : 'overflow-hidden',
+            selected && !native && 'ring-2 ring-accent',
+          )}
+          style={{
+            left: `${annotation.x * 100}%`,
+            top: `${annotation.y * 100}%`,
+            width: `${annotation.width * 100}%`,
+            height: `${annotation.fontSize * height}px`,
+            color: annotation.color,
+            fontSize: Math.max(4, annotation.fontSize * height),
+            fontWeight: annotation.bold ? 700 : 400,
+            fontFamily: annotation.fontFamily || 'Helvetica, Arial, sans-serif',
+            textAlign: annotation.align || 'left',
+            border: 'none',
+            outline: 'none',
+            boxShadow: 'none',
+            textDecoration: 'none',
+            lineHeight: 1,
+            padding: 0,
+          }}
+        >
+          {annotation.text || (native ? '' : 'Text')}
+        </div>
+      </>
     );
   }
 

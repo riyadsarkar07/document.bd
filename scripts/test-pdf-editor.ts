@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
 import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { addAnnotation, deletePage, movePage, nativeRunToTextAnnotation, rotatePage } from '../src/lib/pdf-editor/document';
+import { addAnnotation, deletePage, movePage, nativeRunToTextAnnotation, rotatePage, translateAnnotation } from '../src/lib/pdf-editor/document';
 import { exportEditedPdf } from '../src/lib/pdf-editor/export';
 import { pageVisualSize } from '../src/lib/pdf-editor/geometry';
 import { extractNativeTextRuns, hitTestNativeRun, visibleNativeRuns } from '../src/lib/pdf-editor/native-text';
@@ -365,6 +365,7 @@ async function main() {
   nativeAnn.id = 'native_edit';
   nativeAnn.text = 'NATIVE_EDIT_OK';
   ok(nativeAnn.source === 'native' && nativeAnn.coverOriginal === true, 'native annotation covers original glyphs');
+  ok(Boolean(nativeAnn.coverBox), 'native annotation pins a cover box on the original glyphs');
   ok(nativeAnn.color === '#c41e3a', 'native annotation keeps the extracted PDF fill color');
   ok(Math.round(nativeAnn.fontSize * 792) === 22, 'inspector shows PDF points, not a 0-1 fraction that rounds to 1');
 
@@ -387,6 +388,53 @@ async function main() {
   ok(nativeOut.getPageCount() === 1, 'native-edit export writes the edited page');
   ok(pdfContains(nativeExported, 'NATIVE_EDIT_OK'), 'replacement text persisted in exported PDF');
   ok(pdfContains(nativeExported, 'Source page 1'), 'original glyphs remain under the white cover');
+
+  const dx = 0.18;
+  const dy = 0.12;
+  let movedDoc = translateAnnotation(nativeDoc, 'native_edit', dx, dy);
+  movedDoc = translateAnnotation(movedDoc, 'native_edit', -0.06, -0.04);
+  const movedAnn = movedDoc.annotations[0];
+  const expectedX = nativeAnn.x + dx - 0.06;
+  const expectedY = nativeAnn.y + dy - 0.04;
+  ok(movedAnn.type === 'text' && Math.abs(movedAnn.x - expectedX) < 1e-9, 'drag updates PDF-space x left/right, not a screen offset');
+  ok(movedAnn.type === 'text' && Math.abs(movedAnn.y - expectedY) < 1e-9, 'drag updates PDF-space y up/down');
+  ok(
+    movedAnn.type === 'text' &&
+      movedAnn.coverBox !== undefined &&
+      Math.abs(movedAnn.coverBox.x - nativeAnn.x) < 1e-9 &&
+      Math.abs(movedAnn.coverBox.y - nativeAnn.y) < 1e-9,
+    'cover box stays on the original glyphs after a diagonal move',
+  );
+  ok(movedAnn.type === 'text' && movedAnn.fontSize === nativeAnn.fontSize && movedAnn.color === nativeAnn.color, 'drag keeps font size and color');
+
+  const movedExported = await exportEditedPdf(sourceBytes, movedDoc);
+  const movedContent = decodePdfStreams(movedExported);
+  const origX = nativeAnn.x * 612;
+  const origDrawY =
+    792 - (nativeAnn.y + nativeAnn.height) * 792 + Math.max(1, nativeAnn.height * 792) - Math.max(4, nativeAnn.fontSize * 792);
+  const newX = (movedAnn.type === 'text' ? movedAnn.x : 0) * 612;
+  const newDrawY =
+    movedAnn.type === 'text'
+      ? 792 -
+        (movedAnn.y + movedAnn.height) * 792 +
+        Math.max(1, movedAnn.height * 792) -
+        Math.max(4, movedAnn.fontSize * 792)
+      : 0;
+  ok(!textShowsAtBaseline(movedContent, origX, origDrawY)?.block.includes('NATIVE_EDIT_OK'), 'moved replacement is not drawn at the original baseline');
+  ok(Boolean(textShowsAtBaseline(movedContent, newX, newDrawY)), 'moved replacement is drawn at the new PDF baseline');
+  ok(pdfContains(movedExported, 'NATIVE_EDIT_OK'), 'moved replacement persists in exported PDF');
+  const movedCovers = parseCoverRects(movedContent);
+  ok(
+    movedCovers.some((c) => Math.abs(c.x - origX) < 2 && Math.abs(c.height - nativeAnn.fontSize * 792) < 1.2),
+    'white cover stays on the original glyph box after drag',
+  );
+  const movedReopen = await getDocument({ data: movedExported.slice(), isEvalSupported: false, useSystemFonts: true }).promise;
+  const movedRuns = await extractNativeTextRuns(movedReopen, nativeDoc.pages[0]);
+  const replaced = movedRuns.find((run) => run.text.includes('NATIVE_EDIT_OK'));
+  ok(Boolean(replaced), 'reopened export exposes the moved replacement text');
+  ok(Boolean(replaced && Math.abs(replaced.x - expectedX) < 0.02), 'reopened replacement keeps the dragged x');
+  ok(Boolean(replaced && Math.abs(replaced.y - expectedY) < 0.02), 'reopened replacement keeps the dragged y');
+  ok(movedRuns.some((run) => run.text.includes('Source page 1')), 'original glyphs remain after move → export → reopen');
 
   const overlayDoc: PdfEditorDocument = {
     fileName: 'overlay-add-text.pdf',
@@ -581,7 +629,7 @@ async function main() {
   };
 
   const zoomLevels = [0.5, 1, 1.35, 2];
-  let firstContent = '';
+  let firstGeometry = '';
   for (const zoom of zoomLevels) {
     void zoom;
     const exported = await exportEditedPdf(bill.bytes, billDoc);
@@ -614,8 +662,19 @@ async function main() {
       ok(cover.width < bill.width * 0.35, 'white cover is not an oversized page block');
       ok(cover.height < bill.height * 0.08, 'white cover height stays near the glyph height');
     }
-    if (!firstContent) firstContent = content;
-    else ok(content === firstContent, 'export content is identical across editor zoom levels');
+    const geometry = JSON.stringify({
+      size,
+      origin: { x: box.x, y: box.y },
+      texts: texts.map((t) => ({ x: +t.x.toFixed(3), y: +t.y.toFixed(3) })),
+      covers: covers.map((c) => ({
+        x: +c.x.toFixed(3),
+        y: +c.y.toFixed(3),
+        width: +c.width.toFixed(3),
+        height: +c.height.toFixed(3),
+      })),
+    });
+    if (!firstGeometry) firstGeometry = geometry;
+    else ok(geometry === firstGeometry, 'export geometry is identical across editor zoom levels');
   }
 
   const rotatedBillDoc: PdfEditorDocument = {
@@ -717,6 +776,56 @@ async function main() {
   ok(Boolean(valueText?.block.includes(teal)), 'exported VALUE & RULE keeps its teal fill');
   ok(Boolean(monthText?.block.includes(' 8 Tf')), 'exported MONTH keeps 8pt size');
   ok(Boolean(valueText?.block.includes(' 8 Tf')), 'exported VALUE & RULE keeps 8pt size');
+
+  const monthDx = 0.12;
+  const monthDy = 0.08;
+  const movedMonthDoc = translateAnnotation({ ...realBillState, annotations: [monthAnnotation] }, 'bill_month', monthDx, monthDy);
+  const movedMonthAnn = movedMonthDoc.annotations[0];
+  ok(
+    movedMonthAnn.type === 'text' &&
+      movedMonthAnn.coverBox !== undefined &&
+      Math.abs(movedMonthAnn.coverBox.x - monthAnnotation.x) < 1e-9 &&
+      Math.abs(movedMonthAnn.y - (monthAnnotation.y + monthDy)) < 1e-9,
+    'utility-bill MONTH drag moves PDF-space y while pinning the original cover',
+  );
+  ok(
+    movedMonthAnn.type === 'text' &&
+      movedMonthAnn.color === monthAnnotation.color &&
+      movedMonthAnn.fontSize === monthAnnotation.fontSize,
+    'moved MONTH keeps teal color and 8pt size',
+  );
+  const movedMonthExported = await exportEditedPdf(billBytes, movedMonthDoc);
+  const movedMonthContent = decodePdfStreams(movedMonthExported);
+  const movedMonthX = (movedMonthAnn.type === 'text' ? movedMonthAnn.x : 0) * billViewport.width;
+  const movedMonthDrawY =
+    movedMonthAnn.type === 'text'
+      ? billViewport.height -
+        (movedMonthAnn.y + movedMonthAnn.height) * billViewport.height +
+        Math.max(1, movedMonthAnn.height * billViewport.height) -
+        Math.max(4, movedMonthAnn.fontSize * billViewport.height)
+      : 0;
+  ok(Boolean(textShowsAtBaseline(movedMonthContent, movedMonthX, movedMonthDrawY)), 'moved MONTH replacement is drawn at the new PDF baseline');
+  ok(
+    !textShowsAtBaseline(movedMonthContent, headerMonth!.x * billViewport.width, monthBaselineY)?.block.includes('MONTH EDITED'),
+    'moved MONTH replacement leaves the original baseline',
+  );
+  ok(
+    parseCoverRects(movedMonthContent).some(
+      (c) => Math.abs(c.x - headerMonth!.x * billViewport.width) < 2 && Math.abs(c.height - 8) < 0.8,
+    ),
+    'moved MONTH keeps the white cover on the original glyph box',
+  );
+  const movedMonthReopen = await getDocument({
+    data: movedMonthExported.slice(),
+    isEvalSupported: false,
+    useSystemFonts: true,
+  }).promise;
+  const movedMonthRuns = await extractNativeTextRuns(movedMonthReopen, realBillState.pages[0]);
+  const movedMonthRun = movedMonthRuns.find((run) => run.text.includes('MONTH EDITED'));
+  ok(Boolean(movedMonthRun), 'reopened bill exposes moved MONTH text');
+  ok(Boolean(movedMonthRun && Math.abs(movedMonthRun.x - (headerMonth!.x + monthDx)) < 0.02), 'reopened MONTH keeps dragged x');
+  ok(Boolean(movedMonthRun && Math.abs(movedMonthRun.y - (headerMonth!.y + monthDy)) < 0.02), 'reopened MONTH keeps dragged y');
+  ok(movedMonthRuns.some((run) => run.text === 'MONTH'), 'original MONTH glyphs remain after move → export → reopen');
   const billCovers = parseCoverRects(realContent);
   const monthCover = billCovers.find(
     (c) => Math.abs(c.x - headerMonth!.x * billViewport.width) < 2 && Math.abs(c.height - 8) < 0.8,
