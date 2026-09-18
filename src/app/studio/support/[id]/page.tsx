@@ -13,6 +13,7 @@ import {
   listSupportAttachments,
   listSupportMessages,
   listSupportNotes,
+  markSupportTicketInReview,
   replySupportTicket,
   subscribeSupportTicket,
   updateSupportTicket,
@@ -92,6 +93,18 @@ export default function SupportTicketPage() {
       void load();
     });
   }, [ticketId, load]);
+
+  useEffect(() => {
+    if (!isAdmin || !ticketId || ticket?.status !== 'open') return;
+    let cancelled = false;
+    void markSupportTicketInReview(ticketId).then((res) => {
+      if (cancelled || !res.ticket) return;
+      setTicket(res.ticket);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, ticketId, ticket?.status]);
 
   const attachmentsByMessage = useMemo(() => {
     const map = new Map<string, SupportAttachment[]>();
@@ -222,26 +235,30 @@ export default function SupportTicketPage() {
               </div>
             )}
             <div className="space-y-3">
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={cn(
-                    'rounded-2xl border px-4 py-3',
-                    msg.authorRole === 'admin'
-                      ? 'border-info/25 bg-info/5'
-                      : 'border-line bg-surface-raised',
-                  )}
-                >
-                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs font-semibold text-primary">
-                      {msg.authorRole === 'admin' ? 'Support' : msg.authorEmail || 'You'}
+              {messages.map((msg) => {
+                const fromAdmin = msg.authorRole === 'admin';
+                return (
+                  <div key={msg.id} className={cn('flex', fromAdmin ? 'justify-end' : 'justify-start')}>
+                    <div
+                      className={cn(
+                        'max-w-[85%] rounded-2xl border px-4 py-3',
+                        fromAdmin
+                          ? 'border-info/25 bg-info/5'
+                          : 'border-line bg-surface-raised',
+                      )}
+                    >
+                      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs font-semibold text-primary">
+                          {fromAdmin ? 'Support' : msg.authorEmail || 'You'}
+                        </div>
+                        <div className="font-mono text-[10.5px] text-dimm">{timeAgo(msg.createdAt)}</div>
+                      </div>
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-secondary">{msg.body}</p>
+                      <AttachmentList items={attachmentsByMessage.map.get(msg.id) ?? []} />
                     </div>
-                    <div className="font-mono text-[10.5px] text-dimm">{timeAgo(msg.createdAt)}</div>
                   </div>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-secondary">{msg.body}</p>
-                  <AttachmentList items={attachmentsByMessage.map.get(msg.id) ?? []} />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
 

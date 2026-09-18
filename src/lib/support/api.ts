@@ -359,6 +359,28 @@ export async function replySupportTicket(input: {
   return { message, error: null };
 }
 
+export async function markSupportTicketInReview(ticketId: string): Promise<{
+  ticket: SupportTicket | null;
+  error: string | null;
+}> {
+  const { data, error } = await supabase.rpc('mark_support_ticket_in_review', {
+    p_ticket_id: ticketId,
+  });
+  if (error || !data) {
+    return { ticket: null, error: fail(error?.message ?? 'Could not update ticket.') };
+  }
+  const ticket = mapTicket(data as TicketRow);
+  if (ticket.status === 'in_review') {
+    void logAudit({
+      action: 'support.ticket.updated',
+      targetType: 'support_ticket',
+      targetId: ticket.ticketNo,
+      metadata: { status: ticket.status, reason: 'admin_view' },
+    });
+  }
+  return { ticket, error: null };
+}
+
 export async function updateSupportTicket(input: {
   ticketId: string;
   status?: SupportStatus;

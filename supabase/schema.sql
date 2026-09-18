@@ -759,6 +759,39 @@ $$;
 revoke all on function public.update_support_ticket(uuid, text, text, boolean) from public;
 grant execute on function public.update_support_ticket(uuid, text, text, boolean) to authenticated;
 
+-- Admin view of an Open ticket moves it to In Review. Other statuses
+-- (waiting_for_user / escalated / resolved / closed / in_review) are unchanged.
+create or replace function public.mark_support_ticket_in_review(p_ticket_id uuid)
+returns public.support_tickets
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  ticket public.support_tickets;
+begin
+  if not public.is_admin() then
+    raise exception 'admin required';
+  end if;
+  update public.support_tickets
+     set status = 'in_review',
+         updated_at = now()
+   where id = p_ticket_id
+     and status = 'open'
+  returning * into ticket;
+  if ticket.id is null then
+    select * into ticket from public.support_tickets where id = p_ticket_id;
+    if ticket.id is null then
+      raise exception 'ticket not found';
+    end if;
+  end if;
+  return ticket;
+end;
+$$;
+
+revoke all on function public.mark_support_ticket_in_review(uuid) from public;
+grant execute on function public.mark_support_ticket_in_review(uuid) to authenticated;
+
 -- Admin-only internal note. Never visible through support_messages.
 create or replace function public.add_support_note(p_ticket_id uuid, p_body text)
 returns public.support_notes

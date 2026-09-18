@@ -79,6 +79,9 @@ function main() {
   assert(schema.includes('alter publication supabase_realtime add table public.support_messages'), 'realtime on messages');
   assert(schema.includes('replica identity full'), 'realtime filters can use ticket_id');
   assert(schema.includes("byte_size <= 8388608"), 'attachment size enforced in SQL');
+  assert(schema.includes('create or replace function public.mark_support_ticket_in_review'), 'in-review RPC exists');
+  assert(/create or replace function public.mark_support_ticket_in_review[\s\S]*if not public.is_admin\(\) then/.test(schema), 'in-review RPC is admin-only');
+  assert(/and status = 'open'/.test(schema) && schema.includes("set status = 'in_review'"), 'in-review RPC only updates open tickets');
 
   console.log('\n[4] app wiring\n');
   const sidebar = readFileSync(join(ROOT, 'src/components/layout/sidebar.tsx'), 'utf8');
@@ -99,6 +102,9 @@ function main() {
   assert(api.includes("rpc('create_support_ticket'") && api.includes("rpc('update_support_ticket'"), 'client uses RPCs, not trusted ids');
   assert(!api.includes('p_user_id') && !api.includes('user_id: input'), 'client never sends a user id to create/update');
   assert(uploads.includes('validateSupportAttachment'), 'attachment sniffing exists');
+  assert(thread.includes("fromAdmin ? 'justify-end' : 'justify-start'"), 'admin bubbles right, user bubbles left');
+  assert(thread.includes('markSupportTicketInReview') && api.includes("rpc('mark_support_ticket_in_review'"), 'admin view marks open tickets in review');
+  assert(thread.includes("ticket?.status !== 'open'"), 'auto in-review skips non-open tickets');
 
   if (failures) {
     console.error(`\n${failures} support check(s) failed.`);
