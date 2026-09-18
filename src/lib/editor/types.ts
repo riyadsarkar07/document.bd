@@ -161,6 +161,12 @@ export const UNHCR_FIELD_KEYS = [
 
 export type UnhcrFieldKey = (typeof UNHCR_FIELD_KEYS)[number];
 
+export const UNHCR_CODE_KEYS = ['barcode1', 'barcode2', 'qr'] as const;
+
+export type UnhcrCodeKey = (typeof UNHCR_CODE_KEYS)[number];
+
+export type UnhcrOverlayKey = UnhcrFieldKey | 'photo' | UnhcrCodeKey;
+
 export interface UnhcrSnapshot {
   unhcrNo: string;
   name: string;
@@ -175,4 +181,17 @@ export interface UnhcrSnapshot {
   photoW: number;
   photoH: number;
   photoDataUrl?: string | null;
+  barcodePayload: string;
+  barcode1X: number;
+  barcode1Y: number;
+  barcode1W: number;
+  barcode1H: number;
+  barcode2X: number;
+  barcode2Y: number;
+  barcode2W: number;
+  barcode2H: number;
+  qrPayload: string;
+  qrX: number;
+  qrY: number;
+  qrSize: number;
 }

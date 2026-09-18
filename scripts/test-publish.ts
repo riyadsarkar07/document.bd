@@ -35,7 +35,8 @@ import {
 } from '../src/lib/workspace/document-kinds';
 import { PAGE_RECOVER_CONFIG, BUSINESS_MANAGER_CONFIG, normalizeServiceSnapshot } from '../src/lib/constants/services';
 import { bytesToPdfDataUrl, pdfDataUrlToBytes } from '../src/lib/pdf-editor/serialize';
-import { normalizeUnhcrSnapshot, UNHCR_PHOTO_DEFAULT } from '../src/lib/constants/unhcr';
+import { normalizeUnhcrSnapshot, UNHCR_BARCODE1_DEFAULT, UNHCR_BARCODE2_DEFAULT, UNHCR_PHOTO_DEFAULT, UNHCR_QR_DEFAULT } from '../src/lib/constants/unhcr';
+import { UNHCR_BARCODE_TEST_PAYLOAD, UNHCR_QR_TEST_PAYLOAD } from '../src/lib/unhcrCodes';
 
 const ROOT = process.cwd();
 
@@ -351,6 +352,19 @@ function main() {
     photoW: 640,
     photoH: 820,
     photoDataUrl: TINY_JPEG,
+    barcodePayload: UNHCR_BARCODE_TEST_PAYLOAD,
+    barcode1X: 80,
+    barcode1Y: 1040,
+    barcode1W: 700,
+    barcode1H: 110,
+    barcode2X: 90,
+    barcode2Y: 1180,
+    barcode2W: 700,
+    barcode2H: 110,
+    qrPayload: UNHCR_QR_TEST_PAYLOAD,
+    qrX: 2200,
+    qrY: 100,
+    qrSize: 240,
   };
   const packedUnhcr = packDetails('', stored, { docKind: 'unhcr', doc: unhcrDoc });
   const unpackedUnhcr = unpackDetails(packedUnhcr);
@@ -364,6 +378,13 @@ function main() {
   assert(restoredUnhcr.photoX === 80 && restoredUnhcr.photoY === 110, 'UNHCR pack restores photo X/Y');
   assert(restoredUnhcr.photoW === 640 && restoredUnhcr.photoH === 820, 'UNHCR pack restores photo size');
   assert(restoredUnhcr.photoDataUrl === TINY_JPEG, 'UNHCR pack restores photo data URL');
+  assert(restoredUnhcr.barcodePayload === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR pack restores barcode TEST payload');
+  assert(restoredUnhcr.barcode1X === 80 && restoredUnhcr.barcode1Y === 1040, 'UNHCR pack restores barcode 1 X/Y');
+  assert(restoredUnhcr.barcode1W === 700 && restoredUnhcr.barcode1H === 110, 'UNHCR pack restores barcode 1 size');
+  assert(restoredUnhcr.barcode2X === 90 && restoredUnhcr.barcode2Y === 1180, 'UNHCR pack restores barcode 2 X/Y');
+  assert(restoredUnhcr.barcode2W === 700 && restoredUnhcr.barcode2H === 110, 'UNHCR pack restores barcode 2 size');
+  assert(restoredUnhcr.qrPayload === UNHCR_QR_TEST_PAYLOAD, 'UNHCR pack restores QR TEST payload');
+  assert(restoredUnhcr.qrX === 2200 && restoredUnhcr.qrY === 100 && restoredUnhcr.qrSize === 240, 'UNHCR pack restores QR X/Y/size');
   assert(!JSON.stringify(unpackedUnhcr).includes('Facebook Imposter'), 'UNHCR vault payload omits the case banner');
   const normalizedUnhcr = normalizeUnhcrSnapshot({});
   assert(normalizedUnhcr.photoX === UNHCR_PHOTO_DEFAULT.x && normalizedUnhcr.photoY === UNHCR_PHOTO_DEFAULT.y, 'UNHCR photo defaults to cyan placeholder box');
@@ -373,6 +394,13 @@ function main() {
   assert(normalizedUnhcr.layouts.sex.fontFamily === 'arial-bold', 'UNHCR sex defaults to Arial Bold');
   assert(normalizedUnhcr.layouts.expiredDate.fontFamily === 'arial' && normalizedUnhcr.layouts.expiredDate.x === 1605 && normalizedUnhcr.layouts.expiredDate.y === 1251, 'UNHCR expired date defaults to Arial Regular at 1605,1251');
   assert(normalizedUnhcr.layouts.dob.x === 893 && normalizedUnhcr.layouts.dob.y === 760, 'UNHCR DOB defaults to 893,760');
+  assert(normalizedUnhcr.barcodePayload === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR barcode defaults to TEST ID');
+  assert(normalizedUnhcr.barcode1X === UNHCR_BARCODE1_DEFAULT.x && normalizedUnhcr.barcode1Y === UNHCR_BARCODE1_DEFAULT.y, 'UNHCR barcode 1 defaults to 70,1028');
+  assert(normalizedUnhcr.barcode1W === UNHCR_BARCODE1_DEFAULT.w && normalizedUnhcr.barcode1H === UNHCR_BARCODE1_DEFAULT.h, 'UNHCR barcode 1 default size is 720×118');
+  assert(normalizedUnhcr.barcode2X === UNHCR_BARCODE2_DEFAULT.x && normalizedUnhcr.barcode2Y === UNHCR_BARCODE2_DEFAULT.y, 'UNHCR barcode 2 defaults to 70,1164');
+  assert(normalizedUnhcr.barcode2W === UNHCR_BARCODE2_DEFAULT.w && normalizedUnhcr.barcode2H === UNHCR_BARCODE2_DEFAULT.h, 'UNHCR barcode 2 matches barcode 1 size');
+  assert(normalizedUnhcr.qrPayload === UNHCR_QR_TEST_PAYLOAD, 'UNHCR QR defaults to TEST sample data');
+  assert(normalizedUnhcr.qrX === UNHCR_QR_DEFAULT.x && normalizedUnhcr.qrY === UNHCR_QR_DEFAULT.y && normalizedUnhcr.qrSize === UNHCR_QR_DEFAULT.size, 'UNHCR QR defaults to 2188,86 size 236');
   const editedUnhcr = {
     ...restoredUnhcr,
     name: 'Updated Subject',
@@ -381,6 +409,19 @@ function main() {
     photoY: 120,
     photoW: 650,
     photoH: 830,
+    barcodePayload: 'TEST-UNHCR-REF-0002',
+    barcode1X: 100,
+    barcode1Y: 1050,
+    barcode1W: 680,
+    barcode1H: 108,
+    barcode2X: 110,
+    barcode2Y: 1190,
+    barcode2W: 680,
+    barcode2H: 108,
+    qrPayload: 'TEST DATA — UNHCR ID EDITOR SAMPLE\nREF: TEST-UNHCR-QR-0002',
+    qrX: 2210,
+    qrY: 110,
+    qrSize: 250,
   };
   const packedUnhcrEdit = packDetails('', stored, { docKind: 'unhcr', doc: editedUnhcr });
   const unpackedUnhcrEdit = unpackDetails(packedUnhcrEdit);
@@ -393,6 +434,13 @@ function main() {
   assert(restoredUnhcrEdit.photoX === 90 && restoredUnhcrEdit.photoY === 120, 'UNHCR re-save persists updated photo X/Y');
   assert(restoredUnhcrEdit.photoW === 650 && restoredUnhcrEdit.photoH === 830, 'UNHCR re-save persists updated photo size');
   assert(restoredUnhcrEdit.photoDataUrl === TINY_JPEG, 'UNHCR re-save persists photo data URL');
+  assert(restoredUnhcrEdit.barcodePayload === 'TEST-UNHCR-REF-0002', 'UNHCR re-save persists barcode TEST payload');
+  assert(restoredUnhcrEdit.barcode1X === 100 && restoredUnhcrEdit.barcode1Y === 1050, 'UNHCR re-save persists barcode 1 X/Y');
+  assert(restoredUnhcrEdit.barcode1W === 680 && restoredUnhcrEdit.barcode1H === 108, 'UNHCR re-save persists barcode 1 size');
+  assert(restoredUnhcrEdit.barcode2X === 110 && restoredUnhcrEdit.barcode2Y === 1190, 'UNHCR re-save persists barcode 2 X/Y');
+  assert(restoredUnhcrEdit.barcode2W === 680 && restoredUnhcrEdit.barcode2H === 108, 'UNHCR re-save persists barcode 2 size');
+  assert(restoredUnhcrEdit.qrPayload.includes('TEST DATA'), 'UNHCR re-save persists QR TEST payload');
+  assert(restoredUnhcrEdit.qrX === 2210 && restoredUnhcrEdit.qrY === 110 && restoredUnhcrEdit.qrSize === 250, 'UNHCR re-save persists QR X/Y/size');
 
   const pdfDoc = {
     fileName: 'brief.pdf',

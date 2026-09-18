@@ -7,7 +7,9 @@ import { Camera, Download, PanelRightOpen, Type } from 'lucide-react';
 import { useDocumentEditor } from '@/lib/editor/use-document-editor';
 import {
   UNHCR_BACKGROUND,
+  UNHCR_BARCODE_RANGES,
   UNHCR_CASE_LABEL,
+  UNHCR_CODE_LABELS,
   UNHCR_DEFAULT_LAYOUTS,
   UNHCR_DEFAULTS,
   UNHCR_DOC_HEIGHT,
@@ -16,9 +18,13 @@ import {
   UNHCR_FONT_OPTIONS,
   UNHCR_LAYOUT_RANGES,
   UNHCR_PHOTO_RANGES,
+  UNHCR_QR_RANGES,
+  isUnhcrCodeKey,
   normalizeUnhcrSnapshot,
+  unhcrCodeBox,
 } from '@/lib/constants/unhcr';
-import type { UnhcrFieldKey, UnhcrLayout, UnhcrSnapshot } from '@/lib/editor/types';
+import type { UnhcrCodeKey, UnhcrFieldKey, UnhcrLayout, UnhcrOverlayKey, UnhcrSnapshot } from '@/lib/editor/types';
+import { UNHCR_CODE_KEYS } from '@/lib/editor/types';
 import { renderUnhcrCard } from '@/lib/renderers/unhcrRenderer';
 import { loadDataUrlImage, loadImage } from '@/lib/images';
 import { validateImageFile } from '@/lib/uploads';
@@ -71,7 +77,7 @@ function UnhcrEditorInner() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
-  const [activeField, setActiveField] = useState<UnhcrFieldKey | 'photo'>('unhcrNo');
+  const [activeField, setActiveField] = useState<UnhcrOverlayKey>('unhcrNo');
   const [moveStep, setMoveStep] = useState(1);
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -100,7 +106,7 @@ function UnhcrEditorInner() {
   const photoImageRef = useRef(photoImage);
   photoImageRef.current = photoImage;
   const dragRef = useRef<{
-    field: UnhcrFieldKey | 'photo';
+    field: UnhcrOverlayKey;
     startX: number;
     startY: number;
     origX: number;
@@ -219,14 +225,18 @@ function UnhcrEditorInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const activeLayout = activeField === 'photo'
+  const isCodeField = isUnhcrCodeKey(activeField);
+  const barcodeField: 'barcode1' | 'barcode2' | null =
+    activeField === 'barcode1' || activeField === 'barcode2' ? activeField : null;
+  const isBarcodeField = barcodeField !== null;
+  const activeLayout = activeField === 'photo' || isCodeField
     ? UNHCR_DEFAULT_LAYOUTS.unhcrNo
     : (present.layouts[activeField] ?? UNHCR_DEFAULT_LAYOUTS[activeField]);
 
   const setLayout = useCallback(
     <K extends keyof UnhcrLayout>(key: K, value: UnhcrLayout[K]) => {
       const field = activeFieldRef.current;
-      if (field === 'photo') return;
+      if (field === 'photo' || isUnhcrCodeKey(field)) return;
       const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
       setField('layouts', {
         ...presentRef.current.layouts,
@@ -250,6 +260,39 @@ function UnhcrEditorInner() {
     [setSnapshot],
   );
 
+  const patchCode = useCallback(
+    (field: UnhcrCodeKey, patch: { x?: number; y?: number; w?: number; h?: number }) => {
+      setSnapshot((prev) => {
+        if (field === 'barcode1') {
+          return {
+            ...prev,
+            barcode1X: patch.x ?? prev.barcode1X,
+            barcode1Y: patch.y ?? prev.barcode1Y,
+            barcode1W: patch.w ?? prev.barcode1W,
+            barcode1H: patch.h ?? prev.barcode1H,
+          };
+        }
+        if (field === 'barcode2') {
+          return {
+            ...prev,
+            barcode2X: patch.x ?? prev.barcode2X,
+            barcode2Y: patch.y ?? prev.barcode2Y,
+            barcode2W: patch.w ?? prev.barcode2W,
+            barcode2H: patch.h ?? prev.barcode2H,
+          };
+        }
+        const size = patch.w ?? patch.h ?? prev.qrSize;
+        return {
+          ...prev,
+          qrX: patch.x ?? prev.qrX,
+          qrY: patch.y ?? prev.qrY,
+          qrSize: size,
+        };
+      });
+    },
+    [setSnapshot],
+  );
+
   const moveField = useCallback(
     (dx: number, dy: number) => {
       const field = activeFieldRef.current;
@@ -258,6 +301,14 @@ function UnhcrEditorInner() {
         setPhoto({
           photoX: clamp(snap.photoX + dx * moveStep, 0, UNHCR_DOC_WIDTH),
           photoY: clamp(snap.photoY + dy * moveStep, 0, UNHCR_DOC_HEIGHT),
+        });
+        return;
+      }
+      if (isUnhcrCodeKey(field)) {
+        const box = unhcrCodeBox(presentRef.current, field);
+        patchCode(field, {
+          x: clamp(box.x + dx * moveStep, 0, UNHCR_DOC_WIDTH),
+          y: clamp(box.y + dy * moveStep, 0, UNHCR_DOC_HEIGHT),
         });
         return;
       }
@@ -271,13 +322,13 @@ function UnhcrEditorInner() {
         },
       });
     },
-    [setField, setPhoto, moveStep],
+    [setField, setPhoto, patchCode, moveStep],
   );
 
   const bumpFont = useCallback(
     (delta: number) => {
       const field = activeFieldRef.current;
-      if (field === 'photo') return;
+      if (field === 'photo' || isUnhcrCodeKey(field)) return;
       const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
       setLayout(
         'fontSize',
@@ -285,6 +336,23 @@ function UnhcrEditorInner() {
       );
     },
     [setLayout],
+  );
+
+  const bumpCodeSize = useCallback(
+    (delta: number) => {
+      const field = activeFieldRef.current;
+      if (!isUnhcrCodeKey(field)) return;
+      const box = unhcrCodeBox(presentRef.current, field);
+      if (field === 'qr') {
+        patchCode(field, { w: clamp(box.w + delta, UNHCR_QR_RANGES.size.min, UNHCR_QR_RANGES.size.max) });
+        return;
+      }
+      const nextW = clamp(box.w + delta, UNHCR_BARCODE_RANGES.w.min, UNHCR_BARCODE_RANGES.w.max);
+      const ratio = box.w > 0 ? box.h / box.w : UNHCR_BARCODE_RANGES.h.default / UNHCR_BARCODE_RANGES.w.default;
+      const nextH = clamp(Math.round(nextW * ratio), UNHCR_BARCODE_RANGES.h.min, UNHCR_BARCODE_RANGES.h.max);
+      patchCode(field, { w: nextW, h: nextH });
+    },
+    [patchCode],
   );
 
   const bumpPhotoSize = useCallback(
@@ -502,8 +570,12 @@ function UnhcrEditorInner() {
     );
   }, []);
 
-  const hitField = useCallback((x: number, y: number): UnhcrFieldKey | 'photo' | null => {
+  const hitField = useCallback((x: number, y: number): UnhcrOverlayKey | null => {
     const snap = presentRef.current;
+    for (const key of UNHCR_CODE_KEYS) {
+      const box = unhcrCodeBox(snap, key);
+      if (x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) return key;
+    }
     let best: { key: UnhcrFieldKey; dist: number } | null = null;
     for (const field of UNHCR_FIELDS) {
       const layout = snap.layouts[field.key] ?? UNHCR_DEFAULT_LAYOUTS[field.key];
@@ -545,6 +617,15 @@ function UnhcrEditorInner() {
           origX: presentRef.current.photoX,
           origY: presentRef.current.photoY,
         };
+      } else if (isUnhcrCodeKey(field)) {
+        const box = unhcrCodeBox(presentRef.current, field);
+        dragRef.current = {
+          field,
+          startX: pos.x,
+          startY: pos.y,
+          origX: box.x,
+          origY: box.y,
+        };
       } else {
         const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
         dragRef.current = {
@@ -570,6 +651,13 @@ function UnhcrEditorInner() {
         setPhoto({
           photoX: clamp(Math.round(drag.origX + dx), 0, UNHCR_DOC_WIDTH),
           photoY: clamp(Math.round(drag.origY + dy), 0, UNHCR_DOC_HEIGHT),
+        });
+        return;
+      }
+      if (isUnhcrCodeKey(drag.field)) {
+        patchCode(drag.field, {
+          x: clamp(Math.round(drag.origX + dx), 0, UNHCR_DOC_WIDTH),
+          y: clamp(Math.round(drag.origY + dy), 0, UNHCR_DOC_HEIGHT),
         });
         return;
       }
@@ -605,7 +693,7 @@ function UnhcrEditorInner() {
       canvas.removeEventListener('pointerup', up);
       canvas.removeEventListener('pointercancel', up);
     };
-  }, [editor.rendered, canvasToDoc, hitField, setField, setPhoto]);
+  }, [editor.rendered, canvasToDoc, hitField, setField, setPhoto, patchCode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -613,11 +701,16 @@ function UnhcrEditorInner() {
     canvas.style.cursor = dragging ? 'grabbing' : 'grab';
   }, [dragging, editor.rendered]);
 
-  const activeMeta = useMemo(
-    () => (activeField === 'photo' ? { key: 'photo' as const, label: 'Photo' } : UNHCR_FIELDS.find((f) => f.key === activeField)),
-    [activeField],
-  );
-  const fieldOptions = UNHCR_FIELDS.map((f) => ({ value: f.key, label: f.label }));
+  const activeMeta = useMemo(() => {
+    if (activeField === 'photo') return { key: 'photo' as const, label: 'Photo' };
+    if (isUnhcrCodeKey(activeField)) return { key: activeField, label: UNHCR_CODE_LABELS[activeField] };
+    return UNHCR_FIELDS.find((f) => f.key === activeField);
+  }, [activeField]);
+  const fieldOptions = [
+    ...UNHCR_FIELDS.map((f) => ({ value: f.key, label: f.label })),
+    { value: 'photo', label: 'Photo' },
+    ...UNHCR_CODE_KEYS.map((key) => ({ value: key, label: UNHCR_CODE_LABELS[key] })),
+  ];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -729,11 +822,19 @@ function UnhcrEditorInner() {
             <Select
               aria-label="Select field"
               value={activeField}
-              onChange={(e) => setActiveField(e.target.value as UnhcrFieldKey | 'photo')}
-              options={[...fieldOptions, { value: 'photo', label: 'Photo' }]}
+              onChange={(e) => setActiveField(e.target.value as UnhcrOverlayKey)}
+              options={fieldOptions}
             />
 
-            {activeField !== 'photo' && (
+            {isCodeField && (
+              <p className="rounded-xl border border-line bg-surface-raised px-3 py-2 text-[10.5px] leading-relaxed text-muted">
+                {isBarcodeField
+                  ? `Both barcodes share the same Code 128 design. Scan returns only the TEST ID ${present.barcodePayload}.`
+                  : 'Square TEST QR. Scan returns sample test data only — not official identity.'}
+              </p>
+            )}
+
+            {activeField !== 'photo' && !isUnhcrCodeKey(activeField) && (
               <>
                 <PropertyInput
                   label="Text"
@@ -767,7 +868,107 @@ function UnhcrEditorInner() {
             <div className="flex flex-col gap-3 rounded-xl border border-info/20 bg-info/5 p-3">
               <span className="text-[10px] font-bold uppercase tracking-wide text-info">Position &amp; Size</span>
 
-              {activeField === 'photo' ? (
+              {isCodeField ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => bumpCodeSize(-10)} aria-label="Decrease code size">
+                      -
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => bumpCodeSize(10)} aria-label="Increase code size">
+                      +
+                    </Button>
+                    <span className="ml-auto font-mono text-[11px] text-dimm">
+                      {barcodeField
+                        ? `${barcodeField === 'barcode1' ? present.barcode1W : present.barcode2W}×${barcodeField === 'barcode1' ? present.barcode1H : present.barcode2H}`
+                        : `${present.qrSize}×${present.qrSize}`}
+                    </span>
+                  </div>
+                  {barcodeField ? (
+                    <>
+                      <PropertySlider
+                        label="Width"
+                        value={barcodeField === 'barcode1' ? present.barcode1W : present.barcode2W}
+                        min={UNHCR_BARCODE_RANGES.w.min}
+                        max={UNHCR_BARCODE_RANGES.w.max}
+                        step={UNHCR_BARCODE_RANGES.w.step}
+                        mono
+                        onChange={(v) => {
+                          const box = unhcrCodeBox(present, barcodeField);
+                          const ratio = box.w > 0 ? box.h / box.w : UNHCR_BARCODE_RANGES.h.default / UNHCR_BARCODE_RANGES.w.default;
+                          patchCode(barcodeField, {
+                            w: v,
+                            h: clamp(Math.round(v * ratio), UNHCR_BARCODE_RANGES.h.min, UNHCR_BARCODE_RANGES.h.max),
+                          });
+                        }}
+                      />
+                      <PropertySlider
+                        label="Height"
+                        value={barcodeField === 'barcode1' ? present.barcode1H : present.barcode2H}
+                        min={UNHCR_BARCODE_RANGES.h.min}
+                        max={UNHCR_BARCODE_RANGES.h.max}
+                        step={UNHCR_BARCODE_RANGES.h.step}
+                        mono
+                        onChange={(v) => {
+                          const box = unhcrCodeBox(present, barcodeField);
+                          const ratio = box.h > 0 ? box.w / box.h : UNHCR_BARCODE_RANGES.w.default / UNHCR_BARCODE_RANGES.h.default;
+                          patchCode(barcodeField, {
+                            h: v,
+                            w: clamp(Math.round(v * ratio), UNHCR_BARCODE_RANGES.w.min, UNHCR_BARCODE_RANGES.w.max),
+                          });
+                        }}
+                      />
+                      <PropertySlider
+                        label="X"
+                        value={barcodeField === 'barcode1' ? present.barcode1X : present.barcode2X}
+                        min={UNHCR_BARCODE_RANGES.x.min}
+                        max={UNHCR_BARCODE_RANGES.x.max}
+                        step={UNHCR_BARCODE_RANGES.x.step}
+                        mono
+                        onChange={(v) => patchCode(barcodeField, { x: v })}
+                      />
+                      <PropertySlider
+                        label="Y"
+                        value={barcodeField === 'barcode1' ? present.barcode1Y : present.barcode2Y}
+                        min={UNHCR_BARCODE_RANGES.y.min}
+                        max={UNHCR_BARCODE_RANGES.y.max}
+                        step={UNHCR_BARCODE_RANGES.y.step}
+                        mono
+                        onChange={(v) => patchCode(barcodeField, { y: v })}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <PropertySlider
+                        label="Size"
+                        value={present.qrSize}
+                        min={UNHCR_QR_RANGES.size.min}
+                        max={UNHCR_QR_RANGES.size.max}
+                        step={UNHCR_QR_RANGES.size.step}
+                        mono
+                        onChange={(v) => patchCode('qr', { w: v })}
+                      />
+                      <PropertySlider
+                        label="X"
+                        value={present.qrX}
+                        min={UNHCR_QR_RANGES.x.min}
+                        max={UNHCR_QR_RANGES.x.max}
+                        step={UNHCR_QR_RANGES.x.step}
+                        mono
+                        onChange={(v) => patchCode('qr', { x: v })}
+                      />
+                      <PropertySlider
+                        label="Y"
+                        value={present.qrY}
+                        min={UNHCR_QR_RANGES.y.min}
+                        max={UNHCR_QR_RANGES.y.max}
+                        step={UNHCR_QR_RANGES.y.step}
+                        mono
+                        onChange={(v) => patchCode('qr', { y: v })}
+                      />
+                    </>
+                  )}
+                </>
+              ) : activeField === 'photo' ? (
                 <>
                   <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => bumpPhotoSize(-10)} aria-label="Decrease photo size">

@@ -31,7 +31,25 @@ import { layoutFromSnapshot, layoutFromVault, layoutFromVaultSources, packDetail
 import { renderNIDCard } from '../src/lib/renderers/nidRenderer';
 import { renderTINDocument, wrapTinText } from '../src/lib/renderers/tinRenderer';
 import { renderUnhcrCard } from '../src/lib/renderers/unhcrRenderer';
-import { UNHCR_DEFAULTS, UNHCR_DEFAULT_LAYOUTS, UNHCR_PHOTO_DEFAULT } from '../src/lib/constants/unhcr';
+import {
+  UNHCR_BARCODE1_DEFAULT,
+  UNHCR_BARCODE2_DEFAULT,
+  UNHCR_DEFAULTS,
+  UNHCR_DEFAULT_LAYOUTS,
+  UNHCR_PHOTO_DEFAULT,
+  UNHCR_QR_DEFAULT,
+  normalizeUnhcrSnapshot,
+} from '../src/lib/constants/unhcr';
+import {
+  UNHCR_BARCODE_TEST_PAYLOAD,
+  UNHCR_QR_TEST_PAYLOAD,
+  createUnhcrQrMatrix,
+  decodeCode128Modules,
+  encodeCode128Modules,
+  sampleBarcodeModules,
+  unhcrBarcodePayload,
+  unhcrQrPayload,
+} from '../src/lib/unhcrCodes';
 import { buildTinQrPayload, encodeDemoQr } from '../src/lib/tinQr';
 import type { NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
 
@@ -827,6 +845,91 @@ async function main() {
   renderUnhcrCard(unhcrPhoto as unknown as HTMLCanvasElement, { ...UNHCR_DEFAULTS }, null, 1);
   const px = unhcrPhoto.getContext('2d')!.getImageData(UNHCR_PHOTO_DEFAULT.x + 8, UNHCR_PHOTO_DEFAULT.y + 8, 1, 1).data;
   assert(px[0] === 0 && px[1] === 255 && px[2] === 255, 'UNHCR empty photo paints cyan placeholder at 62,91');
+
+  console.log('\n[11] UNHCR TEST barcodes and QR\n');
+  const barcodeBits = encodeCode128Modules(UNHCR_BARCODE_TEST_PAYLOAD);
+  assert(barcodeBits.length > 40, 'UNHCR Code 128 encoder emits modules');
+  assert(decodeCode128Modules(barcodeBits) === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR barcode scan returns only the TEST ID');
+  assert(decodeCode128Modules(encodeCode128Modules('TEST-UNHCR-REF-0002')) === 'TEST-UNHCR-REF-0002', 'UNHCR barcode encoder/decoder round-trips TEST IDs');
+  assert(unhcrBarcodePayload('') === UNHCR_BARCODE_TEST_PAYLOAD, 'empty barcode payload falls back to TEST ID');
+  assert(unhcrQrPayload('') === UNHCR_QR_TEST_PAYLOAD, 'empty QR payload falls back to TEST sample data');
+  assert(UNHCR_QR_TEST_PAYLOAD.includes('TEST DATA'), 'UNHCR QR payload is labeled as test data');
+  assert(!UNHCR_QR_TEST_PAYLOAD.toLowerCase().includes('official document') || UNHCR_QR_TEST_PAYLOAD.includes('NOT AN OFFICIAL'), 'UNHCR QR payload is not official identity');
+
+  const qrMatrix = createUnhcrQrMatrix(UNHCR_QR_TEST_PAYLOAD);
+  assert(qrMatrix.size >= 21 && qrMatrix.dark.length === qrMatrix.size, 'UNHCR QR matrix is square and scannable size');
+  assert(qrMatrix.dark.every((row) => row.length === qrMatrix.size), 'UNHCR QR rows match matrix size');
+
+  const unhcrCodes = createCanvas(1, 1);
+  renderUnhcrCard(unhcrCodes as unknown as HTMLCanvasElement, { ...UNHCR_DEFAULTS }, null, 1);
+  const codesCtx = unhcrCodes.getContext('2d')!;
+  const codesPx = codesCtx.getImageData(0, 0, unhcrCodes.width, unhcrCodes.height);
+  const sampled1 = sampleBarcodeModules(
+    codesPx.data,
+    unhcrCodes.width,
+    UNHCR_BARCODE1_DEFAULT.x,
+    UNHCR_BARCODE1_DEFAULT.y,
+    UNHCR_BARCODE1_DEFAULT.w,
+    UNHCR_BARCODE1_DEFAULT.h,
+    barcodeBits.length,
+  );
+  const sampled2 = sampleBarcodeModules(
+    codesPx.data,
+    unhcrCodes.width,
+    UNHCR_BARCODE2_DEFAULT.x,
+    UNHCR_BARCODE2_DEFAULT.y,
+    UNHCR_BARCODE2_DEFAULT.w,
+    UNHCR_BARCODE2_DEFAULT.h,
+    barcodeBits.length,
+  );
+  assert(decodeCode128Modules(sampled1) === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR barcode 1 pixels scan to TEST ID only');
+  assert(decodeCode128Modules(sampled2) === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR barcode 2 pixels scan to TEST ID only');
+  assert(sampled1.join('') === sampled2.join(''), 'UNHCR barcodes share the same Code 128 design');
+
+  const qrWhite = codesCtx.getImageData(UNHCR_QR_DEFAULT.x + 2, UNHCR_QR_DEFAULT.y + 2, 1, 1).data;
+  assert(qrWhite[0] > 240 && qrWhite[1] > 240 && qrWhite[2] > 240, 'UNHCR QR has a white quiet zone');
+  const qrPatch = codesCtx.getImageData(
+    UNHCR_QR_DEFAULT.x,
+    UNHCR_QR_DEFAULT.y,
+    UNHCR_QR_DEFAULT.size,
+    UNHCR_QR_DEFAULT.size,
+  );
+  let qrDark = 0;
+  for (let i = 0; i < qrPatch.data.length; i += 4) {
+    if (qrPatch.data[i] + qrPatch.data[i + 1] + qrPatch.data[i + 2] < 80) qrDark++;
+  }
+  assert(qrDark > 200, 'UNHCR QR paints a dark finder module');
+
+  const unhcrMovedSnap = normalizeUnhcrSnapshot({
+    barcode1X: 140,
+    barcode1Y: 1080,
+    barcode1W: 640,
+    barcode1H: 100,
+    barcode2X: 160,
+    barcode2Y: 1220,
+    barcode2W: 640,
+    barcode2H: 100,
+    qrX: 2100,
+    qrY: 120,
+    qrSize: 260,
+  });
+  assert(unhcrMovedSnap.barcode1X === 140 && unhcrMovedSnap.barcode1Y === 1080, 'UNHCR barcode 1 X/Y persist through normalize');
+  assert(unhcrMovedSnap.barcode1W === 640 && unhcrMovedSnap.barcode1H === 100, 'UNHCR barcode 1 size persists through normalize');
+  assert(unhcrMovedSnap.barcode2X === 160 && unhcrMovedSnap.barcode2Y === 1220, 'UNHCR barcode 2 X/Y persist through normalize');
+  assert(unhcrMovedSnap.barcode2W === 640 && unhcrMovedSnap.barcode2H === 100, 'UNHCR barcode 2 size persists through normalize');
+  assert(unhcrMovedSnap.qrX === 2100 && unhcrMovedSnap.qrY === 120 && unhcrMovedSnap.qrSize === 260, 'UNHCR QR X/Y/size persist through normalize');
+  assert(unhcrMovedSnap.barcodePayload === UNHCR_BARCODE_TEST_PAYLOAD, 'UNHCR barcode TEST payload survives missing saved payload');
+  assert(unhcrMovedSnap.qrPayload === UNHCR_QR_TEST_PAYLOAD, 'UNHCR QR TEST payload survives missing saved payload');
+
+  const unhcrMoved = createCanvas(1, 1);
+  renderUnhcrCard(unhcrMoved as unknown as HTMLCanvasElement, unhcrMovedSnap, null, 1);
+  const movedPx = Buffer.from(unhcrMoved.getContext('2d')!.getImageData(0, 0, unhcrMoved.width, unhcrMoved.height).data.buffer);
+  const defaultPx = Buffer.from(codesPx.data.buffer);
+  assert(!movedPx.equals(defaultPx), 'UNHCR code X/Y/size changes paint different pixels');
+
+  const scaled = createCanvas(1, 1);
+  renderUnhcrCard(scaled as unknown as HTMLCanvasElement, { ...UNHCR_DEFAULTS }, null, 0.5);
+  assert(scaled.width === Math.round(unhcrCodes.width * 0.5) && scaled.height === Math.round(unhcrCodes.height * 0.5), 'UNHCR code overlay stays accurate at 50% zoom canvas');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);

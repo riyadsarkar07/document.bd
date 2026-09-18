@@ -1,5 +1,6 @@
-import type { UnhcrFieldKey, UnhcrLayout, UnhcrSnapshot } from '../editor/types';
+import type { UnhcrLayout, UnhcrOverlayKey, UnhcrSnapshot } from '../editor/types';
 import { UNHCR_DEFAULT_LAYOUTS, UNHCR_DOC_HEIGHT, UNHCR_DOC_WIDTH, UNHCR_FIELD_ORDER } from '../constants/unhcr';
+import { drawUnhcrBarcode, drawUnhcrQr } from '../unhcrCodes';
 
 const INK = '#000000';
 const ARIAL = "'Arial Regular',Arial,sans-serif";
@@ -30,7 +31,7 @@ export function renderUnhcrCard(
   snap: UnhcrSnapshot,
   bgImg: HTMLImageElement | null,
   scale = 1,
-  highlight?: UnhcrFieldKey | 'photo',
+  highlight?: UnhcrOverlayKey,
   photoImg: HTMLImageElement | null = null,
 ): void {
   const ctx = canvas.getContext('2d');
@@ -78,6 +79,10 @@ export function renderUnhcrCard(
     renderUnhcrValue(ctx, snap[key], layout);
   }
 
+  drawUnhcrBarcode(ctx, snap.barcodePayload, snap.barcode1X, snap.barcode1Y, snap.barcode1W, snap.barcode1H);
+  drawUnhcrBarcode(ctx, snap.barcodePayload, snap.barcode2X, snap.barcode2Y, snap.barcode2W, snap.barcode2H);
+  drawUnhcrQr(ctx, snap.qrPayload, snap.qrX, snap.qrY, snap.qrSize);
+
   if (highlight === 'photo') {
     ctx.save();
     ctx.strokeStyle = '#2563eb';
@@ -85,6 +90,12 @@ export function renderUnhcrCard(
     ctx.setLineDash([10, 6]);
     ctx.strokeRect(photoX - 3, photoY - 3, photoW + 6, photoH + 6);
     ctx.restore();
+  } else if (highlight === 'barcode1') {
+    strokeCode(ctx, snap.barcode1X, snap.barcode1Y, snap.barcode1W, snap.barcode1H);
+  } else if (highlight === 'barcode2') {
+    strokeCode(ctx, snap.barcode2X, snap.barcode2Y, snap.barcode2W, snap.barcode2H);
+  } else if (highlight === 'qr') {
+    strokeCode(ctx, snap.qrX, snap.qrY, snap.qrSize, snap.qrSize);
   } else if (highlight) {
     const layout = snap.layouts[highlight] ?? UNHCR_DEFAULT_LAYOUTS[highlight];
     const text = snap[highlight] || ' ';
@@ -97,4 +108,13 @@ export function renderUnhcrCard(
     ctx.strokeRect(layout.x - 6, layout.y - layout.fontSize, w + 12, layout.fontSize * 1.35);
     ctx.restore();
   }
+}
+
+function strokeCode(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+  ctx.save();
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([10, 6]);
+  ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
+  ctx.restore();
 }
