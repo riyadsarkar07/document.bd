@@ -59,8 +59,6 @@ export default function DashboardPage() {
     })();
   }, []);
 
-  const firstName =
-    profile?.full_name?.split(' ')[0] || profile?.email?.split('@')[0] || 'Guest';
   const role = profile?.role ?? 'viewer';
 
   return (
@@ -78,11 +76,13 @@ export default function DashboardPage() {
               <Badge tone="violet">Role: {role}</Badge>
             </div>
             <h1 className="font-display text-3xl font-bold tracking-tight text-primary">
-              Welcome back, <span className="text-gradient-gold">{firstName}</span>
+              Welcome to <span className="text-gradient-gold">Cyber Studio</span>
             </h1>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-              Design, calibrate and export government documents — live canvas rendering,
-              versioned templates and a secured cloud vault.
+              Advanced tools, secure workflows, account recovery, document utilities, and workspace management — all in one place.
+            </p>
+            <p className="mt-2 text-xs font-medium text-secondary">
+              Tools Owner: Riyad Sarkar · Admin — Cyber Gang Underground Force
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
