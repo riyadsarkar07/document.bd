@@ -28,7 +28,8 @@ export function resolveUnhcrEditorLoadSource(params: {
   templateName?: string | null;
   hasCurrentState?: boolean;
 }): UnhcrEditorLoadSource {
-  if ((params.recordNo ?? '').trim()) return 'history-record';
+  const recordNo = (params.recordNo ?? '').trim();
+  if (recordNo && !isUnhcrCurrentRecordId(recordNo)) return 'history-record';
   if ((params.projectId ?? '').trim()) return 'project';
   if ((params.templateName ?? '').trim()) return 'template';
   if (params.hasCurrentState) return 'current-state';

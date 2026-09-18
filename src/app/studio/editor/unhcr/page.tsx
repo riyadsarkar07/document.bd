@@ -34,6 +34,7 @@ import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/wor
 import { commitDocument, getUnhcrCurrentState, getVaultRecord, saveUnhcrCurrentState } from '@/lib/workspace/vault';
 import { newRecordId } from '@/lib/workspace/document-kinds';
 import {
+  isUnhcrCurrentRecordId,
   snapshotFromUnhcrVaultDoc,
   unhcrHistoryRecordIdForSave,
 } from '@/lib/unhcrCurrentState';
@@ -134,7 +135,7 @@ function UnhcrEditorInner() {
     const templateName = searchParams.get('template');
     const recordNo = searchParams.get('record');
     (async () => {
-      if (recordNo) {
+      if (recordNo && !isUnhcrCurrentRecordId(recordNo)) {
         const res = await getVaultRecord(recordNo);
         if (res.error || !res.record) {
           toast.error(res.error ?? 'Could not load History record');

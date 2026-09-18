@@ -13,7 +13,7 @@ import {
   isDocumentKind,
   type DocumentKind,
 } from '@/lib/workspace/document-kinds';
-import { UNHCR_CURRENT_RECORD_ID } from '@/lib/unhcrCurrentState';
+import { isUnhcrCurrentRecordId, UNHCR_CURRENT_RECORD_ID } from '@/lib/unhcrCurrentState';
 
 /** Publication state of a vault record against the public verification portal. */
 export type PublishStatus = 'published' | 'pending' | 'failed' | 'unpublished';
@@ -394,7 +394,7 @@ export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultLis
   const status = q.status ?? 'active';
 
   const build = (withTrash: boolean) => {
-    let query = supabase.from('certificates').select('*', { count: 'exact' });
+    let query = supabase.from('certificates').select('*', { count: 'exact' }).neq('trademark_no', UNHCR_CURRENT_RECORD_ID);
     if (withTrash) {
       query = status === 'trashed' ? query.not('deleted_at', 'is', null) : query.is('deleted_at', null);
     }
@@ -430,6 +430,7 @@ export async function getVaultRecord(
 ): Promise<{ record: VaultRecord | null; error: string | null }> {
   const tm = trademarkNo.trim();
   if (!tm) return { record: null, error: 'Missing Trademark No.' };
+  if (isUnhcrCurrentRecordId(tm)) return { record: null, error: 'Record not found.' };
   const { data, error } = await supabase.from('certificates').select('*').eq('trademark_no', tm).limit(1);
   if (error) return { record: null, error: error.message };
   const row = data?.[0];
@@ -437,21 +438,38 @@ export async function getVaultRecord(
   return { record: mapVaultRow(row as VaultRow), error: null };
 }
 
-/**
- * UNHCR editor shared current workspace state (`UNHCR-CURRENT`).
- * RLS still applies: owners see their row; admins see the workspace row;
- * other users get `record: null` (not another user's private History case).
- */
-export async function getUnhcrCurrentState(): Promise<{ record: VaultRecord | null; error: string | null }> {
-  const res = await getVaultRecord(UNHCR_CURRENT_RECORD_ID);
-  if (res.error && res.error !== 'Record not found.') return { record: null, error: res.error };
-  if (!res.record || res.record.docKind !== 'unhcr') return { record: null, error: null };
-  return { record: res.record, error: null };
+function isMissingUnhcrCurrentRpc(message: string | undefined): boolean {
+  return /could not find the function|schema cache|does not exist/i.test(message ?? '');
+}
+
+function mapUnhcrCurrentRow(data: unknown): VaultRecord | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const mapped = mapVaultRow(data as VaultRow);
+  if (!isUnhcrCurrentRecordId(mapped.trademarkNo) || mapped.docKind !== 'unhcr') return null;
+  return mapped;
 }
 
 /**
- * Upsert the UNHCR shared current editor state. A duplicate owned by another
- * account is skipped so private History records stay isolated.
+ * UNHCR editor shared current workspace state (`UNHCR-CURRENT`).
+ * Loaded via SECURITY DEFINER RPC so every user with `unhcr` access gets the
+ * same workspace row. Private History cases stay behind certificates RLS.
+ */
+export async function getUnhcrCurrentState(): Promise<{ record: VaultRecord | null; error: string | null }> {
+  const { data, error } = await supabase.rpc('get_unhcr_current_state');
+  if (!error) return { record: mapUnhcrCurrentRow(data), error: null };
+  if (!isMissingUnhcrCurrentRpc(error.message)) return { record: null, error: error.message };
+  const fallback = await supabase
+    .from('certificates')
+    .select('*')
+    .eq('trademark_no', UNHCR_CURRENT_RECORD_ID)
+    .limit(1);
+  if (fallback.error) return { record: null, error: fallback.error.message };
+  return { record: mapUnhcrCurrentRow(fallback.data?.[0] ?? null), error: null };
+}
+
+/**
+ * Upsert the UNHCR shared current editor state for every authorized user.
+ * Falls back to the vault write path only when the RPC is not deployed yet.
  */
 export async function saveUnhcrCurrentState(input: {
   snapshot: unknown;
@@ -459,6 +477,15 @@ export async function saveUnhcrCurrentState(input: {
   subtitle?: string;
   createdBy?: string | null;
 }): Promise<{ error: string | null; skipped: boolean }> {
+  const layout = layoutFromSnapshot(TM_DEFAULTS);
+  const details = packDetails('', layout, { docKind: 'unhcr', doc: input.snapshot });
+  const { error } = await supabase.rpc('save_unhcr_current_state', {
+    p_title: input.title || 'UNHCR ID',
+    p_subtitle: input.subtitle ?? '',
+    p_details: details,
+  });
+  if (!error) return { error: null, skipped: false };
+  if (!isMissingUnhcrCurrentRpc(error.message)) return { error: error.message, skipped: false };
   const res = await commitDocument({
     docKind: 'unhcr',
     recordId: UNHCR_CURRENT_RECORD_ID,
@@ -478,7 +505,7 @@ export async function saveUnhcrCurrentState(input: {
  */
 export async function loadVault(): Promise<{ records: VaultRecord[]; error: string | null }> {
   const build = (withTrash: boolean) => {
-    let query = supabase.from('certificates').select('*');
+    let query = supabase.from('certificates').select('*').neq('trademark_no', UNHCR_CURRENT_RECORD_ID);
     if (withTrash) query = query.is('deleted_at', null);
     return query.order('synced_at', { ascending: false });
   };
@@ -515,6 +542,7 @@ export async function listVaultOwnerOptions(): Promise<{
 /** Soft-delete a vault record (move to Trash). Re-save restores it. */
 export async function trashVaultRecord(trademarkNo: string): Promise<{ error: string | null }> {
   if (!trademarkNo) return { error: 'Missing Trademark No. — cannot trash the record.' };
+  if (isUnhcrCurrentRecordId(trademarkNo)) return { error: 'Shared UNHCR editor state cannot be moved to History trash.' };
   const { data, error } = await supabase
     .from('certificates')
     .update({ deleted_at: new Date().toISOString() })
@@ -530,6 +558,7 @@ export async function trashVaultRecord(trademarkNo: string): Promise<{ error: st
 /** Restore a soft-deleted vault record back to the active view. */
 export async function restoreVaultRecord(trademarkNo: string): Promise<{ error: string | null }> {
   if (!trademarkNo) return { error: 'Missing Trademark No. — cannot restore the record.' };
+  if (isUnhcrCurrentRecordId(trademarkNo)) return { error: 'Shared UNHCR editor state is not a History record.' };
   const { data, error } = await supabase
     .from('certificates')
     .update({ deleted_at: null })
@@ -552,6 +581,7 @@ export async function restoreVaultRecord(trademarkNo: string): Promise<{ error: 
  */
 export async function permanentDeleteVaultRecord(trademarkNo: string): Promise<{ error: string | null }> {
   if (!trademarkNo) return { error: 'Missing Trademark No. — cannot delete the record.' };
+  if (isUnhcrCurrentRecordId(trademarkNo)) return { error: 'Shared UNHCR editor state cannot be deleted from History.' };
   const { data, error } = await supabase
     .from('certificates')
     .delete()

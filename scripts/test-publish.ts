@@ -462,6 +462,8 @@ function main() {
   assert(isUnhcrCurrentRecordId('UNHCR-CURRENT'), 'UNHCR-CURRENT is recognized as the shared state id');
   assert(!isUnhcrCurrentRecordId('UNHCR-MY-1001'), 'a History case id is not the shared current state');
   assert(resolveUnhcrEditorLoadSource({ recordNo: 'UNHCR-MY-1001', hasCurrentState: true }) === 'history-record', 'explicit History record wins over current state');
+  assert(resolveUnhcrEditorLoadSource({ recordNo: UNHCR_CURRENT_RECORD_ID, hasCurrentState: true }) === 'current-state', 'UNHCR-CURRENT is not treated as a History case on direct open');
+  assert(resolveUnhcrEditorLoadSource({ recordNo: UNHCR_CURRENT_RECORD_ID, hasCurrentState: false }) === 'defaults', 'UNHCR-CURRENT without a shared row uses built-in defaults');
   assert(resolveUnhcrEditorLoadSource({ projectId: 'p1', hasCurrentState: true }) === 'project', 'explicit project wins over current state');
   assert(resolveUnhcrEditorLoadSource({ templateName: 't1', hasCurrentState: true }) === 'template', 'explicit template wins over current state');
   assert(resolveUnhcrEditorLoadSource({ hasCurrentState: true }) === 'current-state', 'direct editor open loads shared current state');
@@ -483,6 +485,14 @@ function main() {
   const packedHistoryCase = packDetails('', stored, { docKind: 'unhcr', doc: { ...editedUnhcr, name: 'History Only' } });
   assert(unpackDetails(packedHistoryCase).docKind === 'unhcr', 'individual History records remain independent of UNHCR-CURRENT');
   assert(!isUnhcrCurrentRecordId('UNHCR-MY-1001'), 'shared current state id stays distinct from History case ids');
+  const schema = readFileSync(join(ROOT, 'supabase/schema.sql'), 'utf8');
+  const vault = readFileSync(join(ROOT, 'src/lib/workspace/vault.ts'), 'utf8');
+  assert(schema.includes('create or replace function public.get_unhcr_current_state'), 'shared UNHCR state is loaded via SECURITY DEFINER RPC');
+  assert(schema.includes('create or replace function public.save_unhcr_current_state'), 'shared UNHCR state is saved via SECURITY DEFINER RPC');
+  assert(schema.includes("has_tool_access(auth.uid(), 'unhcr')") || schema.includes("has_tool_access(uid, 'unhcr')"), 'UNHCR current-state RPCs require unhcr tool access');
+  assert(schema.includes("trademark_no = 'UNHCR-CURRENT'"), 'UNHCR RPCs only touch the shared current-state row');
+  assert(vault.includes("neq('trademark_no', UNHCR_CURRENT_RECORD_ID)"), 'History listing hides UNHCR-CURRENT');
+  assert(vault.includes("rpc('get_unhcr_current_state')") && vault.includes("rpc('save_unhcr_current_state'"), 'editor load/save uses shared UNHCR RPCs');
 
   const pdfDoc = {
     fileName: 'brief.pdf',
