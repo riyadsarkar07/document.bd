@@ -291,12 +291,13 @@ function main() {
   assert(unpackedLegacyKind.docKind === undefined, 'legacy TM rows without docKind stay untagged');
 
   console.log('\n[14] Unified History document-kind registry\n');
-  assert(DOCUMENT_KIND_ORDER.length === 7, 'registry lists all 7 Studio editors');
+  assert(DOCUMENT_KIND_ORDER.length === 8, 'registry lists all 8 Studio editors');
   assert(DOCUMENT_KIND_ORDER.every(isDocumentKind), 'every ordered kind is a valid DocumentKind');
   assert(documentKindMeta('tm').certificate === true, 'TM is a certificate kind');
   assert(documentKindMeta('youtube-trademark').certificate === true, 'YouTube Trademark is a certificate kind');
   assert(documentKindMeta('nid').certificate === false, 'NID is not a certificate kind');
   assert(documentKindMeta('tin').certificate === false, 'TIN is not a certificate kind');
+  assert(documentKindMeta('unhcr').certificate === false, 'UNHCR is not a certificate kind');
   assert(documentKindMeta('pdf').certificate === false, 'PDF is not a certificate kind');
   assert(documentKindMeta('page-recover').certificate === false, 'Hacked Page Recover is not a certificate kind');
   assert(documentKindMeta('business-manager').certificate === false, 'Business Manager is not a certificate kind');
@@ -304,6 +305,7 @@ function main() {
   assert(documentKindMeta('not-a-kind' as never).kind === 'tm', 'invalid kinds fall back to TM');
   assert(documentKindMeta('nid').editorPath === '/studio/editor/nid', 'NID reopens in the NID editor');
   assert(documentKindMeta('tin').editorPath === '/studio/editor/tin', 'TIN reopens in the TIN editor');
+  assert(documentKindMeta('unhcr').editorPath === '/studio/editor/unhcr', 'UNHCR reopens in the UNHCR editor');
   assert(documentKindMeta('pdf').editorPath === '/studio/editor/pdf', 'PDF reopens in the PDF editor');
   assert(documentKindMeta('page-recover').editorPath === '/studio/editor/page-recover', 'Recover reopens in its editor');
   assert(documentKindMeta('business-manager').editorPath === '/studio/editor/business-manager', 'Business Manager reopens in its editor');
@@ -325,6 +327,48 @@ function main() {
   const unpackedTin = unpackDetails(packedTin);
   assert(unpackedTin.docKind === 'tin', 'TIN pack stores docKind');
   assert((unpackedTin.doc as { tinNo: string }).tinNo === '123456789012', 'TIN pack restores tinNo');
+
+  const unhcrDoc = {
+    unhcrNo: 'MY-1001',
+    name: 'Case Subject',
+    dob: '01 Jan 1990',
+    sex: 'M',
+    origin: 'MM',
+    issuedDate: '01 Jan 2024',
+    expiredDate: '01 Jan 2026',
+    layouts: {
+      unhcrNo: { fontSize: 40, x: 1300, y: 180, fontFamily: 'arial-bold' },
+      name: { fontSize: 34, x: 860, y: 490, fontFamily: 'arial' },
+      dob: { fontSize: 28, x: 850, y: 720, fontFamily: 'arial' },
+      sex: { fontSize: 28, x: 1770, y: 720, fontFamily: 'arial' },
+      origin: { fontSize: 30, x: 852, y: 918, fontFamily: 'arial-bold' },
+      issuedDate: { fontSize: 26, x: 852, y: 1188, fontFamily: 'arial' },
+      expiredDate: { fontSize: 26, x: 1568, y: 1188, fontFamily: 'arial' },
+    },
+  };
+  const packedUnhcr = packDetails('', stored, { docKind: 'unhcr', doc: unhcrDoc });
+  const unpackedUnhcr = unpackDetails(packedUnhcr);
+  assert(unpackedUnhcr.docKind === 'unhcr', 'UNHCR pack stores docKind');
+  const restoredUnhcr = unpackedUnhcr.doc as typeof unhcrDoc;
+  assert(restoredUnhcr.unhcrNo === 'MY-1001', 'UNHCR pack restores UNHCR No');
+  assert(restoredUnhcr.name === 'Case Subject', 'UNHCR pack restores Name');
+  assert(restoredUnhcr.layouts.name.fontSize === 34, 'UNHCR pack restores font size');
+  assert(restoredUnhcr.layouts.name.fontFamily === 'arial', 'UNHCR pack restores font style');
+  assert(restoredUnhcr.layouts.name.x === 860 && restoredUnhcr.layouts.name.y === 490, 'UNHCR pack restores X/Y');
+  assert(!JSON.stringify(unpackedUnhcr).includes('Facebook Imposter'), 'UNHCR vault payload omits the case banner');
+  const editedUnhcr = {
+    ...restoredUnhcr,
+    name: 'Updated Subject',
+    layouts: { ...restoredUnhcr.layouts, name: { ...restoredUnhcr.layouts.name, fontSize: 38, x: 870, y: 500, fontFamily: 'arial-bold' } },
+  };
+  const packedUnhcrEdit = packDetails('', stored, { docKind: 'unhcr', doc: editedUnhcr });
+  const unpackedUnhcrEdit = unpackDetails(packedUnhcrEdit);
+  const restoredUnhcrEdit = unpackedUnhcrEdit.doc as typeof editedUnhcr;
+  assert(unpackedUnhcrEdit.docKind === 'unhcr', 'UNHCR re-save keeps docKind');
+  assert(restoredUnhcrEdit.name === 'Updated Subject', 'UNHCR re-save persists updated text');
+  assert(restoredUnhcrEdit.layouts.name.fontSize === 38, 'UNHCR re-save persists updated font size');
+  assert(restoredUnhcrEdit.layouts.name.fontFamily === 'arial-bold', 'UNHCR re-save persists updated font style');
+  assert(restoredUnhcrEdit.layouts.name.x === 870 && restoredUnhcrEdit.layouts.name.y === 500, 'UNHCR re-save persists updated X/Y');
 
   const pdfDoc = {
     fileName: 'brief.pdf',

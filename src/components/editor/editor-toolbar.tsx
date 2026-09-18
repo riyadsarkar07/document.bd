@@ -27,6 +27,7 @@ interface EditorToolbarProps {
   onExportPdf?: () => void;
   onPreview: () => void;
   onSaveProject?: () => void;
+  onSaveHistory?: () => void;
   onPublish?: () => void;
   status?: string;
   lastSavedAt?: string | null;
@@ -45,6 +46,7 @@ export function EditorToolbar({
   onExportPdf,
   onPreview,
   onSaveProject,
+  onSaveHistory,
   onPublish,
   status,
   lastSavedAt,
@@ -108,6 +110,12 @@ export function EditorToolbar({
         <Button variant="secondary" size="sm" onClick={onSaveProject}>
           <Save className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Save Project</span>
+        </Button>
+      )}
+      {onSaveHistory && (
+        <Button variant="secondary" size="sm" onClick={onSaveHistory}>
+          <Save className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Save</span>
         </Button>
       )}
 

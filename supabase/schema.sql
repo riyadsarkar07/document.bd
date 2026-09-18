@@ -63,7 +63,7 @@ alter table public.profiles enable row level security;
 create table if not exists public.templates (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  kind text not null check (kind in ('tm', 'nid', 'tin')),
+  kind text not null check (kind in ('tm', 'nid', 'tin', 'unhcr')),
   description text,
   state jsonb not null default '{}'::jsonb,
   thumbnail text,
@@ -83,7 +83,7 @@ alter table public.templates add column if not exists owner_id uuid references a
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  kind text not null check (kind in ('tm', 'nid', 'tin')),
+  kind text not null check (kind in ('tm', 'nid', 'tin', 'unhcr')),
   state jsonb not null default '{}'::jsonb,
   owner_id uuid references auth.users (id) on delete cascade,
   created_at timestamptz not null default now(),
@@ -210,7 +210,7 @@ do $$
 begin
   alter table public.templates drop constraint if exists templates_kind_check;
   alter table public.templates add constraint templates_kind_check
-    check (kind in ('tm', 'nid', 'tin'));
+    check (kind in ('tm', 'nid', 'tin', 'unhcr'));
 exception when others then
   raise notice 'templates_kind_check upgrade skipped: %', sqlerrm;
 end $$;
@@ -219,7 +219,7 @@ do $$
 begin
   alter table public.projects drop constraint if exists projects_kind_check;
   alter table public.projects add constraint projects_kind_check
-    check (kind in ('tm', 'nid', 'tin'));
+    check (kind in ('tm', 'nid', 'tin', 'unhcr'));
 exception when others then
   raise notice 'projects_kind_check upgrade skipped: %', sqlerrm;
 end $$;
@@ -274,7 +274,7 @@ as $$
 $$;
 
 -- Map a generation/save activity action to the tool scope it belongs to
--- ('tm' / 'nid' / 'tin' / 'projects'). Returns NULL for actions that are not
+-- ('tm' / 'nid' / 'tin' / 'unhcr' / 'projects'). Returns NULL for actions that are not
 -- tool-bound (e.g. 'publish.ui').
 create or replace function public.action_scope(action text)
 returns text
@@ -284,6 +284,7 @@ as $$
     when action like 'export.tm.%' or action like 'save.tm.%' then 'tm'
     when action like 'export.nid.%' or action like 'save.nid.%' then 'nid'
     when action like 'export.tin.%' or action like 'save.tin.%' then 'tin'
+    when action like 'export.unhcr.%' or action like 'save.unhcr.%' then 'unhcr'
     when action = 'project.save' then 'projects'
     else null
   end;

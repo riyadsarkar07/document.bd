@@ -17,6 +17,7 @@ const TOOL_ROUTES: { prefix: string; scope: ToolScope }[] = [
   { prefix: '/studio/editor/pdf', scope: 'pdf' },
   { prefix: '/studio/editor/nid', scope: 'nid' },
   { prefix: '/studio/editor/tin', scope: 'tin' },
+  { prefix: '/studio/editor/unhcr', scope: 'unhcr' },
   { prefix: '/studio/editor/page-recover', scope: 'page-recover' },
   { prefix: '/studio/editor/youtube-trademark', scope: 'youtube-trademark' },
   { prefix: '/studio/editor/business-manager', scope: 'business-manager' },

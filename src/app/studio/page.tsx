@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
+  Contact,
   CreditCard,
   FilePen,
   FileText,
@@ -119,6 +120,17 @@ export default function DashboardPage() {
                 TIN Record
               </Button>
             )}
+            {hasToolAccess(profile, 'unhcr') ? (
+              <Link href="/studio/editor/unhcr">
+                <Button variant="outline" icon={<Contact className="h-4 w-4" />}>
+                  UNHCR ID
+                </Button>
+              </Link>
+            ) : (
+              <Button variant="outline" icon={<Lock className="h-4 w-4" />} onClick={denyAccess}>
+                UNHCR ID
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -196,7 +208,7 @@ export default function DashboardPage() {
         )}
         <StatCard
           label="Assets"
-          value="7"
+          value="8"
           hint="Backgrounds, fonts, seals"
           icon={<Sparkles className="h-5 w-5" />}
           tone="violet"
@@ -237,6 +249,15 @@ export default function DashboardPage() {
               tone: 'from-success to-emerald-500 text-white',
               meta: '2480 × 3508 px',
               scope: 'tin',
+            },
+            {
+              href: '/studio/editor/unhcr',
+              title: 'UNHCR ID Editor',
+              desc: 'Facebook Imposter case overlay — Arial fields with saved positions. Not official identity data.',
+              icon: Contact,
+              tone: 'from-sky-500 to-blue-600 text-white',
+              meta: '2560 × 1800 px',
+              scope: 'unhcr',
             },
             {
               href: '/studio/editor/pdf',

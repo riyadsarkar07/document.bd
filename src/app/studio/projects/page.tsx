@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { CreditCard, FileText, FolderKanban, FolderOpen, Landmark, Plus, Trash2 } from 'lucide-react';
+import { Contact, CreditCard, FileText, FolderKanban, FolderOpen, Landmark, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { listProjects, saveProject, deleteProject } from '@/lib/workspace/store';
 import { checkLimit } from '@/lib/workspace/limits';
@@ -10,6 +10,7 @@ import { DOC_KIND_LABEL, type ProjectRecord } from '@/lib/auth/types';
 import { TM_DEFAULTS } from '@/lib/constants/tm';
 import { NID_DEFAULTS } from '@/lib/constants/nid';
 import { TIN_DEFAULTS } from '@/lib/constants/tin';
+import { UNHCR_DEFAULTS } from '@/lib/constants/unhcr';
 import { Card, PageHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -19,12 +20,13 @@ import { FieldLabel, Input } from '@/components/ui/input';
 import { useToast } from '@/lib/toast/toast-provider';
 import { timeAgo } from '@/lib/utils';
 
-const KIND_ICON = { tm: FileText, nid: CreditCard, tin: Landmark } as const;
-const KIND_TONE = { tm: 'gold', nid: 'blue', tin: 'green' } as const;
+const KIND_ICON = { tm: FileText, nid: CreditCard, tin: Landmark, unhcr: Contact } as const;
+const KIND_TONE = { tm: 'gold', nid: 'blue', tin: 'green', unhcr: 'blue' } as const;
 const KIND_GRADIENT = {
   tm: 'bg-gradient-to-br from-accent to-accent-bright text-canvas',
   nid: 'bg-gradient-to-br from-info to-blue-500 text-white',
   tin: 'bg-gradient-to-br from-success to-emerald-500 text-white',
+  unhcr: 'bg-gradient-to-br from-sky-500 to-blue-600 text-white',
 } as const;
 
 export default function ProjectsPage() {
@@ -33,7 +35,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [source, setSource] = useState<'supabase' | 'local'>('supabase');
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' | 'tin' }>({
+  const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' | 'tin' | 'unhcr' }>({
     open: false,
     kind: 'tm',
   });
@@ -51,7 +53,7 @@ export default function ProjectsPage() {
     void refresh();
   }, [refresh]);
 
-  const openCreate = (kind: 'tm' | 'nid' | 'tin') => {
+  const openCreate = (kind: 'tm' | 'nid' | 'tin' | 'unhcr') => {
     setName(`${DOC_KIND_LABEL[kind]} — Project`);
     setModal({ open: true, kind });
   };
@@ -67,7 +69,9 @@ export default function ProjectsPage() {
         ? ({ ...TM_DEFAULTS } as unknown as Record<string, unknown>)
         : modal.kind === 'nid'
           ? ({ ...NID_DEFAULTS } as unknown as Record<string, unknown>)
-          : ({ ...TIN_DEFAULTS } as unknown as Record<string, unknown>);
+          : modal.kind === 'unhcr'
+            ? ({ ...UNHCR_DEFAULTS, docKind: 'unhcr' } as unknown as Record<string, unknown>)
+            : ({ ...TIN_DEFAULTS } as unknown as Record<string, unknown>);
     const proj: ProjectRecord = {
       name: name.trim() || 'Untitled project',
       kind: modal.kind,
@@ -111,6 +115,9 @@ export default function ProjectsPage() {
             </Button>
             <Button variant="success" icon={<Landmark className="h-4 w-4" />} onClick={() => openCreate('tin')}>
               New TIN Project
+            </Button>
+            <Button variant="outline" icon={<Contact className="h-4 w-4" />} onClick={() => openCreate('unhcr')}>
+              New UNHCR Project
             </Button>
           </>
         }

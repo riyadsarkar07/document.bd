@@ -138,6 +138,7 @@ export const FONT_FACES = [
 export const ASSET_LIST = [
   { name: 'cert-bangladesh.png', type: 'image', desc: 'Trademark certificate background', path: '/assets/cert-bangladesh.png' },
   { name: 'nid-bg.png', type: 'image', desc: 'NID card background', path: '/assets/nid-bg.png' },
+  { name: 'Unchar.png', type: 'image', desc: 'UNHCR ID card background', path: '/assets/Unchar.png' },
   { name: 'sign remove.png', type: 'image', desc: 'Signature overlay', path: '/assets/sign remove.png' },
   { name: 'arial-regular.ttf', type: 'font', desc: 'Arial Regular / Arial Bold', path: '/assets/arial-regular.ttf' },
   { name: 'kalpurush.ttf', type: 'font', desc: 'Kalpurush / Kalpurush Bold', path: '/assets/kalpurush.ttf' },

@@ -1,6 +1,6 @@
 import type { DocumentKind } from '@/lib/workspace/document-kinds';
 
-export type DocKind = 'tm' | 'nid' | 'tin';
+export type DocKind = 'tm' | 'nid' | 'tin' | 'unhcr';
 
 export type TinAlign = 'left' | 'center' | 'right' | 'justify';
 export type TinWeight = 'normal' | 'bold';
@@ -138,4 +138,36 @@ export interface TINSnapshot {
   qrSize: number;
   qrX: number;
   qrY: number;
+}
+
+export type UnhcrFontFamily = 'arial' | 'arial-bold';
+
+export interface UnhcrLayout {
+  fontSize: number;
+  x: number;
+  y: number;
+  fontFamily: UnhcrFontFamily;
+}
+
+export const UNHCR_FIELD_KEYS = [
+  'unhcrNo',
+  'name',
+  'dob',
+  'sex',
+  'origin',
+  'issuedDate',
+  'expiredDate',
+] as const;
+
+export type UnhcrFieldKey = (typeof UNHCR_FIELD_KEYS)[number];
+
+export interface UnhcrSnapshot {
+  unhcrNo: string;
+  name: string;
+  dob: string;
+  sex: string;
+  origin: string;
+  issuedDate: string;
+  expiredDate: string;
+  layouts: Record<UnhcrFieldKey, UnhcrLayout>;
 }

@@ -14,6 +14,7 @@ export type DocumentKind =
   | 'youtube-trademark'
   | 'nid'
   | 'tin'
+  | 'unhcr'
   | 'pdf'
   | 'page-recover'
   | 'business-manager';
@@ -73,6 +74,15 @@ export const DOCUMENT_KINDS: Record<DocumentKind, DocumentKindMeta> = {
     recordPrefix: 'TIN',
     certificate: false,
   },
+  unhcr: {
+    kind: 'unhcr',
+    label: 'UNHCR ID',
+    short: 'UNHCR',
+    editorPath: '/studio/editor/unhcr',
+    badgeTone: 'blue',
+    recordPrefix: 'UNHCR',
+    certificate: false,
+  },
   pdf: {
     kind: 'pdf',
     label: 'PDF Document',
@@ -108,6 +118,7 @@ export const DOCUMENT_KIND_ORDER: DocumentKind[] = [
   'youtube-trademark',
   'nid',
   'tin',
+  'unhcr',
   'pdf',
   'page-recover',
   'business-manager',

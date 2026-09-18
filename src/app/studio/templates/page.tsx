@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Copy, CreditCard, FileText, Landmark, Plus, Shapes, Trash2 } from 'lucide-react';
+import { Contact, Copy, CreditCard, FileText, Landmark, Plus, Shapes, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { canManageTemplates, DOC_KIND_LABEL } from '@/lib/auth/types';
 import { listTemplates, saveTemplate, deleteTemplate } from '@/lib/workspace/store';
@@ -10,6 +10,7 @@ import type { TemplateRecord } from '@/lib/auth/types';
 import { TM_DEFAULTS } from '@/lib/constants/tm';
 import { NID_DEFAULTS } from '@/lib/constants/nid';
 import { TIN_DEFAULTS } from '@/lib/constants/tin';
+import { UNHCR_DEFAULTS } from '@/lib/constants/unhcr';
 import { Card, PageHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -19,12 +20,13 @@ import { FieldLabel, Input, Textarea } from '@/components/ui/input';
 import { useToast } from '@/lib/toast/toast-provider';
 import { timeAgo } from '@/lib/utils';
 
-const KIND_ICON = { tm: FileText, nid: CreditCard, tin: Landmark } as const;
-const KIND_TONE = { tm: 'gold', nid: 'blue', tin: 'green' } as const;
+const KIND_ICON = { tm: FileText, nid: CreditCard, tin: Landmark, unhcr: Contact } as const;
+const KIND_TONE = { tm: 'gold', nid: 'blue', tin: 'green', unhcr: 'blue' } as const;
 const KIND_GRADIENT = {
   tm: 'bg-gradient-to-br from-accent to-accent-bright text-canvas',
   nid: 'bg-gradient-to-br from-info to-blue-500 text-white',
   tin: 'bg-gradient-to-br from-success to-emerald-500 text-white',
+  unhcr: 'bg-gradient-to-br from-sky-500 to-blue-600 text-white',
 } as const;
 
 export default function TemplatesPage() {
@@ -33,7 +35,7 @@ export default function TemplatesPage() {
   const [templates, setTemplates] = useState<TemplateRecord[]>([]);
   const [source, setSource] = useState<'supabase' | 'local'>('supabase');
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' | 'tin' }>({
+  const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' | 'tin' | 'unhcr' }>({
     open: false,
     kind: 'tm',
   });
@@ -52,7 +54,7 @@ export default function TemplatesPage() {
     void refresh();
   }, [refresh]);
 
-  const openCreate = (kind: 'tm' | 'nid' | 'tin') => {
+  const openCreate = (kind: 'tm' | 'nid' | 'tin' | 'unhcr') => {
     setName(`${DOC_KIND_LABEL[kind]} — ${new Date().toLocaleDateString()}`);
     setDescription('');
     setModal({ open: true, kind });
@@ -64,7 +66,9 @@ export default function TemplatesPage() {
         ? ({ ...TM_DEFAULTS } as unknown as Record<string, unknown>)
         : modal.kind === 'nid'
           ? ({ ...NID_DEFAULTS } as unknown as Record<string, unknown>)
-          : ({ ...TIN_DEFAULTS } as unknown as Record<string, unknown>);
+          : modal.kind === 'unhcr'
+            ? ({ ...UNHCR_DEFAULTS, docKind: 'unhcr' } as unknown as Record<string, unknown>)
+            : ({ ...TIN_DEFAULTS } as unknown as Record<string, unknown>);
     const tpl: TemplateRecord = {
       name: name.trim() || `Untitled template`,
       kind: modal.kind,
@@ -111,6 +115,9 @@ export default function TemplatesPage() {
               </Button>
               <Button variant="success" icon={<Landmark className="h-4 w-4" />} onClick={() => openCreate('tin')}>
                 Save TIN Template
+              </Button>
+              <Button variant="outline" icon={<Contact className="h-4 w-4" />} onClick={() => openCreate('unhcr')}>
+                Save UNHCR Template
               </Button>
             </>
           ) : (
