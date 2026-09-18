@@ -31,8 +31,12 @@ import { loadDataUrlImage, loadImage } from '@/lib/images';
 import { validateImageFile } from '@/lib/uploads';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
-import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
+import { commitDocument, getUnhcrCurrentState, getVaultRecord, saveUnhcrCurrentState } from '@/lib/workspace/vault';
 import { newRecordId } from '@/lib/workspace/document-kinds';
+import {
+  snapshotFromUnhcrVaultDoc,
+  unhcrHistoryRecordIdForSave,
+} from '@/lib/unhcrCurrentState';
 import { checkLimit } from '@/lib/workspace/limits';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useToast } from '@/lib/toast/toast-provider';
@@ -136,7 +140,7 @@ function UnhcrEditorInner() {
           toast.error(res.error ?? 'Could not load History record');
           return;
         }
-        const next = normalizeUnhcrSnapshot((res.record.doc as Partial<UnhcrSnapshot>) ?? {});
+        const next = snapshotFromUnhcrVaultDoc(res.record.doc);
         externalCacheRef.current = next;
         editor.replace(next);
         setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
@@ -156,7 +160,9 @@ function UnhcrEditorInner() {
           setStatus(`Project "${found.name}" loaded`);
           toast.success(`Project "${found.name}" loaded`);
         }
-      } else if (templateName) {
+        return;
+      }
+      if (templateName) {
         const res = await listTemplates();
         const found = res.data.find((t) => String(t.id) === templateName || t.name === templateName);
         if (found) {
@@ -167,10 +173,19 @@ function UnhcrEditorInner() {
           setStatus(`Template "${found.name}" applied`);
           toast.success(`Template "${found.name}" applied`);
         }
+        return;
       }
+      if (!user) return;
+      const current = await getUnhcrCurrentState();
+      if (current.error || !current.record) return;
+      const next = snapshotFromUnhcrVaultDoc(current.record.doc);
+      externalCacheRef.current = next;
+      editor.replace(next);
+      setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
+      setStatus('Saved editor state loaded');
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, user?.id]);
 
   useEffect(() => {
     loadDocumentFonts().then((ok) => {
@@ -387,12 +402,18 @@ function UnhcrEditorInner() {
       return null;
     }
     const snap = normalizeUnhcrSnapshot(presentRef.current);
-    const recordId = historyRecordId ?? (snap.unhcrNo.trim() ? `UNHCR-${snap.unhcrNo.trim()}` : newRecordId('unhcr'));
+    const title = snap.unhcrNo.trim() ? `UNHCR ${snap.unhcrNo.trim()}` : 'UNHCR ID';
+    const subtitle = snap.name.trim() || undefined;
+    const recordId = unhcrHistoryRecordIdForSave(
+      historyRecordId,
+      snap.unhcrNo,
+      newRecordId('unhcr'),
+    );
     const res = await commitDocument({
       docKind: 'unhcr',
       recordId,
-      title: snap.unhcrNo.trim() ? `UNHCR ${snap.unhcrNo.trim()}` : 'UNHCR ID',
-      subtitle: snap.name.trim() || undefined,
+      title,
+      subtitle,
       payload: snap,
       createdBy: user.id,
     });
@@ -401,6 +422,15 @@ function UnhcrEditorInner() {
       return null;
     }
     setHistoryRecordId(res.recordId);
+    const current = await saveUnhcrCurrentState({
+      snapshot: snap,
+      title,
+      subtitle,
+      createdBy: user.id,
+    });
+    if (current.error) {
+      toast.error(`Editor state save failed: ${current.error}`);
+    }
     setStatus(`Saved to History · ${res.recordId}`);
     void logActivity({
       user_id: user.id,

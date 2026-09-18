@@ -13,6 +13,7 @@ import {
   isDocumentKind,
   type DocumentKind,
 } from '@/lib/workspace/document-kinds';
+import { UNHCR_CURRENT_RECORD_ID } from '@/lib/unhcrCurrentState';
 
 /** Publication state of a vault record against the public verification portal. */
 export type PublishStatus = 'published' | 'pending' | 'failed' | 'unpublished';
@@ -434,6 +435,41 @@ export async function getVaultRecord(
   const row = data?.[0];
   if (!row) return { record: null, error: 'Record not found.' };
   return { record: mapVaultRow(row as VaultRow), error: null };
+}
+
+/**
+ * UNHCR editor shared current workspace state (`UNHCR-CURRENT`).
+ * RLS still applies: owners see their row; admins see the workspace row;
+ * other users get `record: null` (not another user's private History case).
+ */
+export async function getUnhcrCurrentState(): Promise<{ record: VaultRecord | null; error: string | null }> {
+  const res = await getVaultRecord(UNHCR_CURRENT_RECORD_ID);
+  if (res.error && res.error !== 'Record not found.') return { record: null, error: res.error };
+  if (!res.record || res.record.docKind !== 'unhcr') return { record: null, error: null };
+  return { record: res.record, error: null };
+}
+
+/**
+ * Upsert the UNHCR shared current editor state. A duplicate owned by another
+ * account is skipped so private History records stay isolated.
+ */
+export async function saveUnhcrCurrentState(input: {
+  snapshot: unknown;
+  title: string;
+  subtitle?: string;
+  createdBy?: string | null;
+}): Promise<{ error: string | null; skipped: boolean }> {
+  const res = await commitDocument({
+    docKind: 'unhcr',
+    recordId: UNHCR_CURRENT_RECORD_ID,
+    title: input.title || 'UNHCR ID',
+    subtitle: input.subtitle,
+    payload: input.snapshot,
+    createdBy: input.createdBy,
+  });
+  if (!res.error) return { error: null, skipped: false };
+  if (/already archived by another account/i.test(res.error)) return { error: null, skipped: true };
+  return { error: res.error, skipped: false };
 }
 
 /**

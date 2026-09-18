@@ -37,6 +37,13 @@ import { PAGE_RECOVER_CONFIG, BUSINESS_MANAGER_CONFIG, normalizeServiceSnapshot 
 import { bytesToPdfDataUrl, pdfDataUrlToBytes } from '../src/lib/pdf-editor/serialize';
 import { normalizeUnhcrSnapshot, UNHCR_BARCODE1_DEFAULT, UNHCR_BARCODE2_DEFAULT, UNHCR_PHOTO_DEFAULT, UNHCR_QR_DEFAULT } from '../src/lib/constants/unhcr';
 import { UNHCR_BARCODE_TEST_PAYLOAD, UNHCR_QR_TEST_PAYLOAD } from '../src/lib/unhcrCodes';
+import {
+  UNHCR_CURRENT_RECORD_ID,
+  isUnhcrCurrentRecordId,
+  resolveUnhcrEditorLoadSource,
+  snapshotFromUnhcrVaultDoc,
+  unhcrHistoryRecordIdForSave,
+} from '../src/lib/unhcrCurrentState';
 
 const ROOT = process.cwd();
 
@@ -450,6 +457,32 @@ function main() {
   assert(reopenedUnhcr.qrX === 2210 && reopenedUnhcr.qrY === 110 && reopenedUnhcr.qrSize === 250, 'UNHCR History reopen restores QR position/size');
   assert(reopenedUnhcr.barcodePayload === 'MY-1001', 'UNHCR History reopen rebuilds barcode from ID number');
   assert(reopenedUnhcr.qrPayload.includes('ID: MY-1001') && reopenedUnhcr.qrPayload.includes('Name: Updated Subject'), 'UNHCR History reopen rebuilds QR from form fields');
+
+  assert(UNHCR_CURRENT_RECORD_ID === 'UNHCR-CURRENT', 'UNHCR shared current-state id is UNHCR-CURRENT');
+  assert(isUnhcrCurrentRecordId('UNHCR-CURRENT'), 'UNHCR-CURRENT is recognized as the shared state id');
+  assert(!isUnhcrCurrentRecordId('UNHCR-MY-1001'), 'a History case id is not the shared current state');
+  assert(resolveUnhcrEditorLoadSource({ recordNo: 'UNHCR-MY-1001', hasCurrentState: true }) === 'history-record', 'explicit History record wins over current state');
+  assert(resolveUnhcrEditorLoadSource({ projectId: 'p1', hasCurrentState: true }) === 'project', 'explicit project wins over current state');
+  assert(resolveUnhcrEditorLoadSource({ templateName: 't1', hasCurrentState: true }) === 'template', 'explicit template wins over current state');
+  assert(resolveUnhcrEditorLoadSource({ hasCurrentState: true }) === 'current-state', 'direct editor open loads shared current state');
+  assert(resolveUnhcrEditorLoadSource({ hasCurrentState: false }) === 'defaults', 'direct editor open uses defaults when no current state exists');
+  assert(unhcrHistoryRecordIdForSave(null, 'MY-1001', 'UNHCR-gen') === 'UNHCR-MY-1001', 'Save from a blank editor creates a History case id from the ID number');
+  assert(unhcrHistoryRecordIdForSave(UNHCR_CURRENT_RECORD_ID, 'MY-1001', 'UNHCR-gen') === 'UNHCR-MY-1001', 'Save never binds History to the shared current-state id');
+  assert(unhcrHistoryRecordIdForSave('UNHCR-abc', 'MY-1001', 'UNHCR-gen') === 'UNHCR-abc', 're-save of an explicit History record keeps that record id');
+  const packedCurrent = packDetails('', stored, { docKind: 'unhcr', doc: editedUnhcr });
+  const unpackedCurrent = unpackDetails(packedCurrent);
+  const loadedCurrent = snapshotFromUnhcrVaultDoc(unpackedCurrent.doc);
+  assert(loadedCurrent.name === 'Updated Subject', 'direct editor open restores saved text from current state');
+  assert(loadedCurrent.layouts.name.fontSize === 38 && loadedCurrent.layouts.name.fontFamily === 'arial-bold', 'direct editor open restores saved font settings');
+  assert(loadedCurrent.photoX === 90 && loadedCurrent.photoW === 650, 'direct editor open restores saved photo position/size');
+  assert(loadedCurrent.barcode1X === 100 && loadedCurrent.barcode1W === 680, 'direct editor open restores saved barcode 1');
+  assert(loadedCurrent.barcode2Y === 1190 && loadedCurrent.qrSize === 250, 'direct editor open restores saved barcode 2 and QR size');
+  const packedCurrentEdit = packDetails('', stored, { docKind: 'unhcr', doc: { ...editedUnhcr, name: 'Re-saved Subject', qrSize: 280 } });
+  const reloadedCurrent = snapshotFromUnhcrVaultDoc(unpackDetails(packedCurrentEdit).doc);
+  assert(reloadedCurrent.name === 'Re-saved Subject' && reloadedCurrent.qrSize === 280, 're-edit Save updates the shared current editor state');
+  const packedHistoryCase = packDetails('', stored, { docKind: 'unhcr', doc: { ...editedUnhcr, name: 'History Only' } });
+  assert(unpackDetails(packedHistoryCase).docKind === 'unhcr', 'individual History records remain independent of UNHCR-CURRENT');
+  assert(!isUnhcrCurrentRecordId('UNHCR-MY-1001'), 'shared current state id stays distinct from History case ids');
 
   const pdfDoc = {
     fileName: 'brief.pdf',
