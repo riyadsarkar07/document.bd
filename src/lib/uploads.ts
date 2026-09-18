@@ -73,3 +73,19 @@ export async function validatePdfFile(file: File, maxBytes: number): Promise<str
 }
 
 export const PDF_OVERLAY_IMAGE_MAX_BYTES = PDF_IMAGE_MAX_BYTES;
+
+const SUPPORT_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
+
+export async function validateSupportAttachment(file: File): Promise<string | null> {
+  if (file.size <= 0) return 'File is empty.';
+  if (file.size > SUPPORT_ATTACHMENT_MAX_BYTES) return 'File is larger than 8 MB.';
+  const namedPdf = file.name.toLowerCase().endsWith('.pdf');
+  const imageType = !file.type || IMAGE_TYPES.has(file.type);
+  const pdfType = file.type === 'application/pdf' || namedPdf;
+  if (!imageType && !pdfType) {
+    return 'Please choose a JPEG, PNG, WebP, GIF, or PDF file.';
+  }
+  const bytes = await sniff(file);
+  if (isPdf(bytes) || isJpeg(bytes) || isPng(bytes) || isGif(bytes) || isWebp(bytes)) return null;
+  return 'File content is not a valid image or PDF.';
+}

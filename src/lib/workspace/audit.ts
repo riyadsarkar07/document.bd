@@ -130,4 +130,9 @@ export const AUDIT_ACTIONS: { value: string; label: string }[] = [
   { value: 'publish.pending', label: 'Publish · committed, awaiting deploy' },
   { value: 'publish.failed', label: 'Publish · failed' },
   { value: 'publish.unpublished', label: 'Publish · removed from portal' },
+  { value: 'support.ticket.created', label: 'Support · ticket created' },
+  { value: 'support.ticket.replied', label: 'Support · reply sent' },
+  { value: 'support.ticket.updated', label: 'Support · ticket updated' },
+  { value: 'support.ticket.escalated', label: 'Support · ticket escalated' },
+  { value: 'support.note.added', label: 'Support · internal note' },
 ];

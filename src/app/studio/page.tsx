@@ -9,6 +9,7 @@ import {
   FileText,
   History,
   Landmark,
+  LifeBuoy,
   Lock,
   Package,
   Shapes,
@@ -264,9 +265,17 @@ export default function DashboardPage() {
               meta: `${stats.records} archived`,
               scope: 'history',
             },
+            {
+              href: '/studio/support',
+              title: 'Support Inbox',
+              desc: 'Open a ticket, attach screenshots, and follow replies from support.',
+              icon: LifeBuoy,
+              tone: 'from-rose-500 to-pink-600 text-white',
+              meta: 'Live thread',
+            },
           ]
             .map((q) => {
-            const locked = !hasToolAccess(profile, q.scope as ToolScope);
+            const locked = Boolean(q.scope && !hasToolAccess(profile, q.scope as ToolScope));
             const className = cn(
               'group rounded-2xl border border-line bg-surface-raised p-5 text-left transition',
               locked

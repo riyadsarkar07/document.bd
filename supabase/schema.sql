@@ -122,6 +122,84 @@ create table if not exists public.audit_logs (
 
 alter table public.audit_logs enable row level security;
 
+-- ────────────────────────── support tickets ──────────────────────────
+-- User/admin Support Inbox. Ticket numbers are generated server-side
+-- (SUP-YYYYMMDD-XXXX). Users only ever see their own tickets; admins see
+-- every ticket. Internal notes live in a separate table so they cannot leak
+-- through the public message thread.
+create table if not exists public.support_ticket_counters (
+  day date primary key,
+  last_n int not null default 0
+);
+
+create table if not exists public.support_tickets (
+  id uuid primary key default gen_random_uuid(),
+  ticket_no text not null unique,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  user_email text,
+  category text not null check (category in (
+    'bug',
+    'account',
+    'document-editor',
+    'pdf-editor',
+    'payment',
+    'other'
+  )),
+  subject text not null,
+  status text not null default 'open' check (status in (
+    'open',
+    'in_review',
+    'waiting_for_user',
+    'escalated',
+    'resolved',
+    'closed'
+  )),
+  priority text not null default 'normal' check (priority in ('low', 'normal', 'high', 'urgent')),
+  assigned_admin_id uuid references auth.users (id) on delete set null,
+  assigned_admin_email text,
+  last_reply_at timestamptz,
+  last_reply_by text check (last_reply_by in ('user', 'admin')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.support_messages (
+  id uuid primary key default gen_random_uuid(),
+  ticket_id uuid not null references public.support_tickets (id) on delete cascade,
+  author_id uuid references auth.users (id) on delete set null,
+  author_email text,
+  author_role text not null check (author_role in ('user', 'admin')),
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.support_notes (
+  id uuid primary key default gen_random_uuid(),
+  ticket_id uuid not null references public.support_tickets (id) on delete cascade,
+  author_id uuid references auth.users (id) on delete set null,
+  author_email text,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.support_attachments (
+  id uuid primary key default gen_random_uuid(),
+  ticket_id uuid not null references public.support_tickets (id) on delete cascade,
+  message_id uuid references public.support_messages (id) on delete set null,
+  uploaded_by uuid references auth.users (id) on delete set null,
+  storage_path text not null,
+  file_name text not null,
+  mime_type text not null,
+  byte_size int not null check (byte_size > 0 and byte_size <= 8388608),
+  created_at timestamptz not null default now()
+);
+
+alter table public.support_tickets enable row level security;
+alter table public.support_messages enable row level security;
+alter table public.support_notes enable row level security;
+alter table public.support_attachments enable row level security;
+alter table public.support_ticket_counters enable row level security;
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- STEP 2 — indexes / constraints
 -- ═══════════════════════════════════════════════════════════════════════
@@ -157,6 +235,14 @@ create index if not exists audit_logs_target_idx on public.audit_logs (target_ty
 create index if not exists templates_kind_idx on public.templates (kind);
 create index if not exists templates_owner_idx on public.templates (owner_id);
 create index if not exists projects_owner_idx on public.projects (owner_id);
+create index if not exists support_tickets_user_idx on public.support_tickets (user_id, created_at desc);
+create index if not exists support_tickets_status_idx on public.support_tickets (status, created_at desc);
+create index if not exists support_tickets_category_idx on public.support_tickets (category);
+create index if not exists support_tickets_assigned_idx on public.support_tickets (assigned_admin_id);
+create index if not exists support_tickets_no_idx on public.support_tickets (ticket_no);
+create index if not exists support_messages_ticket_idx on public.support_messages (ticket_id, created_at);
+create index if not exists support_notes_ticket_idx on public.support_notes (ticket_id, created_at);
+create index if not exists support_attachments_ticket_idx on public.support_attachments (ticket_id);
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- STEP 3 — helper functions / RPCs
@@ -439,6 +525,272 @@ grant execute on function public.can_log_action(uuid, text) to authenticated;
 grant execute on function public.my_usage() to authenticated;
 grant execute on function public.admin_user_usage() to authenticated;
 grant execute on function public.admin_certificate_counts() to authenticated;
+
+-- Allocate the next unique Support ticket number (SUP-YYYYMMDD-XXXX).
+-- SECURITY DEFINER so the counter table stays hidden from clients; the
+-- caller must still be an authenticated active user.
+create or replace function public.next_support_ticket_no()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  today date := (now() at time zone 'utc')::date;
+  n int;
+  stamp text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  if not public.is_active_user(auth.uid()) then
+    raise exception 'account is not active';
+  end if;
+  insert into public.support_ticket_counters (day, last_n)
+  values (today, 1)
+  on conflict (day) do update
+    set last_n = public.support_ticket_counters.last_n + 1
+  returning last_n into n;
+  stamp := to_char(today, 'YYYYMMDD');
+  return 'SUP-' || stamp || '-' || lpad(n::text, 4, '0');
+end;
+$$;
+
+revoke all on function public.next_support_ticket_no() from public;
+grant execute on function public.next_support_ticket_no() to authenticated;
+
+-- Does the current user own this ticket, or are they an admin?
+create or replace function public.can_access_support_ticket(tid uuid)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select public.is_admin()
+    or exists (
+      select 1 from public.support_tickets t
+      where t.id = tid
+        and t.user_id = auth.uid()
+        and public.is_active_user(auth.uid())
+    );
+$$;
+
+revoke all on function public.can_access_support_ticket(uuid) from public;
+grant execute on function public.can_access_support_ticket(uuid) to authenticated;
+
+-- Bump last_reply_* whenever a public message is posted. Runs as definer so
+-- users never need UPDATE on support_tickets (they must not change status).
+create or replace function public.touch_support_ticket_on_message()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.support_tickets
+     set last_reply_at = new.created_at,
+         last_reply_by = new.author_role,
+         updated_at = now()
+   where id = new.ticket_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists support_messages_touch_ticket on public.support_messages;
+create trigger support_messages_touch_ticket
+  after insert on public.support_messages
+  for each row execute function public.touch_support_ticket_on_message();
+
+-- Create a ticket + opening message. Locks user_id to auth.uid() and
+-- generates ticket_no server-side so the client cannot impersonate.
+create or replace function public.create_support_ticket(
+  p_category text,
+  p_subject text,
+  p_body text
+)
+returns public.support_tickets
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  email text;
+  ticket public.support_tickets;
+  subj text := trim(p_subject);
+  body text := trim(p_body);
+begin
+  if uid is null then
+    raise exception 'not authenticated';
+  end if;
+  if not public.is_active_user(uid) then
+    raise exception 'account is not active';
+  end if;
+  if p_category not in ('bug', 'account', 'document-editor', 'pdf-editor', 'payment', 'other') then
+    raise exception 'invalid category';
+  end if;
+  if char_length(subj) < 3 or char_length(subj) > 160 then
+    raise exception 'subject must be 3–160 characters';
+  end if;
+  if char_length(body) < 8 or char_length(body) > 8000 then
+    raise exception 'description must be 8–8000 characters';
+  end if;
+
+  select p.email into email from public.profiles p where p.id = uid;
+
+  insert into public.support_tickets (
+    ticket_no, user_id, user_email, category, subject, status, priority
+  ) values (
+    public.next_support_ticket_no(), uid, email, p_category, subj, 'open', 'normal'
+  )
+  returning * into ticket;
+
+  insert into public.support_messages (ticket_id, author_id, author_email, author_role, body)
+  values (ticket.id, uid, email, 'user', body);
+
+  select * into ticket from public.support_tickets where id = ticket.id;
+  return ticket;
+end;
+$$;
+
+revoke all on function public.create_support_ticket(text, text, text) from public;
+grant execute on function public.create_support_ticket(text, text, text) to authenticated;
+
+-- Post a public reply. Locks author_id / author_role server-side.
+create or replace function public.reply_support_ticket(p_ticket_id uuid, p_body text)
+returns public.support_messages
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  email text;
+  role_label text;
+  ticket public.support_tickets;
+  msg public.support_messages;
+  body text := trim(p_body);
+begin
+  if uid is null then
+    raise exception 'not authenticated';
+  end if;
+  if not public.can_access_support_ticket(p_ticket_id) then
+    raise exception 'ticket not found';
+  end if;
+  if char_length(body) < 1 or char_length(body) > 8000 then
+    raise exception 'reply must be 1–8000 characters';
+  end if;
+
+  select * into ticket from public.support_tickets where id = p_ticket_id;
+  if ticket.status = 'closed' and not public.is_admin() then
+    raise exception 'this ticket is closed';
+  end if;
+
+  select p.email into email from public.profiles p where p.id = uid;
+  role_label := case when public.is_admin() then 'admin' else 'user' end;
+  if role_label = 'user' and ticket.user_id is distinct from uid then
+    raise exception 'ticket not found';
+  end if;
+
+  insert into public.support_messages (ticket_id, author_id, author_email, author_role, body)
+  values (p_ticket_id, uid, email, role_label, body)
+  returning * into msg;
+
+  return msg;
+end;
+$$;
+
+revoke all on function public.reply_support_ticket(uuid, text) from public;
+grant execute on function public.reply_support_ticket(uuid, text) to authenticated;
+
+-- Admin-only status / priority / assignment updates. Never trusts a
+-- client-supplied user_id or ticket_no.
+create or replace function public.update_support_ticket(
+  p_ticket_id uuid,
+  p_status text default null,
+  p_priority text default null,
+  p_assign_self boolean default null
+)
+returns public.support_tickets
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  email text;
+  ticket public.support_tickets;
+begin
+  if not public.is_admin() then
+    raise exception 'admin required';
+  end if;
+  select * into ticket from public.support_tickets where id = p_ticket_id;
+  if ticket.id is null then
+    raise exception 'ticket not found';
+  end if;
+  if p_status is not null and p_status not in ('open', 'in_review', 'waiting_for_user', 'escalated', 'resolved', 'closed') then
+    raise exception 'invalid status';
+  end if;
+  if p_priority is not null and p_priority not in ('low', 'normal', 'high', 'urgent') then
+    raise exception 'invalid priority';
+  end if;
+
+  select p.email into email from public.profiles p where p.id = uid;
+
+  update public.support_tickets
+     set status = coalesce(p_status, status),
+         priority = coalesce(p_priority, priority),
+         assigned_admin_id = case
+           when p_assign_self is true then uid
+           when p_assign_self is false then assigned_admin_id
+           else assigned_admin_id
+         end,
+         assigned_admin_email = case
+           when p_assign_self is true then email
+           else assigned_admin_email
+         end,
+         updated_at = now()
+   where id = p_ticket_id
+  returning * into ticket;
+
+  return ticket;
+end;
+$$;
+
+revoke all on function public.update_support_ticket(uuid, text, text, boolean) from public;
+grant execute on function public.update_support_ticket(uuid, text, text, boolean) to authenticated;
+
+-- Admin-only internal note. Never visible through support_messages.
+create or replace function public.add_support_note(p_ticket_id uuid, p_body text)
+returns public.support_notes
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  email text;
+  note public.support_notes;
+  body text := trim(p_body);
+begin
+  if not public.is_admin() then
+    raise exception 'admin required';
+  end if;
+  if not exists (select 1 from public.support_tickets where id = p_ticket_id) then
+    raise exception 'ticket not found';
+  end if;
+  if char_length(body) < 1 or char_length(body) > 8000 then
+    raise exception 'note must be 1–8000 characters';
+  end if;
+  select p.email into email from public.profiles p where p.id = uid;
+  insert into public.support_notes (ticket_id, author_id, author_email, body)
+  values (p_ticket_id, uid, email, body)
+  returning * into note;
+  return note;
+end;
+$$;
+
+revoke all on function public.add_support_note(uuid, text) from public;
+grant execute on function public.add_support_note(uuid, text) to authenticated;
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- STEP 4 — RLS policies
@@ -743,6 +1095,162 @@ begin
     create index if not exists certificates_created_by_idx on public.certificates (created_by);
     create index if not exists certificates_deleted_idx on public.certificates (deleted_at);
   end if;
+end $$;
+
+-- ────────────────────────── support tickets (RLS) ──────────────────────────
+-- Users can only see and write their own tickets. Admins can see every
+-- ticket. Ticket numbers, user_id, and status transitions are locked by
+-- WITH CHECK so the client cannot impersonate another user or invent ids.
+-- Internal notes are admin-only. Attachments inherit ticket access.
+
+revoke all on table public.support_tickets from anon, public;
+revoke all on table public.support_messages from anon, public;
+revoke all on table public.support_notes from anon, public;
+revoke all on table public.support_attachments from anon, public;
+revoke all on table public.support_ticket_counters from anon, public, authenticated;
+grant select on table public.support_tickets to authenticated;
+grant select on table public.support_messages to authenticated;
+grant select on table public.support_notes to authenticated;
+grant select, insert on table public.support_attachments to authenticated;
+
+drop policy if exists "support_tickets_select" on public.support_tickets;
+create policy "support_tickets_select" on public.support_tickets
+  for select using (
+    (user_id = auth.uid() and public.is_active_user(auth.uid()))
+    or public.is_admin()
+  );
+
+drop policy if exists "support_tickets_insert" on public.support_tickets;
+create policy "support_tickets_insert" on public.support_tickets
+  for insert with check (
+    auth.uid() = user_id
+    and public.is_active_user(auth.uid())
+    and status = 'open'
+    and assigned_admin_id is null
+    and ticket_no ~ '^SUP-[0-9]{8}-[0-9]{4}$'
+  );
+
+-- Users never UPDATE tickets (status/assignment/last_reply are owned by
+-- RPCs and the message trigger). Admins may update any ticket.
+drop policy if exists "support_tickets_update_user" on public.support_tickets;
+drop policy if exists "support_tickets_update_admin" on public.support_tickets;
+create policy "support_tickets_update_admin" on public.support_tickets
+  for update using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists "support_messages_select" on public.support_messages;
+create policy "support_messages_select" on public.support_messages
+  for select using (public.can_access_support_ticket(ticket_id));
+
+drop policy if exists "support_messages_insert" on public.support_messages;
+create policy "support_messages_insert" on public.support_messages
+  for insert with check (
+    public.can_access_support_ticket(ticket_id)
+    and author_id = auth.uid()
+    and (
+      (author_role = 'user' and exists (
+        select 1 from public.support_tickets t
+        where t.id = ticket_id and t.user_id = auth.uid() and t.status not in ('closed')
+      ))
+      or (author_role = 'admin' and public.is_admin())
+    )
+  );
+
+drop policy if exists "support_notes_select" on public.support_notes;
+create policy "support_notes_select" on public.support_notes
+  for select using (public.is_admin());
+
+drop policy if exists "support_notes_insert" on public.support_notes;
+create policy "support_notes_insert" on public.support_notes
+  for insert with check (public.is_admin() and author_id = auth.uid());
+
+drop policy if exists "support_attachments_select" on public.support_attachments;
+create policy "support_attachments_select" on public.support_attachments
+  for select using (public.can_access_support_ticket(ticket_id));
+
+drop policy if exists "support_attachments_insert" on public.support_attachments;
+create policy "support_attachments_insert" on public.support_attachments
+  for insert with check (
+    public.can_access_support_ticket(ticket_id)
+    and uploaded_by = auth.uid()
+    and byte_size > 0
+    and byte_size <= 8388608
+    and mime_type in (
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'application/pdf'
+    )
+  );
+
+-- Counter table is only touched by next_support_ticket_no() (security definer).
+drop policy if exists "support_counters_deny" on public.support_ticket_counters;
+create policy "support_counters_deny" on public.support_ticket_counters
+  for all using (false) with check (false);
+
+-- ────────────────────────── support attachments storage ──────────────────────────
+-- Private bucket. Object path is `<user_id>/<ticket_id>/<filename>` so users
+-- can only upload/read under their own prefix; admins can read everything.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'support-attachments',
+  'support-attachments',
+  false,
+  8388608,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
+)
+on conflict (id) do update
+  set public = false,
+      file_size_limit = 8388608,
+      allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+
+drop policy if exists "support_storage_select" on storage.objects;
+create policy "support_storage_select" on storage.objects
+  for select using (
+    bucket_id = 'support-attachments'
+    and (
+      public.is_admin()
+      or (auth.uid() is not null and (storage.foldername(name))[1] = auth.uid()::text)
+    )
+  );
+
+drop policy if exists "support_storage_insert" on storage.objects;
+create policy "support_storage_insert" on storage.objects
+  for insert with check (
+    bucket_id = 'support-attachments'
+    and auth.uid() is not null
+    and public.is_active_user(auth.uid())
+    and (
+      (storage.foldername(name))[1] = auth.uid()::text
+      or public.is_admin()
+    )
+  );
+
+-- Realtime: new messages / ticket status changes stream to open inboxes.
+-- FULL replica identity is required so postgres_changes filters on ticket_id work.
+alter table public.support_tickets replica identity full;
+alter table public.support_messages replica identity full;
+alter table public.support_notes replica identity full;
+alter table public.support_attachments replica identity full;
+
+do $$
+begin
+  begin
+    alter publication supabase_realtime add table public.support_tickets;
+  exception when duplicate_object then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.support_messages;
+  exception when duplicate_object then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.support_notes;
+  exception when duplicate_object then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.support_attachments;
+  exception when duplicate_object then null;
+  end;
 end $$;
 
 -- Recognize the authorized admin account (UUID allowlist).
