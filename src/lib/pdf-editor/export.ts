@@ -132,12 +132,12 @@ async function drawAnnotation(
     const boxH = Math.max(1, annotation.height * height);
     const boxY = nyTop(page, annotation.y + annotation.height);
     if (annotation.coverOriginal) {
-      const pad = Math.max(0.2, size * 0.03);
+      const padX = Math.max(0.15, size * 0.02);
       outPage.drawRectangle({
-        x: boxX - pad,
-        y: boxY - pad,
-        width: boxW + pad * 2,
-        height: boxH + pad * 2,
+        x: boxX - padX,
+        y: boxY + boxH - size,
+        width: boxW + padX * 2,
+        height: size,
         color: rgb(1, 1, 1),
       });
     }

@@ -718,10 +718,11 @@ async function main() {
   ok(Boolean(monthText?.block.includes(' 8 Tf')), 'exported MONTH keeps 8pt size');
   ok(Boolean(valueText?.block.includes(' 8 Tf')), 'exported VALUE & RULE keeps 8pt size');
   const billCovers = parseCoverRects(realContent);
-  ok(
-    billCovers.some((c) => Math.abs(c.x - headerMonth!.x * billViewport.width) < 2 && Math.abs(c.y - (monthBaselineY - 0.3)) < 1.5),
-    'white cover sits on the MONTH glyph box',
+  const monthCover = billCovers.find(
+    (c) => Math.abs(c.x - headerMonth!.x * billViewport.width) < 2 && Math.abs(c.height - 8) < 0.8,
   );
+  ok(Boolean(monthCover), 'white cover sits on the MONTH glyph box');
+  ok(Boolean(monthCover) && Math.abs(monthCover!.height - 8) < 0.8, 'white cover height matches 8pt glyphs, not a taller underline bar');
 
   const untouchedState: PdfEditorDocument = {
     fileName: 'utility-bill-regression.pdf',

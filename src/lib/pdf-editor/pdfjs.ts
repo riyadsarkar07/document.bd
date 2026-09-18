@@ -76,6 +76,7 @@ export async function renderPdfPageToCanvas(
   await page.render({
     canvasContext: context,
     viewport,
+    annotationMode: 0,
   }).promise;
 
   return { width: viewport.width, height: viewport.height };

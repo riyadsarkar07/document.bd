@@ -34,13 +34,19 @@ export function AnnotationSvg({
           left: `${annotation.x * 100}%`,
           top: `${annotation.y * 100}%`,
           width: `${annotation.width * 100}%`,
-          height: `${annotation.height * 100}%`,
+          height: `${annotation.fontSize * height}px`,
           color: annotation.color,
           fontSize: Math.max(4, annotation.fontSize * height),
           fontWeight: annotation.bold ? 700 : 400,
           fontFamily: annotation.fontFamily || 'Helvetica, Arial, sans-serif',
           textAlign: annotation.align || 'left',
           background: native && annotation.coverOriginal ? '#fff' : undefined,
+          border: 'none',
+          outline: 'none',
+          boxShadow: 'none',
+          textDecoration: 'none',
+          lineHeight: 1,
+          padding: 0,
         }}
       >
         {annotation.text || (native ? '' : 'Text')}

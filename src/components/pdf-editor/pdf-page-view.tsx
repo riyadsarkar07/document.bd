@@ -26,7 +26,6 @@ export function PdfPageView({
   draft,
   interactive,
   thumbnail,
-  textRuns,
   editingId,
   editText,
   onTextChange,
@@ -148,18 +147,6 @@ export function PdfPageView({
       }
     >
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
-      {textRuns?.map((run) => (
-        <div
-          key={run.id}
-          className="pointer-events-none absolute"
-          style={{
-            left: `${run.x * 100}%`,
-            top: `${run.y * 100}%`,
-            width: `${run.width * 100}%`,
-            height: `${run.height * 100}%`,
-          }}
-        />
-      ))}
       <div className="pointer-events-none absolute inset-0">
         {items.map((annotation) =>
           annotation.type === 'text' && annotation.id === editingId ? (
@@ -176,6 +163,9 @@ export function PdfPageView({
               <textarea
                 autoFocus
                 rows={1}
+                spellCheck={false}
+                autoComplete="off"
+                autoCorrect="off"
                 wrap={annotation.source === 'native' ? 'off' : undefined}
                 value={editText ?? annotation.text}
                 onChange={(e) => onTextChange?.(e.target.value)}
