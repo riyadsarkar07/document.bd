@@ -16,6 +16,7 @@ import {
   SUPPORT_ATTACHMENT_MAX_BYTES,
   SUPPORT_ATTACHMENT_MAX_FILES,
   SUPPORT_CATEGORIES,
+  SUPPORT_SUGGESTED_REPLIES,
   SUPPORT_STATUSES,
   SUPPORT_STATUS_LABEL,
   validateReplyBody,
@@ -105,6 +106,10 @@ function main() {
   assert(thread.includes("fromAdmin ? 'justify-end' : 'justify-start'"), 'admin bubbles right, user bubbles left');
   assert(thread.includes('markSupportTicketInReview') && api.includes("rpc('mark_support_ticket_in_review'"), 'admin view marks open tickets in review');
   assert(thread.includes("ticket?.status !== 'open'"), 'auto in-review skips non-open tickets');
+  assert(SUPPORT_SUGGESTED_REPLIES.length === 7, 'seven suggested replies');
+  assert(SUPPORT_SUGGESTED_REPLIES.every((s) => validateReplyBody(s) === null), 'suggested replies are valid sendable text');
+  assert(thread.includes('Suggested Replies') && thread.includes('SUPPORT_SUGGESTED_REPLIES') && thread.includes('setReply(preset)'), 'admin can insert a suggestion without sending');
+  assert(thread.includes('{isAdmin && (') && thread.includes('Suggested Replies'), 'suggestions are admin-only');
 
   if (failures) {
     console.error(`\n${failures} support check(s) failed.`);

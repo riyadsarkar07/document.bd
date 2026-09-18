@@ -21,6 +21,7 @@ import {
 import {
   SUPPORT_ATTACHMENT_MAX_FILES,
   SUPPORT_CATEGORY_LABEL,
+  SUPPORT_SUGGESTED_REPLIES,
   SUPPORT_PRIORITIES,
   SUPPORT_PRIORITY_LABEL,
   SUPPORT_PRIORITY_TONE,
@@ -267,6 +268,28 @@ export default function SupportTicketPage() {
               <p className="text-sm text-muted">Only support can reopen or add another public reply.</p>
             ) : (
               <div className="space-y-3">
+                {isAdmin && (
+                  <div>
+                    <FieldLabel>Suggested Replies</FieldLabel>
+                    <div className="flex flex-col gap-2">
+                      {SUPPORT_SUGGESTED_REPLIES.map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setReply(preset)}
+                          className={cn(
+                            'rounded-xl border px-3 py-2 text-left text-xs leading-relaxed text-secondary transition',
+                            reply === preset
+                              ? 'border-accent/50 bg-accent/10 text-primary'
+                              : 'border-line bg-surface-raised hover:border-line-strong hover:bg-surface-hover',
+                          )}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <Textarea
                   rows={5}
                   value={reply}

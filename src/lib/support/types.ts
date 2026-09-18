@@ -142,6 +142,16 @@ export const SUPPORT_REPLY_MAX = 8000;
 export const SUPPORT_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
 export const SUPPORT_ATTACHMENT_MAX_FILES = 4;
 
+export const SUPPORT_SUGGESTED_REPLIES = [
+  'Thank you for contacting Support. Please provide a screenshot of the issue so we can investigate it properly.',
+  'We have received your report and our support team is currently reviewing the issue.',
+  'Could you please provide a few more details about the issue and the steps that caused it?',
+  'Your issue has been escalated to our technical team for further investigation.',
+  'The reported issue has been reviewed and fixed. Please try again and let us know if the problem still occurs.',
+  "We're currently waiting for the requested information from you.",
+  'We believe the issue has been resolved. Please confirm so we can close this ticket.',
+] as const;
+
 export function isSupportCategory(value: unknown): value is SupportCategory {
   return typeof value === 'string' && (SUPPORT_CATEGORIES as readonly string[]).includes(value);
 }
