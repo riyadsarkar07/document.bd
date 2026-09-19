@@ -14,6 +14,7 @@ import {
   type DocumentKind,
 } from '@/lib/workspace/document-kinds';
 import { isUnhcrCurrentRecordId, UNHCR_CURRENT_RECORD_ID } from '@/lib/unhcrCurrentState';
+import { isUnhcrS2CurrentRecordId, UNHCR_S2_CURRENT_RECORD_ID } from '@/lib/unhcrS2CurrentState';
 
 /** Publication state of a vault record against the public verification portal. */
 export type PublishStatus = 'published' | 'pending' | 'failed' | 'unpublished';
@@ -394,7 +395,11 @@ export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultLis
   const status = q.status ?? 'active';
 
   const build = (withTrash: boolean) => {
-    let query = supabase.from('certificates').select('*', { count: 'exact' }).neq('trademark_no', UNHCR_CURRENT_RECORD_ID);
+    let query = supabase
+      .from('certificates')
+      .select('*', { count: 'exact' })
+      .neq('trademark_no', UNHCR_CURRENT_RECORD_ID)
+      .neq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID);
     if (withTrash) {
       query = status === 'trashed' ? query.not('deleted_at', 'is', null) : query.is('deleted_at', null);
     }
@@ -430,7 +435,7 @@ export async function getVaultRecord(
 ): Promise<{ record: VaultRecord | null; error: string | null }> {
   const tm = trademarkNo.trim();
   if (!tm) return { record: null, error: 'Missing Trademark No.' };
-  if (isUnhcrCurrentRecordId(tm)) return { record: null, error: 'Record not found.' };
+  if (isUnhcrCurrentRecordId(tm) || isUnhcrS2CurrentRecordId(tm)) return { record: null, error: 'Record not found.' };
   const { data, error } = await supabase.from('certificates').select('*').eq('trademark_no', tm).limit(1);
   if (error) return { record: null, error: error.message };
   const row = data?.[0];
@@ -499,13 +504,69 @@ export async function saveUnhcrCurrentState(input: {
   return { error: res.error, skipped: false };
 }
 
+function mapUnhcrS2CurrentRow(data: unknown): VaultRecord | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const mapped = mapVaultRow(data as VaultRow);
+  if (!isUnhcrS2CurrentRecordId(mapped.trademarkNo) || mapped.docKind !== 'unhcr-s2') return null;
+  return mapped;
+}
+
+/**
+ * UNHCR Server 2 shared current workspace (`UNHCR-S2-CURRENT`).
+ * Independent of Server 1 (`UNHCR-CURRENT`). Same `unhcr` tool access.
+ */
+export async function getUnhcrS2CurrentState(): Promise<{ record: VaultRecord | null; error: string | null }> {
+  const { data, error } = await supabase.rpc('get_unhcr_s2_current_state');
+  if (!error) return { record: mapUnhcrS2CurrentRow(data), error: null };
+  if (!isMissingUnhcrCurrentRpc(error.message)) return { record: null, error: error.message };
+  const fallback = await supabase
+    .from('certificates')
+    .select('*')
+    .eq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID)
+    .limit(1);
+  if (fallback.error) return { record: null, error: fallback.error.message };
+  return { record: mapUnhcrS2CurrentRow(fallback.data?.[0] ?? null), error: null };
+}
+
+export async function saveUnhcrS2CurrentState(input: {
+  snapshot: unknown;
+  title: string;
+  subtitle?: string;
+  createdBy?: string | null;
+}): Promise<{ error: string | null; skipped: boolean }> {
+  const layout = layoutFromSnapshot(TM_DEFAULTS);
+  const details = packDetails('', layout, { docKind: 'unhcr-s2', doc: input.snapshot });
+  const { error } = await supabase.rpc('save_unhcr_s2_current_state', {
+    p_title: input.title || 'UNHCR ID Server 2',
+    p_subtitle: input.subtitle ?? '',
+    p_details: details,
+  });
+  if (!error) return { error: null, skipped: false };
+  if (!isMissingUnhcrCurrentRpc(error.message)) return { error: error.message, skipped: false };
+  const res = await commitDocument({
+    docKind: 'unhcr-s2',
+    recordId: UNHCR_S2_CURRENT_RECORD_ID,
+    title: input.title || 'UNHCR ID Server 2',
+    subtitle: input.subtitle,
+    payload: input.snapshot,
+    createdBy: input.createdBy,
+  });
+  if (!res.error) return { error: null, skipped: false };
+  if (/already archived by another account/i.test(res.error)) return { error: null, skipped: true };
+  return { error: res.error, skipped: false };
+}
+
 /**
  * Legacy loader used by the studio dashboard and NID/TIN editors. Same active
  * (non-trashed) view as `listVaultRecords` with no pagination.
  */
 export async function loadVault(): Promise<{ records: VaultRecord[]; error: string | null }> {
   const build = (withTrash: boolean) => {
-    let query = supabase.from('certificates').select('*').neq('trademark_no', UNHCR_CURRENT_RECORD_ID);
+    let query = supabase
+      .from('certificates')
+      .select('*')
+      .neq('trademark_no', UNHCR_CURRENT_RECORD_ID)
+      .neq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID);
     if (withTrash) query = query.is('deleted_at', null);
     return query.order('synced_at', { ascending: false });
   };

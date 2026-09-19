@@ -19,25 +19,37 @@ import {
   UNHCR_LAYOUT_RANGES,
   UNHCR_PHOTO_RANGES,
   UNHCR_QR_RANGES,
+  UNHCR_TEST_BOX_RANGES,
+  UNHCR_TEST_OVERLAY_LABELS,
   isUnhcrCodeKey,
+  isUnhcrTestOverlayKey,
   normalizeUnhcrSnapshot,
   unhcrCodeBox,
-} from '@/lib/constants/unhcr';
-import type { UnhcrCodeKey, UnhcrFieldKey, UnhcrLayout, UnhcrOverlayKey, UnhcrSnapshot } from '@/lib/editor/types';
-import { UNHCR_CODE_KEYS } from '@/lib/editor/types';
-import { renderUnhcrCard } from '@/lib/renderers/unhcrRenderer';
+  unhcrTestOverlayBox,
+} from '@/lib/constants/unhcr-s2';
+import type {
+  UnhcrCodeKey,
+  UnhcrFieldKey,
+  UnhcrLayout,
+  UnhcrS2OverlayKey,
+  UnhcrS2Snapshot,
+  UnhcrTestOverlayKey,
+  UnhcrTextOrientation,
+} from '@/lib/editor/types';
+import { UNHCR_CODE_KEYS, UNHCR_TEST_OVERLAY_KEYS } from '@/lib/editor/types';
+import { renderUnhcrCard } from '@/lib/renderers/unhcrS2Renderer';
 import { syncUnhcrCodePayloads } from '@/lib/unhcrCodes';
 import { loadDataUrlImage, loadImage } from '@/lib/images';
 import { validateImageFile } from '@/lib/uploads';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
-import { commitDocument, getUnhcrCurrentState, getVaultRecord, saveUnhcrCurrentState } from '@/lib/workspace/vault';
+import { commitDocument, getUnhcrS2CurrentState, getVaultRecord, saveUnhcrS2CurrentState } from '@/lib/workspace/vault';
 import { newRecordId } from '@/lib/workspace/document-kinds';
 import {
-  isUnhcrCurrentRecordId,
-  snapshotFromUnhcrVaultDoc,
-  unhcrHistoryRecordIdForSave,
-} from '@/lib/unhcrCurrentState';
+  isUnhcrS2CurrentRecordId,
+  snapshotFromUnhcrS2VaultDoc,
+  unhcrS2HistoryRecordIdForSave,
+} from '@/lib/unhcrS2CurrentState';
 import { checkLimit } from '@/lib/workspace/limits';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useToast } from '@/lib/toast/toast-provider';
@@ -83,7 +95,7 @@ function UnhcrEditorInner() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
-  const [activeField, setActiveField] = useState<UnhcrOverlayKey>('unhcrNo');
+  const [activeField, setActiveField] = useState<UnhcrS2OverlayKey>('unhcrNo');
   const [moveStep, setMoveStep] = useState(1);
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -91,14 +103,14 @@ function UnhcrEditorInner() {
   const [photoName, setPhotoName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const externalCacheRef = useRef<UnhcrSnapshot | null>(null);
+  const externalCacheRef = useRef<UnhcrS2Snapshot | null>(null);
 
-  const editor = useDocumentEditor<UnhcrSnapshot>({
-    kind: 'unhcr',
+  const editor = useDocumentEditor<UnhcrS2Snapshot>({
+    kind: 'unhcr-s2',
     defaults: UNHCR_DEFAULTS,
-    autosaveKey: `studio.autosave.unhcr.${user?.id ?? 'anon'}`,
+    autosaveKey: `studio.autosave.unhcr-s2.${user?.id ?? 'anon'}`,
     loadExternal: () => externalCacheRef.current,
-    normalize: (s) => normalizeUnhcrSnapshot(s as Partial<UnhcrSnapshot>),
+    normalize: (s) => normalizeUnhcrSnapshot(s as Partial<UnhcrS2Snapshot>),
     restoreAutosave: false,
   });
 
@@ -123,7 +135,7 @@ function UnhcrEditorInner() {
   const photoImageRef = useRef(photoImage);
   photoImageRef.current = photoImage;
   const dragRef = useRef<{
-    field: UnhcrOverlayKey;
+    field: UnhcrS2OverlayKey;
     startX: number;
     startY: number;
     origX: number;
@@ -135,13 +147,13 @@ function UnhcrEditorInner() {
     const templateName = searchParams.get('template');
     const recordNo = searchParams.get('record');
     (async () => {
-      if (recordNo && !isUnhcrCurrentRecordId(recordNo)) {
+      if (recordNo && !isUnhcrS2CurrentRecordId(recordNo)) {
         const res = await getVaultRecord(recordNo);
         if (res.error || !res.record) {
           toast.error(res.error ?? 'Could not load History record');
           return;
         }
-        const next = snapshotFromUnhcrVaultDoc(res.record.doc);
+        const next = snapshotFromUnhcrS2VaultDoc(res.record.doc);
         externalCacheRef.current = next;
         editor.replace(next);
         setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
@@ -154,7 +166,7 @@ function UnhcrEditorInner() {
         const res = await listProjects();
         const found = res.data.find((p) => String(p.id) === projectId || p.name === projectId);
         if (found) {
-          const next = normalizeUnhcrSnapshot(found.state as Partial<UnhcrSnapshot>);
+          const next = normalizeUnhcrSnapshot(found.state as Partial<UnhcrS2Snapshot>);
           externalCacheRef.current = next;
           editor.replace(next);
           setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
@@ -167,7 +179,7 @@ function UnhcrEditorInner() {
         const res = await listTemplates();
         const found = res.data.find((t) => String(t.id) === templateName || t.name === templateName);
         if (found) {
-          const next = normalizeUnhcrSnapshot(found.state as Partial<UnhcrSnapshot>);
+          const next = normalizeUnhcrSnapshot(found.state as Partial<UnhcrS2Snapshot>);
           externalCacheRef.current = next;
           editor.replace(next);
           setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
@@ -177,9 +189,9 @@ function UnhcrEditorInner() {
         return;
       }
       if (!user) return;
-      const current = await getUnhcrCurrentState();
+      const current = await getUnhcrS2CurrentState();
       if (current.error || !current.record) return;
-      const next = snapshotFromUnhcrVaultDoc(current.record.doc);
+      const next = snapshotFromUnhcrS2VaultDoc(current.record.doc);
       externalCacheRef.current = next;
       editor.replace(next);
       setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
@@ -254,17 +266,18 @@ function UnhcrEditorInner() {
   }, []);
 
   const isCodeField = isUnhcrCodeKey(activeField);
+  const isTestOverlay = isUnhcrTestOverlayKey(activeField);
   const barcodeField: 'barcode1' | 'barcode2' | null =
     activeField === 'barcode1' || activeField === 'barcode2' ? activeField : null;
   const isBarcodeField = barcodeField !== null;
-  const activeLayout = activeField === 'photo' || isCodeField
+  const activeLayout = activeField === 'photo' || isCodeField || isTestOverlay
     ? UNHCR_DEFAULT_LAYOUTS.unhcrNo
     : (present.layouts[activeField] ?? UNHCR_DEFAULT_LAYOUTS[activeField]);
 
   const setLayout = useCallback(
     <K extends keyof UnhcrLayout>(key: K, value: UnhcrLayout[K]) => {
       const field = activeFieldRef.current;
-      if (field === 'photo' || isUnhcrCodeKey(field)) return;
+      if (field === 'photo' || isUnhcrCodeKey(field) || isUnhcrTestOverlayKey(field)) return;
       const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
       setField('layouts', {
         ...presentRef.current.layouts,
@@ -275,7 +288,7 @@ function UnhcrEditorInner() {
   );
 
   const setPhoto = useCallback(
-    (patch: Partial<Pick<UnhcrSnapshot, 'photoX' | 'photoY' | 'photoW' | 'photoH' | 'photoDataUrl'>>) => {
+    (patch: Partial<Pick<UnhcrS2Snapshot, 'photoX' | 'photoY' | 'photoW' | 'photoH' | 'photoDataUrl'>>) => {
       setSnapshot((prev) => ({
         ...prev,
         photoX: patch.photoX ?? prev.photoX,
@@ -321,6 +334,38 @@ function UnhcrEditorInner() {
     [setSnapshot],
   );
 
+  const patchTestOverlay = useCallback(
+    (
+      field: UnhcrTestOverlayKey,
+      patch: { x?: number; y?: number; w?: number; h?: number; fontSize?: number; text?: string; orientation?: UnhcrTextOrientation },
+    ) => {
+      setSnapshot((prev) => {
+        if (field === 'testBarcodeText') {
+          return {
+            ...prev,
+            testBarcodeText: patch.text ?? prev.testBarcodeText,
+            testBarcodeTextX: patch.x ?? prev.testBarcodeTextX,
+            testBarcodeTextY: patch.y ?? prev.testBarcodeTextY,
+            testBarcodeTextW: patch.w ?? prev.testBarcodeTextW,
+            testBarcodeTextH: patch.h ?? prev.testBarcodeTextH,
+            testBarcodeTextFontSize: patch.fontSize ?? prev.testBarcodeTextFontSize,
+          };
+        }
+        return {
+          ...prev,
+          testRefNo: patch.text ?? prev.testRefNo,
+          testRefNoX: patch.x ?? prev.testRefNoX,
+          testRefNoY: patch.y ?? prev.testRefNoY,
+          testRefNoW: patch.w ?? prev.testRefNoW,
+          testRefNoH: patch.h ?? prev.testRefNoH,
+          testRefNoFontSize: patch.fontSize ?? prev.testRefNoFontSize,
+          testRefNoOrientation: patch.orientation ?? prev.testRefNoOrientation,
+        };
+      });
+    },
+    [setSnapshot],
+  );
+
   const moveField = useCallback(
     (dx: number, dy: number) => {
       const field = activeFieldRef.current;
@@ -340,6 +385,14 @@ function UnhcrEditorInner() {
         });
         return;
       }
+      if (isUnhcrTestOverlayKey(field)) {
+        const box = unhcrTestOverlayBox(presentRef.current, field);
+        patchTestOverlay(field, {
+          x: clamp(box.x + dx * moveStep, 0, UNHCR_DOC_WIDTH),
+          y: clamp(box.y + dy * moveStep, 0, UNHCR_DOC_HEIGHT),
+        });
+        return;
+      }
       const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
       setField('layouts', {
         ...presentRef.current.layouts,
@@ -350,13 +403,13 @@ function UnhcrEditorInner() {
         },
       });
     },
-    [setField, setPhoto, patchCode, moveStep],
-  );
+      [setField, setPhoto, patchCode, patchTestOverlay, moveStep],
+    );
 
   const bumpFont = useCallback(
     (delta: number) => {
       const field = activeFieldRef.current;
-      if (field === 'photo' || isUnhcrCodeKey(field)) return;
+      if (field === 'photo' || isUnhcrCodeKey(field) || isUnhcrTestOverlayKey(field)) return;
       const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
       setLayout(
         'fontSize',
@@ -381,6 +434,37 @@ function UnhcrEditorInner() {
     [patchCode],
   );
 
+  const bumpTestOverlaySize = useCallback(
+    (delta: number) => {
+      const field = activeFieldRef.current;
+      if (!isUnhcrTestOverlayKey(field)) return;
+      const box = unhcrTestOverlayBox(presentRef.current, field);
+      if (field === 'testRefNo' && presentRef.current.testRefNoOrientation === 'vertical') {
+        patchTestOverlay(field, {
+          h: clamp(box.h + delta, UNHCR_TEST_BOX_RANGES.h.min, UNHCR_TEST_BOX_RANGES.h.max),
+        });
+        return;
+      }
+      patchTestOverlay(field, {
+        w: clamp(box.w + delta, UNHCR_TEST_BOX_RANGES.w.min, UNHCR_TEST_BOX_RANGES.w.max),
+      });
+    },
+    [patchTestOverlay],
+  );
+
+  const bumpTestOverlayFont = useCallback(
+    (delta: number) => {
+      const field = activeFieldRef.current;
+      if (!isUnhcrTestOverlayKey(field)) return;
+      const snap = presentRef.current;
+      const current = field === 'testBarcodeText' ? snap.testBarcodeTextFontSize : snap.testRefNoFontSize;
+      patchTestOverlay(field, {
+        fontSize: clamp(current + delta, UNHCR_TEST_BOX_RANGES.fontSize.min, UNHCR_TEST_BOX_RANGES.fontSize.max),
+      });
+    },
+    [patchTestOverlay],
+  );
+
   const bumpPhotoSize = useCallback(
     (delta: number) => {
       const snap = presentRef.current;
@@ -403,15 +487,15 @@ function UnhcrEditorInner() {
       return null;
     }
     const snap = normalizeUnhcrSnapshot(presentRef.current);
-    const title = snap.unhcrNo.trim() ? `UNHCR ${snap.unhcrNo.trim()}` : 'UNHCR ID';
+    const title = snap.unhcrNo.trim() ? `UNHCR S2 ${snap.unhcrNo.trim()}` : 'UNHCR ID Server 2';
     const subtitle = snap.name.trim() || undefined;
-    const recordId = unhcrHistoryRecordIdForSave(
+    const recordId = unhcrS2HistoryRecordIdForSave(
       historyRecordId,
       snap.unhcrNo,
-      newRecordId('unhcr'),
+      newRecordId('unhcr-s2'),
     );
     const res = await commitDocument({
-      docKind: 'unhcr',
+      docKind: 'unhcr-s2',
       recordId,
       title,
       subtitle,
@@ -423,7 +507,7 @@ function UnhcrEditorInner() {
       return null;
     }
     setHistoryRecordId(res.recordId);
-    const current = await saveUnhcrCurrentState({
+    const current = await saveUnhcrS2CurrentState({
       snapshot: snap,
       title,
       subtitle,
@@ -436,8 +520,8 @@ function UnhcrEditorInner() {
     void logActivity({
       user_id: user.id,
       email: user.email,
-      action: 'history.save.unhcr',
-      detail: `UNHCR ${snap.unhcrNo || res.recordId}`,
+      action: 'history.save.unhcr-s2',
+      detail: `UNHCR S2 ${snap.unhcrNo || res.recordId}`,
     });
     return res.recordId;
   }, [historyRecordId, user, toast, setStatus]);
@@ -527,9 +611,9 @@ function UnhcrEditorInner() {
       return;
     }
     const res = await saveProject({
-      name: present.unhcrNo.trim() ? `UNHCR ${present.unhcrNo.trim()}` : 'UNHCR ID',
+      name: present.unhcrNo.trim() ? `UNHCR S2 ${present.unhcrNo.trim()}` : 'UNHCR ID Server 2',
       kind: 'unhcr',
-      state: { ...normalizeUnhcrSnapshot(present), docKind: 'unhcr' } as unknown as Record<string, unknown>,
+      state: { ...normalizeUnhcrSnapshot(present), docKind: 'unhcr-s2' } as unknown as Record<string, unknown>,
       owner_id: user.id,
     });
     if (res.error) {
@@ -611,8 +695,12 @@ function UnhcrEditorInner() {
     );
   }, []);
 
-  const hitField = useCallback((x: number, y: number): UnhcrOverlayKey | null => {
+  const hitField = useCallback((x: number, y: number): UnhcrS2OverlayKey | null => {
     const snap = presentRef.current;
+    for (const key of UNHCR_TEST_OVERLAY_KEYS) {
+      const box = unhcrTestOverlayBox(snap, key);
+      if (x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) return key;
+    }
     for (const key of UNHCR_CODE_KEYS) {
       const box = unhcrCodeBox(snap, key);
       if (x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) return key;
@@ -667,6 +755,15 @@ function UnhcrEditorInner() {
           origX: box.x,
           origY: box.y,
         };
+      } else if (isUnhcrTestOverlayKey(field)) {
+        const box = unhcrTestOverlayBox(presentRef.current, field);
+        dragRef.current = {
+          field,
+          startX: pos.x,
+          startY: pos.y,
+          origX: box.x,
+          origY: box.y,
+        };
       } else {
         const base = presentRef.current.layouts[field] ?? UNHCR_DEFAULT_LAYOUTS[field];
         dragRef.current = {
@@ -697,6 +794,13 @@ function UnhcrEditorInner() {
       }
       if (isUnhcrCodeKey(drag.field)) {
         patchCode(drag.field, {
+          x: clamp(Math.round(drag.origX + dx), 0, UNHCR_DOC_WIDTH),
+          y: clamp(Math.round(drag.origY + dy), 0, UNHCR_DOC_HEIGHT),
+        });
+        return;
+      }
+      if (isUnhcrTestOverlayKey(drag.field)) {
+        patchTestOverlay(drag.field, {
           x: clamp(Math.round(drag.origX + dx), 0, UNHCR_DOC_WIDTH),
           y: clamp(Math.round(drag.origY + dy), 0, UNHCR_DOC_HEIGHT),
         });
@@ -734,7 +838,7 @@ function UnhcrEditorInner() {
       canvas.removeEventListener('pointerup', up);
       canvas.removeEventListener('pointercancel', up);
     };
-  }, [editor.rendered, canvasToDoc, hitField, setField, setPhoto, patchCode]);
+    }, [editor.rendered, canvasToDoc, hitField, setField, setPhoto, patchCode, patchTestOverlay]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -745,12 +849,14 @@ function UnhcrEditorInner() {
   const activeMeta = useMemo(() => {
     if (activeField === 'photo') return { key: 'photo' as const, label: 'Photo' };
     if (isUnhcrCodeKey(activeField)) return { key: activeField, label: UNHCR_CODE_LABELS[activeField] };
+    if (isUnhcrTestOverlayKey(activeField)) return { key: activeField, label: UNHCR_TEST_OVERLAY_LABELS[activeField] };
     return UNHCR_FIELDS.find((f) => f.key === activeField);
   }, [activeField]);
   const fieldOptions = [
     ...UNHCR_FIELDS.map((f) => ({ value: f.key, label: f.label })),
     { value: 'photo', label: 'Photo' },
     ...UNHCR_CODE_KEYS.map((key) => ({ value: key, label: UNHCR_CODE_LABELS[key] })),
+    ...UNHCR_TEST_OVERLAY_KEYS.map((key) => ({ value: key, label: UNHCR_TEST_OVERLAY_LABELS[key] })),
   ];
 
   return (
@@ -788,7 +894,7 @@ function UnhcrEditorInner() {
           placeholderSub="2560 × 1800 px · Arial / Arial Bold · drag fields on the card"
           fullscreen={editor.fullscreen}
           onToggleFullscreen={editor.toggleFullscreen}
-          kindLabel="UNHCR ID"
+          kindLabel="UNHCR ID Server 2"
         />
         {!editor.inspectorOpen && (
           <button
@@ -863,7 +969,7 @@ function UnhcrEditorInner() {
             <Select
               aria-label="Select field"
               value={activeField}
-              onChange={(e) => setActiveField(e.target.value as UnhcrOverlayKey)}
+              onChange={(e) => setActiveField(e.target.value as UnhcrS2OverlayKey)}
               options={fieldOptions}
             />
 
@@ -875,7 +981,15 @@ function UnhcrEditorInner() {
               </p>
             )}
 
-            {activeField !== 'photo' && !isUnhcrCodeKey(activeField) && (
+            {isTestOverlay && (
+              <p className="rounded-xl border border-line bg-surface-raised px-3 py-2 text-[10.5px] leading-relaxed text-muted">
+                {activeField === 'testBarcodeText'
+                  ? 'TEST-only barcode value printed below the photo. Sample data — independently selectable, editable, and saved with History.'
+                  : 'TEST-only reference number along the right edge. Sample data — vertical text, independently selectable, and saved with History.'}
+              </p>
+            )}
+
+            {activeField !== 'photo' && !isUnhcrCodeKey(activeField) && !isUnhcrTestOverlayKey(activeField) && (
               <>
                 <PropertyInput
                   label="Text"
@@ -909,7 +1023,105 @@ function UnhcrEditorInner() {
             <div className="flex flex-col gap-3 rounded-xl border border-info/20 bg-info/5 p-3">
               <span className="text-[10px] font-bold uppercase tracking-wide text-info">Position &amp; Size</span>
 
-              {isCodeField ? (
+              {isTestOverlay ? (
+                <>
+                  <PropertyInput
+                    label={activeField === 'testBarcodeText' ? 'TEST Barcode Text' : 'TEST Reference Number'}
+                    value={activeField === 'testBarcodeText' ? present.testBarcodeText : present.testRefNo}
+                    onChange={(v) => patchTestOverlay(activeField, { text: v })}
+                    mono
+                  />
+                  {activeField === 'testRefNo' && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[11px] text-muted">Orientation</span>
+                      <div className="grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface-raised p-1">
+                        {([
+                          { value: 'horizontal' as const, label: 'Horizontal' },
+                          { value: 'vertical' as const, label: 'Vertical' },
+                        ]).map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => patchTestOverlay('testRefNo', { orientation: opt.value })}
+                            className={cn(
+                              'rounded-lg px-1 py-1.5 text-[10.5px] font-semibold transition',
+                              present.testRefNoOrientation === opt.value
+                                ? 'bg-info/15 text-info shadow-sm'
+                                : 'text-muted hover:text-primary',
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlaySize(-10)} aria-label="Decrease TEST overlay size">
+                      -
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlaySize(10)} aria-label="Increase TEST overlay size">
+                      +
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlayFont(-1)} aria-label="Decrease TEST overlay font">
+                      A-
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlayFont(1)} aria-label="Increase TEST overlay font">
+                      A+
+                    </Button>
+                    <span className="ml-auto font-mono text-[11px] text-dimm">
+                      {activeField === 'testBarcodeText'
+                        ? `${present.testBarcodeTextW}×${present.testBarcodeTextH}`
+                        : `${present.testRefNoW}×${present.testRefNoH}`}
+                    </span>
+                  </div>
+                  <PropertySlider
+                    label="Font Size"
+                    value={activeField === 'testBarcodeText' ? present.testBarcodeTextFontSize : present.testRefNoFontSize}
+                    min={UNHCR_TEST_BOX_RANGES.fontSize.min}
+                    max={UNHCR_TEST_BOX_RANGES.fontSize.max}
+                    step={UNHCR_TEST_BOX_RANGES.fontSize.step}
+                    mono
+                    onChange={(v) => patchTestOverlay(activeField, { fontSize: v })}
+                  />
+                  <PropertySlider
+                    label="Width"
+                    value={activeField === 'testBarcodeText' ? present.testBarcodeTextW : present.testRefNoW}
+                    min={UNHCR_TEST_BOX_RANGES.w.min}
+                    max={UNHCR_TEST_BOX_RANGES.w.max}
+                    step={UNHCR_TEST_BOX_RANGES.w.step}
+                    mono
+                    onChange={(v) => patchTestOverlay(activeField, { w: v })}
+                  />
+                  <PropertySlider
+                    label="Height"
+                    value={activeField === 'testBarcodeText' ? present.testBarcodeTextH : present.testRefNoH}
+                    min={UNHCR_TEST_BOX_RANGES.h.min}
+                    max={UNHCR_TEST_BOX_RANGES.h.max}
+                    step={UNHCR_TEST_BOX_RANGES.h.step}
+                    mono
+                    onChange={(v) => patchTestOverlay(activeField, { h: v })}
+                  />
+                  <PropertySlider
+                    label="X"
+                    value={activeField === 'testBarcodeText' ? present.testBarcodeTextX : present.testRefNoX}
+                    min={UNHCR_TEST_BOX_RANGES.x.min}
+                    max={UNHCR_TEST_BOX_RANGES.x.max}
+                    step={UNHCR_TEST_BOX_RANGES.x.step}
+                    mono
+                    onChange={(v) => patchTestOverlay(activeField, { x: v })}
+                  />
+                  <PropertySlider
+                    label="Y"
+                    value={activeField === 'testBarcodeText' ? present.testBarcodeTextY : present.testRefNoY}
+                    min={UNHCR_TEST_BOX_RANGES.y.min}
+                    max={UNHCR_TEST_BOX_RANGES.y.max}
+                    step={UNHCR_TEST_BOX_RANGES.y.step}
+                    mono
+                    onChange={(v) => patchTestOverlay(activeField, { y: v })}
+                  />
+                </>
+              ) : isCodeField ? (
                 <>
                   <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => bumpCodeSize(-10)} aria-label="Decrease code size">

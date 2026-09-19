@@ -1185,6 +1185,127 @@ $$;
 revoke all on function public.save_unhcr_current_state(text, text, text) from public;
 grant execute on function public.save_unhcr_current_state(text, text, text) to authenticated;
 
+-- Shared UNHCR Server 2 editor workspace (`UNHCR-S2-CURRENT`). Independent of
+-- Server 1 (`UNHCR-CURRENT`). Same `unhcr` tool access; History listing must
+-- not use these RPCs.
+create or replace function public.get_unhcr_s2_current_state()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  row jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  if not public.has_tool_access(auth.uid(), 'unhcr') then
+    raise exception 'unhcr access required';
+  end if;
+  if to_regclass('public.certificates') is null then
+    return null;
+  end if;
+  select to_jsonb(c) into row
+    from public.certificates c
+   where c.trademark_no = 'UNHCR-S2-CURRENT'
+   limit 1;
+  if row is not null and row ? 'deleted_at' and row->>'deleted_at' is not null then
+    return null;
+  end if;
+  return row;
+end;
+$$;
+
+revoke all on function public.get_unhcr_s2_current_state() from public;
+grant execute on function public.get_unhcr_s2_current_state() to authenticated;
+
+create or replace function public.save_unhcr_s2_current_state(
+  p_title text,
+  p_subtitle text,
+  p_details text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  result jsonb;
+  title text := coalesce(nullif(trim(p_title), ''), 'UNHCR ID Server 2');
+  subtitle text := coalesce(p_subtitle, '');
+begin
+  if uid is null then
+    raise exception 'not authenticated';
+  end if;
+  if not public.has_tool_access(uid, 'unhcr') then
+    raise exception 'unhcr access required';
+  end if;
+  if to_regclass('public.certificates') is null then
+    raise exception 'certificates table absent';
+  end if;
+  if p_details is null or char_length(p_details) = 0 then
+    raise exception 'missing editor state';
+  end if;
+  if char_length(p_details) > 20000000 then
+    raise exception 'editor state too large';
+  end if;
+
+  update public.certificates
+     set name = title,
+         owner_name = subtitle,
+         details = p_details,
+         company_type = 'UNHCR ID Server 2',
+         synced_at = now(),
+         deleted_at = null
+   where trademark_no = 'UNHCR-S2-CURRENT';
+
+  if not found then
+    begin
+      insert into public.certificates (
+        trademark_no, registration_no, reg_date, name, owner_name, address,
+        company_type, app_date, details, sealed_date, synced_at, created_by, deleted_at
+      ) values (
+        'UNHCR-S2-CURRENT',
+        floor(extract(epoch from now()))::bigint,
+        '',
+        title,
+        subtitle,
+        '',
+        'UNHCR ID Server 2',
+        '',
+        p_details,
+        '',
+        now(),
+        uid,
+        null
+      );
+    exception
+      when unique_violation then
+        update public.certificates
+           set name = title,
+               owner_name = subtitle,
+               details = p_details,
+               company_type = 'UNHCR ID Server 2',
+               synced_at = now(),
+               deleted_at = null
+         where trademark_no = 'UNHCR-S2-CURRENT';
+    end;
+  end if;
+
+  select to_jsonb(c) into result
+    from public.certificates c
+   where c.trademark_no = 'UNHCR-S2-CURRENT'
+   limit 1;
+  return result;
+end;
+$$;
+
+revoke all on function public.save_unhcr_s2_current_state(text, text, text) from public;
+grant execute on function public.save_unhcr_s2_current_state(text, text, text) to authenticated;
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- STEP 5 — Admin bootstrap / update for the existing UUID
 -- ═══════════════════════════════════════════════════════════════════════

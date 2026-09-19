@@ -131,6 +131,17 @@ export default function DashboardPage() {
                 UNHCR ID
               </Button>
             )}
+            {hasToolAccess(profile, 'unhcr') ? (
+              <Link href="/studio/editor/unhcr-s2">
+                <Button variant="outline" icon={<Contact className="h-4 w-4" />}>
+                  UNHCR ID Server 2
+                </Button>
+              </Link>
+            ) : (
+              <Button variant="outline" icon={<Lock className="h-4 w-4" />} onClick={denyAccess}>
+                UNHCR ID Server 2
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -257,6 +268,15 @@ export default function DashboardPage() {
               icon: Contact,
               tone: 'from-sky-500 to-blue-600 text-white',
               meta: '2560 × 1800 px',
+              scope: 'unhcr',
+            },
+            {
+              href: '/studio/editor/unhcr-s2',
+              title: 'UNHCR ID Server 2',
+              desc: 'Independent UNHCR workspace with TEST barcode text and vertical reference overlays. Not official identity data.',
+              icon: Contact,
+              tone: 'from-cyan-500 to-sky-600 text-white',
+              meta: '2560 × 1800 px · Server 2',
               scope: 'unhcr',
             },
             {

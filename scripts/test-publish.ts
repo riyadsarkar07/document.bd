@@ -41,11 +41,14 @@ import {
   UNHCR_BARCODE2_DEFAULT,
   UNHCR_PHOTO_DEFAULT,
   UNHCR_QR_DEFAULT,
+} from '../src/lib/constants/unhcr';
+import {
+  normalizeUnhcrSnapshot as normalizeUnhcrS2Snapshot,
   UNHCR_TEST_BARCODE_TEXT_DEFAULT,
   UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE,
   UNHCR_TEST_REF_NO_DEFAULT,
   UNHCR_TEST_REF_NO_DEFAULT_VALUE,
-} from '../src/lib/constants/unhcr';
+} from '../src/lib/constants/unhcr-s2';
 import { UNHCR_BARCODE_TEST_PAYLOAD, UNHCR_QR_TEST_PAYLOAD } from '../src/lib/unhcrCodes';
 import {
   UNHCR_CURRENT_RECORD_ID,
@@ -54,6 +57,13 @@ import {
   snapshotFromUnhcrVaultDoc,
   unhcrHistoryRecordIdForSave,
 } from '../src/lib/unhcrCurrentState';
+import {
+  UNHCR_S2_CURRENT_RECORD_ID,
+  isUnhcrS2CurrentRecordId,
+  resolveUnhcrS2EditorLoadSource,
+  snapshotFromUnhcrS2VaultDoc,
+  unhcrS2HistoryRecordIdForSave,
+} from '../src/lib/unhcrS2CurrentState';
 
 const ROOT = process.cwd();
 
@@ -310,13 +320,14 @@ function main() {
   assert(unpackedLegacyKind.docKind === undefined, 'legacy TM rows without docKind stay untagged');
 
   console.log('\n[14] Unified History document-kind registry\n');
-  assert(DOCUMENT_KIND_ORDER.length === 8, 'registry lists all 8 Studio editors');
+  assert(DOCUMENT_KIND_ORDER.length === 9, 'registry lists all 9 Studio editors');
   assert(DOCUMENT_KIND_ORDER.every(isDocumentKind), 'every ordered kind is a valid DocumentKind');
   assert(documentKindMeta('tm').certificate === true, 'TM is a certificate kind');
   assert(documentKindMeta('youtube-trademark').certificate === true, 'YouTube Trademark is a certificate kind');
   assert(documentKindMeta('nid').certificate === false, 'NID is not a certificate kind');
   assert(documentKindMeta('tin').certificate === false, 'TIN is not a certificate kind');
   assert(documentKindMeta('unhcr').certificate === false, 'UNHCR is not a certificate kind');
+  assert(documentKindMeta('unhcr-s2').certificate === false, 'UNHCR Server 2 is not a certificate kind');
   assert(documentKindMeta('pdf').certificate === false, 'PDF is not a certificate kind');
   assert(documentKindMeta('page-recover').certificate === false, 'Hacked Page Recover is not a certificate kind');
   assert(documentKindMeta('business-manager').certificate === false, 'Business Manager is not a certificate kind');
@@ -325,6 +336,8 @@ function main() {
   assert(documentKindMeta('nid').editorPath === '/studio/editor/nid', 'NID reopens in the NID editor');
   assert(documentKindMeta('tin').editorPath === '/studio/editor/tin', 'TIN reopens in the TIN editor');
   assert(documentKindMeta('unhcr').editorPath === '/studio/editor/unhcr', 'UNHCR reopens in the UNHCR editor');
+  assert(documentKindMeta('unhcr-s2').editorPath === '/studio/editor/unhcr-s2', 'UNHCR Server 2 reopens in the Server 2 editor');
+  assert(documentKindMeta('unhcr-s2').recordPrefix === 'UNHCR-S2', 'UNHCR Server 2 History ids use the UNHCR-S2 prefix');
   assert(documentKindMeta('pdf').editorPath === '/studio/editor/pdf', 'PDF reopens in the PDF editor');
   assert(documentKindMeta('page-recover').editorPath === '/studio/editor/page-recover', 'Recover reopens in its editor');
   assert(documentKindMeta('business-manager').editorPath === '/studio/editor/business-manager', 'Business Manager reopens in its editor');
@@ -382,19 +395,6 @@ function main() {
     qrX: 2200,
     qrY: 100,
     qrSize: 240,
-    testBarcodeText: 'TEST-UNHCR-BARCODE-0001',
-    testBarcodeTextX: 90,
-    testBarcodeTextY: 1180,
-    testBarcodeTextW: 700,
-    testBarcodeTextH: 60,
-    testBarcodeTextFontSize: 30,
-    testRefNo: 'TEST-UNHCR-REF-0001',
-    testRefNoX: 2460,
-    testRefNoY: 140,
-    testRefNoW: 52,
-    testRefNoH: 1500,
-    testRefNoFontSize: 26,
-    testRefNoOrientation: 'vertical' as const,
   };
   const packedUnhcr = packDetails('', stored, { docKind: 'unhcr', doc: unhcrDoc });
   const unpackedUnhcr = unpackDetails(packedUnhcr);
@@ -415,15 +415,7 @@ function main() {
   assert(restoredUnhcr.barcode2W === 700 && restoredUnhcr.barcode2H === 110, 'UNHCR pack restores barcode 2 size');
   assert(restoredUnhcr.qrPayload === UNHCR_QR_TEST_PAYLOAD, 'UNHCR pack restores QR TEST payload');
   assert(restoredUnhcr.qrX === 2200 && restoredUnhcr.qrY === 100 && restoredUnhcr.qrSize === 240, 'UNHCR pack restores QR X/Y/size');
-  assert(restoredUnhcr.testBarcodeText === 'TEST-UNHCR-BARCODE-0001', 'UNHCR pack restores TEST barcode text');
-  assert(restoredUnhcr.testBarcodeTextX === 90 && restoredUnhcr.testBarcodeTextY === 1180, 'UNHCR pack restores TEST barcode text X/Y');
-  assert(restoredUnhcr.testBarcodeTextW === 700 && restoredUnhcr.testBarcodeTextH === 60, 'UNHCR pack restores TEST barcode text size');
-  assert(restoredUnhcr.testBarcodeTextFontSize === 30, 'UNHCR pack restores TEST barcode text font size');
-  assert(restoredUnhcr.testRefNo === 'TEST-UNHCR-REF-0001', 'UNHCR pack restores TEST reference number');
-  assert(restoredUnhcr.testRefNoX === 2460 && restoredUnhcr.testRefNoY === 140, 'UNHCR pack restores TEST reference X/Y');
-  assert(restoredUnhcr.testRefNoW === 52 && restoredUnhcr.testRefNoH === 1500, 'UNHCR pack restores TEST reference size');
-  assert(restoredUnhcr.testRefNoFontSize === 26, 'UNHCR pack restores TEST reference font size');
-  assert(restoredUnhcr.testRefNoOrientation === 'vertical', 'UNHCR pack restores TEST reference orientation');
+  assert(!('testBarcodeText' in restoredUnhcr) && !('testRefNo' in restoredUnhcr), 'UNHCR Server 1 pack omits TEST overlays');
   assert(!JSON.stringify(unpackedUnhcr).includes('Facebook Imposter'), 'UNHCR vault payload omits the case banner');
   const normalizedUnhcr = normalizeUnhcrSnapshot({});
   assert(normalizedUnhcr.photoX === UNHCR_PHOTO_DEFAULT.x && normalizedUnhcr.photoY === UNHCR_PHOTO_DEFAULT.y, 'UNHCR photo defaults to cyan placeholder box');
@@ -440,13 +432,7 @@ function main() {
   assert(normalizedUnhcr.barcode2W === 750 && normalizedUnhcr.barcode2H === 121, 'UNHCR barcode 2 default size is 750×121');
   assert(normalizedUnhcr.qrPayload === UNHCR_QR_TEST_PAYLOAD, 'UNHCR QR defaults to TEST sample data');
   assert(normalizedUnhcr.qrX === 1467 && normalizedUnhcr.qrY === 1369 && normalizedUnhcr.qrSize === 263, 'UNHCR QR defaults to 1467,1369 size 263');
-  assert(normalizedUnhcr.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'UNHCR TEST barcode text defaults to labeled TEST data');
-  assert(normalizedUnhcr.testBarcodeTextX === UNHCR_TEST_BARCODE_TEXT_DEFAULT.x && normalizedUnhcr.testBarcodeTextY === UNHCR_TEST_BARCODE_TEXT_DEFAULT.y, 'UNHCR TEST barcode text default X/Y sits below the photo');
-  assert(normalizedUnhcr.testBarcodeTextW === UNHCR_TEST_BARCODE_TEXT_DEFAULT.w && normalizedUnhcr.testBarcodeTextH === UNHCR_TEST_BARCODE_TEXT_DEFAULT.h, 'UNHCR TEST barcode text default size');
-  assert(normalizedUnhcr.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'UNHCR TEST reference number defaults to labeled TEST data');
-  assert(normalizedUnhcr.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x && normalizedUnhcr.testRefNoY === UNHCR_TEST_REF_NO_DEFAULT.y, 'UNHCR TEST reference default X/Y sits on the right edge');
-  assert(normalizedUnhcr.testRefNoW === UNHCR_TEST_REF_NO_DEFAULT.w && normalizedUnhcr.testRefNoH === UNHCR_TEST_REF_NO_DEFAULT.h, 'UNHCR TEST reference default size');
-  assert(normalizedUnhcr.testRefNoOrientation === 'vertical', 'UNHCR TEST reference defaults to vertical orientation');
+  assert(!('testBarcodeText' in normalizedUnhcr) && !('testRefNo' in normalizedUnhcr), 'UNHCR Server 1 defaults omit TEST overlays');
   assert(UNHCR_BARCODE1_DEFAULT.x === 54 && UNHCR_BARCODE1_DEFAULT.y === 1028, 'UNHCR_BARCODE1_DEFAULT is 54,1028');
   assert(UNHCR_BARCODE2_DEFAULT.x === 1724 && UNHCR_BARCODE2_DEFAULT.y === 99, 'UNHCR_BARCODE2_DEFAULT is 1724,99');
   assert(UNHCR_QR_DEFAULT.x === 1467 && UNHCR_QR_DEFAULT.y === 1369 && UNHCR_QR_DEFAULT.size === 263, 'UNHCR_QR_DEFAULT is 1467,1369 size 263');
@@ -454,6 +440,132 @@ function main() {
     ...restoredUnhcr,
     name: 'Updated Subject',
     layouts: { ...restoredUnhcr.layouts, name: { ...restoredUnhcr.layouts.name, fontSize: 38, x: 870, y: 500, fontFamily: 'arial-bold' } },
+    photoX: 90,
+    photoY: 120,
+    photoW: 650,
+    photoH: 830,
+    barcodePayload: 'TEST-UNHCR-REF-0002',
+    barcode1X: 100,
+    barcode1Y: 1050,
+    barcode1W: 680,
+    barcode1H: 108,
+    barcode2X: 110,
+    barcode2Y: 1190,
+    barcode2W: 680,
+    barcode2H: 108,
+    qrPayload: 'TEST DATA — UNHCR ID EDITOR SAMPLE\nREF: TEST-UNHCR-QR-0002',
+    qrX: 2210,
+    qrY: 110,
+    qrSize: 250,
+  };
+  const packedUnhcrEdit = packDetails('', stored, { docKind: 'unhcr', doc: editedUnhcr });
+  const unpackedUnhcrEdit = unpackDetails(packedUnhcrEdit);
+  const restoredUnhcrEdit = unpackedUnhcrEdit.doc as typeof editedUnhcr;
+  assert(unpackedUnhcrEdit.docKind === 'unhcr', 'UNHCR re-save keeps docKind');
+  assert(restoredUnhcrEdit.name === 'Updated Subject', 'UNHCR re-save persists updated text');
+  assert(restoredUnhcrEdit.layouts.name.fontSize === 38, 'UNHCR re-save persists updated font size');
+  assert(restoredUnhcrEdit.layouts.name.fontFamily === 'arial-bold', 'UNHCR re-save persists updated font style');
+  assert(restoredUnhcrEdit.layouts.name.x === 870 && restoredUnhcrEdit.layouts.name.y === 500, 'UNHCR re-save persists updated X/Y');
+  assert(restoredUnhcrEdit.photoX === 90 && restoredUnhcrEdit.photoY === 120, 'UNHCR re-save persists updated photo X/Y');
+  assert(restoredUnhcrEdit.photoW === 650 && restoredUnhcrEdit.photoH === 830, 'UNHCR re-save persists updated photo size');
+  assert(restoredUnhcrEdit.photoDataUrl === TINY_JPEG, 'UNHCR re-save persists photo data URL');
+  assert(restoredUnhcrEdit.barcodePayload === 'TEST-UNHCR-REF-0002', 'UNHCR re-save persists barcode TEST payload');
+  assert(restoredUnhcrEdit.barcode1X === 100 && restoredUnhcrEdit.barcode1Y === 1050, 'UNHCR re-save persists barcode 1 X/Y');
+  assert(restoredUnhcrEdit.barcode1W === 680 && restoredUnhcrEdit.barcode1H === 108, 'UNHCR re-save persists barcode 1 size');
+  assert(restoredUnhcrEdit.barcode2X === 110 && restoredUnhcrEdit.barcode2Y === 1190, 'UNHCR re-save persists barcode 2 X/Y');
+  assert(restoredUnhcrEdit.barcode2W === 680 && restoredUnhcrEdit.barcode2H === 108, 'UNHCR re-save persists barcode 2 size');
+  assert(restoredUnhcrEdit.qrPayload.includes('TEST DATA'), 'UNHCR re-save persists QR TEST payload');
+  assert(restoredUnhcrEdit.qrX === 2210 && restoredUnhcrEdit.qrY === 110 && restoredUnhcrEdit.qrSize === 250, 'UNHCR re-save persists QR X/Y/size');
+  assert(!('testBarcodeText' in restoredUnhcrEdit) && !('testRefNo' in restoredUnhcrEdit), 'UNHCR Server 1 re-save still omits TEST overlays');
+  const reopenedUnhcr = normalizeUnhcrSnapshot(restoredUnhcrEdit as Parameters<typeof normalizeUnhcrSnapshot>[0]);
+  assert(reopenedUnhcr.barcode1X === 100 && reopenedUnhcr.barcode1W === 680, 'UNHCR History reopen restores barcode 1 position/size');
+  assert(reopenedUnhcr.barcode2X === 110 && reopenedUnhcr.barcode2H === 108, 'UNHCR History reopen restores barcode 2 position/size');
+  assert(reopenedUnhcr.qrX === 2210 && reopenedUnhcr.qrY === 110 && reopenedUnhcr.qrSize === 250, 'UNHCR History reopen restores QR position/size');
+  assert(!('testBarcodeText' in reopenedUnhcr) && !('testRefNo' in reopenedUnhcr), 'UNHCR Server 1 History reopen does not invent TEST overlays');
+  assert(reopenedUnhcr.barcodePayload === 'MY-1001', 'UNHCR History reopen rebuilds barcode from ID number');
+  assert(reopenedUnhcr.qrPayload.includes('ID: MY-1001') && reopenedUnhcr.qrPayload.includes('Name: Updated Subject'), 'UNHCR History reopen rebuilds QR from form fields');
+
+  assert(UNHCR_CURRENT_RECORD_ID === 'UNHCR-CURRENT', 'UNHCR shared current-state id is UNHCR-CURRENT');
+  assert(isUnhcrCurrentRecordId('UNHCR-CURRENT'), 'UNHCR-CURRENT is recognized as the shared state id');
+  assert(!isUnhcrCurrentRecordId('UNHCR-MY-1001'), 'a History case id is not the shared current state');
+  assert(resolveUnhcrEditorLoadSource({ recordNo: 'UNHCR-MY-1001', hasCurrentState: true }) === 'history-record', 'explicit History record wins over current state');
+  assert(resolveUnhcrEditorLoadSource({ recordNo: UNHCR_CURRENT_RECORD_ID, hasCurrentState: true }) === 'current-state', 'UNHCR-CURRENT is not treated as a History case on direct open');
+  assert(resolveUnhcrEditorLoadSource({ recordNo: UNHCR_CURRENT_RECORD_ID, hasCurrentState: false }) === 'defaults', 'UNHCR-CURRENT without a shared row uses built-in defaults');
+  assert(resolveUnhcrEditorLoadSource({ projectId: 'p1', hasCurrentState: true }) === 'project', 'explicit project wins over current state');
+  assert(resolveUnhcrEditorLoadSource({ templateName: 't1', hasCurrentState: true }) === 'template', 'explicit template wins over current state');
+  assert(resolveUnhcrEditorLoadSource({ hasCurrentState: true }) === 'current-state', 'direct editor open loads shared current state');
+  assert(resolveUnhcrEditorLoadSource({ hasCurrentState: false }) === 'defaults', 'direct editor open uses defaults when no current state exists');
+  assert(unhcrHistoryRecordIdForSave(null, 'MY-1001', 'UNHCR-gen') === 'UNHCR-MY-1001', 'Save from a blank editor creates a History case id from the ID number');
+  assert(unhcrHistoryRecordIdForSave(UNHCR_CURRENT_RECORD_ID, 'MY-1001', 'UNHCR-gen') === 'UNHCR-MY-1001', 'Save never binds History to the shared current-state id');
+  assert(unhcrHistoryRecordIdForSave('UNHCR-abc', 'MY-1001', 'UNHCR-gen') === 'UNHCR-abc', 're-save of an explicit History record keeps that record id');
+  const packedCurrent = packDetails('', stored, { docKind: 'unhcr', doc: editedUnhcr });
+  const unpackedCurrent = unpackDetails(packedCurrent);
+  const loadedCurrent = snapshotFromUnhcrVaultDoc(unpackedCurrent.doc);
+  assert(loadedCurrent.name === 'Updated Subject', 'direct editor open restores saved text from current state');
+  assert(loadedCurrent.layouts.name.fontSize === 38 && loadedCurrent.layouts.name.fontFamily === 'arial-bold', 'direct editor open restores saved font settings');
+  assert(loadedCurrent.photoX === 90 && loadedCurrent.photoW === 650, 'direct editor open restores saved photo position/size');
+  assert(loadedCurrent.barcode1X === 100 && loadedCurrent.barcode1W === 680, 'direct editor open restores saved barcode 1');
+  assert(loadedCurrent.barcode2Y === 1190 && loadedCurrent.qrSize === 250, 'direct editor open restores saved barcode 2 and QR size');
+  assert(!('testBarcodeText' in loadedCurrent) && !('testRefNo' in loadedCurrent), 'Server 1 current-state restore omits TEST overlays');
+  const packedCurrentEdit = packDetails('', stored, { docKind: 'unhcr', doc: { ...editedUnhcr, name: 'Re-saved Subject', qrSize: 280 } });
+  const reloadedCurrent = snapshotFromUnhcrVaultDoc(unpackDetails(packedCurrentEdit).doc);
+  assert(reloadedCurrent.name === 'Re-saved Subject' && reloadedCurrent.qrSize === 280, 're-edit Save updates the shared current editor state');
+  const packedHistoryCase = packDetails('', stored, { docKind: 'unhcr', doc: { ...editedUnhcr, name: 'History Only' } });
+  assert(unpackDetails(packedHistoryCase).docKind === 'unhcr', 'individual History records remain independent of UNHCR-CURRENT');
+  assert(!isUnhcrCurrentRecordId('UNHCR-MY-1001'), 'shared current state id stays distinct from History case ids');
+  const schema = readFileSync(join(ROOT, 'supabase/schema.sql'), 'utf8');
+  const vault = readFileSync(join(ROOT, 'src/lib/workspace/vault.ts'), 'utf8');
+  assert(schema.includes('create or replace function public.get_unhcr_current_state'), 'shared UNHCR state is loaded via SECURITY DEFINER RPC');
+  assert(schema.includes('create or replace function public.save_unhcr_current_state'), 'shared UNHCR state is saved via SECURITY DEFINER RPC');
+  assert(schema.includes("has_tool_access(auth.uid(), 'unhcr')") || schema.includes("has_tool_access(uid, 'unhcr')"), 'UNHCR current-state RPCs require unhcr tool access');
+  assert(schema.includes("trademark_no = 'UNHCR-CURRENT'"), 'UNHCR RPCs only touch the shared current-state row');
+  assert(vault.includes("neq('trademark_no', UNHCR_CURRENT_RECORD_ID)"), 'History listing hides UNHCR-CURRENT');
+  assert(vault.includes("rpc('get_unhcr_current_state')") && vault.includes("rpc('save_unhcr_current_state'"), 'editor load/save uses shared UNHCR RPCs');
+
+  const unhcrS2Doc = {
+    ...unhcrDoc,
+    testBarcodeText: 'TEST-UNHCR-BARCODE-0001',
+    testBarcodeTextX: 90,
+    testBarcodeTextY: 1180,
+    testBarcodeTextW: 700,
+    testBarcodeTextH: 60,
+    testBarcodeTextFontSize: 30,
+    testRefNo: 'TEST-UNHCR-REF-0001',
+    testRefNoX: 2460,
+    testRefNoY: 140,
+    testRefNoW: 52,
+    testRefNoH: 1500,
+    testRefNoFontSize: 26,
+    testRefNoOrientation: 'vertical' as const,
+  };
+  const packedUnhcrS2 = packDetails('', stored, { docKind: 'unhcr-s2', doc: unhcrS2Doc });
+  const unpackedUnhcrS2 = unpackDetails(packedUnhcrS2);
+  assert(unpackedUnhcrS2.docKind === 'unhcr-s2', 'UNHCR S2 pack stores docKind unhcr-s2');
+  assert(unpackedUnhcr.docKind === 'unhcr', 'UNHCR Server 1 pack stays tagged unhcr after S2 pack');
+  const restoredUnhcrS2 = unpackedUnhcrS2.doc as typeof unhcrS2Doc;
+  assert(restoredUnhcrS2.unhcrNo === 'MY-1001', 'UNHCR S2 pack restores UNHCR No');
+  assert(restoredUnhcrS2.name === 'Case Subject', 'UNHCR S2 pack restores Name');
+  assert(restoredUnhcrS2.testBarcodeText === 'TEST-UNHCR-BARCODE-0001', 'UNHCR S2 pack restores TEST barcode text');
+  assert(restoredUnhcrS2.testBarcodeTextX === 90 && restoredUnhcrS2.testBarcodeTextY === 1180, 'UNHCR S2 pack restores TEST barcode text X/Y');
+  assert(restoredUnhcrS2.testBarcodeTextW === 700 && restoredUnhcrS2.testBarcodeTextH === 60, 'UNHCR S2 pack restores TEST barcode text size');
+  assert(restoredUnhcrS2.testBarcodeTextFontSize === 30, 'UNHCR S2 pack restores TEST barcode text font size');
+  assert(restoredUnhcrS2.testRefNo === 'TEST-UNHCR-REF-0001', 'UNHCR S2 pack restores TEST reference number');
+  assert(restoredUnhcrS2.testRefNoX === 2460 && restoredUnhcrS2.testRefNoY === 140, 'UNHCR S2 pack restores TEST reference X/Y');
+  assert(restoredUnhcrS2.testRefNoW === 52 && restoredUnhcrS2.testRefNoH === 1500, 'UNHCR S2 pack restores TEST reference size');
+  assert(restoredUnhcrS2.testRefNoFontSize === 26, 'UNHCR S2 pack restores TEST reference font size');
+  assert(restoredUnhcrS2.testRefNoOrientation === 'vertical', 'UNHCR S2 pack restores TEST reference orientation');
+  const normalizedUnhcrS2 = normalizeUnhcrS2Snapshot({});
+  assert(normalizedUnhcrS2.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'UNHCR S2 TEST barcode text defaults to labeled TEST data');
+  assert(normalizedUnhcrS2.testBarcodeTextX === UNHCR_TEST_BARCODE_TEXT_DEFAULT.x && normalizedUnhcrS2.testBarcodeTextY === UNHCR_TEST_BARCODE_TEXT_DEFAULT.y, 'UNHCR S2 TEST barcode text default X/Y sits below the photo');
+  assert(normalizedUnhcrS2.testBarcodeTextW === UNHCR_TEST_BARCODE_TEXT_DEFAULT.w && normalizedUnhcrS2.testBarcodeTextH === UNHCR_TEST_BARCODE_TEXT_DEFAULT.h, 'UNHCR S2 TEST barcode text default size');
+  assert(normalizedUnhcrS2.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'UNHCR S2 TEST reference number defaults to labeled TEST data');
+  assert(normalizedUnhcrS2.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x && normalizedUnhcrS2.testRefNoY === UNHCR_TEST_REF_NO_DEFAULT.y, 'UNHCR S2 TEST reference default X/Y sits on the right edge');
+  assert(normalizedUnhcrS2.testRefNoW === UNHCR_TEST_REF_NO_DEFAULT.w && normalizedUnhcrS2.testRefNoH === UNHCR_TEST_REF_NO_DEFAULT.h, 'UNHCR S2 TEST reference default size');
+  assert(normalizedUnhcrS2.testRefNoOrientation === 'vertical', 'UNHCR S2 TEST reference defaults to vertical orientation');
+  const editedUnhcrS2 = {
+    ...restoredUnhcrS2,
+    name: 'Updated S2 Subject',
+    layouts: { ...restoredUnhcrS2.layouts, name: { ...restoredUnhcrS2.layouts.name, fontSize: 38, x: 870, y: 500, fontFamily: 'arial-bold' } },
     photoX: 90,
     photoY: 120,
     photoW: 650,
@@ -485,84 +597,64 @@ function main() {
     testRefNoFontSize: 24,
     testRefNoOrientation: 'horizontal' as const,
   };
-  const packedUnhcrEdit = packDetails('', stored, { docKind: 'unhcr', doc: editedUnhcr });
-  const unpackedUnhcrEdit = unpackDetails(packedUnhcrEdit);
-  const restoredUnhcrEdit = unpackedUnhcrEdit.doc as typeof editedUnhcr;
-  assert(unpackedUnhcrEdit.docKind === 'unhcr', 'UNHCR re-save keeps docKind');
-  assert(restoredUnhcrEdit.name === 'Updated Subject', 'UNHCR re-save persists updated text');
-  assert(restoredUnhcrEdit.layouts.name.fontSize === 38, 'UNHCR re-save persists updated font size');
-  assert(restoredUnhcrEdit.layouts.name.fontFamily === 'arial-bold', 'UNHCR re-save persists updated font style');
-  assert(restoredUnhcrEdit.layouts.name.x === 870 && restoredUnhcrEdit.layouts.name.y === 500, 'UNHCR re-save persists updated X/Y');
-  assert(restoredUnhcrEdit.photoX === 90 && restoredUnhcrEdit.photoY === 120, 'UNHCR re-save persists updated photo X/Y');
-  assert(restoredUnhcrEdit.photoW === 650 && restoredUnhcrEdit.photoH === 830, 'UNHCR re-save persists updated photo size');
-  assert(restoredUnhcrEdit.photoDataUrl === TINY_JPEG, 'UNHCR re-save persists photo data URL');
-  assert(restoredUnhcrEdit.barcodePayload === 'TEST-UNHCR-REF-0002', 'UNHCR re-save persists barcode TEST payload');
-  assert(restoredUnhcrEdit.barcode1X === 100 && restoredUnhcrEdit.barcode1Y === 1050, 'UNHCR re-save persists barcode 1 X/Y');
-  assert(restoredUnhcrEdit.barcode1W === 680 && restoredUnhcrEdit.barcode1H === 108, 'UNHCR re-save persists barcode 1 size');
-  assert(restoredUnhcrEdit.barcode2X === 110 && restoredUnhcrEdit.barcode2Y === 1190, 'UNHCR re-save persists barcode 2 X/Y');
-  assert(restoredUnhcrEdit.barcode2W === 680 && restoredUnhcrEdit.barcode2H === 108, 'UNHCR re-save persists barcode 2 size');
-  assert(restoredUnhcrEdit.qrPayload.includes('TEST DATA'), 'UNHCR re-save persists QR TEST payload');
-  assert(restoredUnhcrEdit.qrX === 2210 && restoredUnhcrEdit.qrY === 110 && restoredUnhcrEdit.qrSize === 250, 'UNHCR re-save persists QR X/Y/size');
-  assert(restoredUnhcrEdit.testBarcodeText === 'TEST-UNHCR-BARCODE-0002', 'UNHCR re-save persists TEST barcode text');
-  assert(restoredUnhcrEdit.testBarcodeTextX === 110 && restoredUnhcrEdit.testBarcodeTextY === 1200, 'UNHCR re-save persists TEST barcode text X/Y');
-  assert(restoredUnhcrEdit.testBarcodeTextW === 680 && restoredUnhcrEdit.testBarcodeTextH === 64, 'UNHCR re-save persists TEST barcode text size');
-  assert(restoredUnhcrEdit.testBarcodeTextFontSize === 32, 'UNHCR re-save persists TEST barcode text font size');
-  assert(restoredUnhcrEdit.testRefNo === 'TEST-UNHCR-REF-0002', 'UNHCR re-save persists TEST reference number');
-  assert(restoredUnhcrEdit.testRefNoX === 2440 && restoredUnhcrEdit.testRefNoY === 160, 'UNHCR re-save persists TEST reference X/Y');
-  assert(restoredUnhcrEdit.testRefNoW === 50 && restoredUnhcrEdit.testRefNoH === 1480, 'UNHCR re-save persists TEST reference size');
-  assert(restoredUnhcrEdit.testRefNoFontSize === 24, 'UNHCR re-save persists TEST reference font size');
-  assert(restoredUnhcrEdit.testRefNoOrientation === 'horizontal', 'UNHCR re-save persists TEST reference orientation');
-  const reopenedUnhcr = normalizeUnhcrSnapshot(restoredUnhcrEdit as Parameters<typeof normalizeUnhcrSnapshot>[0]);
-  assert(reopenedUnhcr.barcode1X === 100 && reopenedUnhcr.barcode1W === 680, 'UNHCR History reopen restores barcode 1 position/size');
-  assert(reopenedUnhcr.barcode2X === 110 && reopenedUnhcr.barcode2H === 108, 'UNHCR History reopen restores barcode 2 position/size');
-  assert(reopenedUnhcr.qrX === 2210 && reopenedUnhcr.qrY === 110 && reopenedUnhcr.qrSize === 250, 'UNHCR History reopen restores QR position/size');
-  assert(reopenedUnhcr.testBarcodeText === 'TEST-UNHCR-BARCODE-0002', 'UNHCR History reopen restores TEST barcode text');
-  assert(reopenedUnhcr.testBarcodeTextX === 110 && reopenedUnhcr.testBarcodeTextW === 680, 'UNHCR History reopen restores TEST barcode text position/size');
-  assert(reopenedUnhcr.testRefNo === 'TEST-UNHCR-REF-0002', 'UNHCR History reopen restores TEST reference number');
-  assert(reopenedUnhcr.testRefNoX === 2440 && reopenedUnhcr.testRefNoH === 1480, 'UNHCR History reopen restores TEST reference position/size');
-  assert(reopenedUnhcr.testRefNoOrientation === 'horizontal', 'UNHCR History reopen restores TEST reference orientation');
-  assert(reopenedUnhcr.barcodePayload === 'MY-1001', 'UNHCR History reopen rebuilds barcode from ID number');
-  assert(reopenedUnhcr.qrPayload.includes('ID: MY-1001') && reopenedUnhcr.qrPayload.includes('Name: Updated Subject'), 'UNHCR History reopen rebuilds QR from form fields');
+  const packedUnhcrS2Edit = packDetails('', stored, { docKind: 'unhcr-s2', doc: editedUnhcrS2 });
+  const unpackedUnhcrS2Edit = unpackDetails(packedUnhcrS2Edit);
+  const restoredUnhcrS2Edit = unpackedUnhcrS2Edit.doc as typeof editedUnhcrS2;
+  assert(unpackedUnhcrS2Edit.docKind === 'unhcr-s2', 'UNHCR S2 re-save keeps docKind unhcr-s2');
+  assert(restoredUnhcrS2Edit.name === 'Updated S2 Subject', 'UNHCR S2 re-save persists updated text');
+  assert(restoredUnhcrS2Edit.testBarcodeText === 'TEST-UNHCR-BARCODE-0002', 'UNHCR S2 re-save persists TEST barcode text');
+  assert(restoredUnhcrS2Edit.testBarcodeTextX === 110 && restoredUnhcrS2Edit.testBarcodeTextY === 1200, 'UNHCR S2 re-save persists TEST barcode text X/Y');
+  assert(restoredUnhcrS2Edit.testBarcodeTextW === 680 && restoredUnhcrS2Edit.testBarcodeTextH === 64, 'UNHCR S2 re-save persists TEST barcode text size');
+  assert(restoredUnhcrS2Edit.testBarcodeTextFontSize === 32, 'UNHCR S2 re-save persists TEST barcode text font size');
+  assert(restoredUnhcrS2Edit.testRefNo === 'TEST-UNHCR-REF-0002', 'UNHCR S2 re-save persists TEST reference number');
+  assert(restoredUnhcrS2Edit.testRefNoX === 2440 && restoredUnhcrS2Edit.testRefNoY === 160, 'UNHCR S2 re-save persists TEST reference X/Y');
+  assert(restoredUnhcrS2Edit.testRefNoW === 50 && restoredUnhcrS2Edit.testRefNoH === 1480, 'UNHCR S2 re-save persists TEST reference size');
+  assert(restoredUnhcrS2Edit.testRefNoFontSize === 24, 'UNHCR S2 re-save persists TEST reference font size');
+  assert(restoredUnhcrS2Edit.testRefNoOrientation === 'horizontal', 'UNHCR S2 re-save persists TEST reference orientation');
+  const reopenedUnhcrS2 = normalizeUnhcrS2Snapshot(restoredUnhcrS2Edit as Parameters<typeof normalizeUnhcrS2Snapshot>[0]);
+  assert(reopenedUnhcrS2.testBarcodeText === 'TEST-UNHCR-BARCODE-0002', 'UNHCR S2 History reopen restores TEST barcode text');
+  assert(reopenedUnhcrS2.testBarcodeTextX === 110 && reopenedUnhcrS2.testBarcodeTextW === 680, 'UNHCR S2 History reopen restores TEST barcode text position/size');
+  assert(reopenedUnhcrS2.testRefNo === 'TEST-UNHCR-REF-0002', 'UNHCR S2 History reopen restores TEST reference number');
+  assert(reopenedUnhcrS2.testRefNoX === 2440 && reopenedUnhcrS2.testRefNoH === 1480, 'UNHCR S2 History reopen restores TEST reference position/size');
+  assert(reopenedUnhcrS2.testRefNoOrientation === 'horizontal', 'UNHCR S2 History reopen restores TEST reference orientation');
+  assert(reopenedUnhcrS2.barcodePayload === 'MY-1001', 'UNHCR S2 History reopen rebuilds barcode from ID number');
+  assert(reopenedUnhcrS2.qrPayload.includes('ID: MY-1001') && reopenedUnhcrS2.qrPayload.includes('Name: Updated S2 Subject'), 'UNHCR S2 History reopen rebuilds QR from form fields');
 
-  assert(UNHCR_CURRENT_RECORD_ID === 'UNHCR-CURRENT', 'UNHCR shared current-state id is UNHCR-CURRENT');
-  assert(isUnhcrCurrentRecordId('UNHCR-CURRENT'), 'UNHCR-CURRENT is recognized as the shared state id');
-  assert(!isUnhcrCurrentRecordId('UNHCR-MY-1001'), 'a History case id is not the shared current state');
-  assert(resolveUnhcrEditorLoadSource({ recordNo: 'UNHCR-MY-1001', hasCurrentState: true }) === 'history-record', 'explicit History record wins over current state');
-  assert(resolveUnhcrEditorLoadSource({ recordNo: UNHCR_CURRENT_RECORD_ID, hasCurrentState: true }) === 'current-state', 'UNHCR-CURRENT is not treated as a History case on direct open');
-  assert(resolveUnhcrEditorLoadSource({ recordNo: UNHCR_CURRENT_RECORD_ID, hasCurrentState: false }) === 'defaults', 'UNHCR-CURRENT without a shared row uses built-in defaults');
-  assert(resolveUnhcrEditorLoadSource({ projectId: 'p1', hasCurrentState: true }) === 'project', 'explicit project wins over current state');
-  assert(resolveUnhcrEditorLoadSource({ templateName: 't1', hasCurrentState: true }) === 'template', 'explicit template wins over current state');
-  assert(resolveUnhcrEditorLoadSource({ hasCurrentState: true }) === 'current-state', 'direct editor open loads shared current state');
-  assert(resolveUnhcrEditorLoadSource({ hasCurrentState: false }) === 'defaults', 'direct editor open uses defaults when no current state exists');
-  assert(unhcrHistoryRecordIdForSave(null, 'MY-1001', 'UNHCR-gen') === 'UNHCR-MY-1001', 'Save from a blank editor creates a History case id from the ID number');
-  assert(unhcrHistoryRecordIdForSave(UNHCR_CURRENT_RECORD_ID, 'MY-1001', 'UNHCR-gen') === 'UNHCR-MY-1001', 'Save never binds History to the shared current-state id');
-  assert(unhcrHistoryRecordIdForSave('UNHCR-abc', 'MY-1001', 'UNHCR-gen') === 'UNHCR-abc', 're-save of an explicit History record keeps that record id');
-  const packedCurrent = packDetails('', stored, { docKind: 'unhcr', doc: editedUnhcr });
-  const unpackedCurrent = unpackDetails(packedCurrent);
-  const loadedCurrent = snapshotFromUnhcrVaultDoc(unpackedCurrent.doc);
-  assert(loadedCurrent.name === 'Updated Subject', 'direct editor open restores saved text from current state');
-  assert(loadedCurrent.layouts.name.fontSize === 38 && loadedCurrent.layouts.name.fontFamily === 'arial-bold', 'direct editor open restores saved font settings');
-  assert(loadedCurrent.photoX === 90 && loadedCurrent.photoW === 650, 'direct editor open restores saved photo position/size');
-  assert(loadedCurrent.barcode1X === 100 && loadedCurrent.barcode1W === 680, 'direct editor open restores saved barcode 1');
-  assert(loadedCurrent.barcode2Y === 1190 && loadedCurrent.qrSize === 250, 'direct editor open restores saved barcode 2 and QR size');
-  assert(loadedCurrent.testBarcodeText === 'TEST-UNHCR-BARCODE-0002', 'direct editor open restores TEST barcode text');
-  assert(loadedCurrent.testBarcodeTextX === 110 && loadedCurrent.testBarcodeTextH === 64, 'direct editor open restores TEST barcode text position/size');
-  assert(loadedCurrent.testRefNo === 'TEST-UNHCR-REF-0002', 'direct editor open restores TEST reference number');
-  assert(loadedCurrent.testRefNoOrientation === 'horizontal', 'direct editor open restores TEST reference orientation');
-  const packedCurrentEdit = packDetails('', stored, { docKind: 'unhcr', doc: { ...editedUnhcr, name: 'Re-saved Subject', qrSize: 280 } });
-  const reloadedCurrent = snapshotFromUnhcrVaultDoc(unpackDetails(packedCurrentEdit).doc);
-  assert(reloadedCurrent.name === 'Re-saved Subject' && reloadedCurrent.qrSize === 280, 're-edit Save updates the shared current editor state');
-  const packedHistoryCase = packDetails('', stored, { docKind: 'unhcr', doc: { ...editedUnhcr, name: 'History Only' } });
-  assert(unpackDetails(packedHistoryCase).docKind === 'unhcr', 'individual History records remain independent of UNHCR-CURRENT');
-  assert(!isUnhcrCurrentRecordId('UNHCR-MY-1001'), 'shared current state id stays distinct from History case ids');
-  const schema = readFileSync(join(ROOT, 'supabase/schema.sql'), 'utf8');
-  const vault = readFileSync(join(ROOT, 'src/lib/workspace/vault.ts'), 'utf8');
-  assert(schema.includes('create or replace function public.get_unhcr_current_state'), 'shared UNHCR state is loaded via SECURITY DEFINER RPC');
-  assert(schema.includes('create or replace function public.save_unhcr_current_state'), 'shared UNHCR state is saved via SECURITY DEFINER RPC');
-  assert(schema.includes("has_tool_access(auth.uid(), 'unhcr')") || schema.includes("has_tool_access(uid, 'unhcr')"), 'UNHCR current-state RPCs require unhcr tool access');
-  assert(schema.includes("trademark_no = 'UNHCR-CURRENT'"), 'UNHCR RPCs only touch the shared current-state row');
-  assert(vault.includes("neq('trademark_no', UNHCR_CURRENT_RECORD_ID)"), 'History listing hides UNHCR-CURRENT');
-  assert(vault.includes("rpc('get_unhcr_current_state')") && vault.includes("rpc('save_unhcr_current_state'"), 'editor load/save uses shared UNHCR RPCs');
+  assert(UNHCR_S2_CURRENT_RECORD_ID === 'UNHCR-S2-CURRENT', 'UNHCR S2 shared current-state id is UNHCR-S2-CURRENT');
+  assert(isUnhcrS2CurrentRecordId('UNHCR-S2-CURRENT'), 'UNHCR-S2-CURRENT is recognized as the S2 shared state id');
+  assert(!isUnhcrS2CurrentRecordId('UNHCR-CURRENT'), 'UNHCR-CURRENT is not the S2 shared state id');
+  assert(!isUnhcrCurrentRecordId('UNHCR-S2-CURRENT'), 'UNHCR-S2-CURRENT is not the Server 1 shared state id');
+  assert(!isUnhcrS2CurrentRecordId('UNHCR-S2-MY-1001'), 'an S2 History case id is not the shared current state');
+  assert(resolveUnhcrS2EditorLoadSource({ recordNo: 'UNHCR-S2-MY-1001', hasCurrentState: true }) === 'history-record', 'S2 explicit History record wins over current state');
+  assert(resolveUnhcrS2EditorLoadSource({ recordNo: UNHCR_S2_CURRENT_RECORD_ID, hasCurrentState: true }) === 'current-state', 'UNHCR-S2-CURRENT is not treated as a History case on direct open');
+  assert(resolveUnhcrS2EditorLoadSource({ recordNo: UNHCR_S2_CURRENT_RECORD_ID, hasCurrentState: false }) === 'defaults', 'UNHCR-S2-CURRENT without a shared row uses built-in defaults');
+  assert(resolveUnhcrS2EditorLoadSource({ projectId: 'p1', hasCurrentState: true }) === 'project', 'S2 explicit project wins over current state');
+  assert(resolveUnhcrS2EditorLoadSource({ templateName: 't1', hasCurrentState: true }) === 'template', 'S2 explicit template wins over current state');
+  assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: true }) === 'current-state', 'S2 direct editor open loads shared current state');
+  assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: false }) === 'defaults', 'S2 direct editor open uses defaults when no current state exists');
+  assert(unhcrS2HistoryRecordIdForSave(null, 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-MY-1001', 'S2 Save from a blank editor creates a History case id from the ID number');
+  assert(unhcrS2HistoryRecordIdForSave(UNHCR_S2_CURRENT_RECORD_ID, 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-MY-1001', 'S2 Save never binds History to the shared current-state id');
+  assert(unhcrS2HistoryRecordIdForSave('UNHCR-S2-abc', 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-abc', 'S2 re-save of an explicit History record keeps that record id');
+  assert(unhcrHistoryRecordIdForSave(null, 'MY-1001', 'UNHCR-gen') === 'UNHCR-MY-1001', 'Server 1 History ids stay UNHCR- prefixed after S2 split');
+  const packedS2Current = packDetails('', stored, { docKind: 'unhcr-s2', doc: editedUnhcrS2 });
+  const unpackedS2Current = unpackDetails(packedS2Current);
+  const loadedS2Current = snapshotFromUnhcrS2VaultDoc(unpackedS2Current.doc);
+  assert(loadedS2Current.name === 'Updated S2 Subject', 'S2 direct editor open restores saved text from current state');
+  assert(loadedS2Current.testBarcodeText === 'TEST-UNHCR-BARCODE-0002', 'S2 direct editor open restores TEST barcode text');
+  assert(loadedS2Current.testBarcodeTextX === 110 && loadedS2Current.testBarcodeTextH === 64, 'S2 direct editor open restores TEST barcode text position/size');
+  assert(loadedS2Current.testRefNo === 'TEST-UNHCR-REF-0002', 'S2 direct editor open restores TEST reference number');
+  assert(loadedS2Current.testRefNoOrientation === 'horizontal', 'S2 direct editor open restores TEST reference orientation');
+  const packedS2CurrentEdit = packDetails('', stored, { docKind: 'unhcr-s2', doc: { ...editedUnhcrS2, name: 'Re-saved S2 Subject', qrSize: 280 } });
+  const reloadedS2Current = snapshotFromUnhcrS2VaultDoc(unpackDetails(packedS2CurrentEdit).doc);
+  assert(reloadedS2Current.name === 'Re-saved S2 Subject' && reloadedS2Current.qrSize === 280, 'S2 re-edit Save updates the shared current editor state');
+  const packedS2HistoryCase = packDetails('', stored, { docKind: 'unhcr-s2', doc: { ...editedUnhcrS2, name: 'S2 History Only' } });
+  assert(unpackDetails(packedS2HistoryCase).docKind === 'unhcr-s2', 'S2 History records remain independent of UNHCR-S2-CURRENT');
+  assert(unpackDetails(packedHistoryCase).docKind === 'unhcr', 'Server 1 History records stay independent of Server 2');
+  assert(schema.includes('create or replace function public.get_unhcr_s2_current_state'), 'shared UNHCR S2 state is loaded via SECURITY DEFINER RPC');
+  assert(schema.includes('create or replace function public.save_unhcr_s2_current_state'), 'shared UNHCR S2 state is saved via SECURITY DEFINER RPC');
+  assert(schema.includes("trademark_no = 'UNHCR-S2-CURRENT'"), 'UNHCR S2 RPCs only touch the S2 current-state row');
+  assert(vault.includes("neq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID)"), 'History listing hides UNHCR-S2-CURRENT');
+  assert(vault.includes("rpc('get_unhcr_s2_current_state')") && vault.includes("rpc('save_unhcr_s2_current_state'"), 'S2 editor load/save uses shared UNHCR S2 RPCs');
 
   const pdfDoc = {
     fileName: 'brief.pdf',

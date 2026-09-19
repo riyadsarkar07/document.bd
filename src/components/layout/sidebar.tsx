@@ -50,6 +50,7 @@ const NAV: NavItem[] = [
   { href: '/studio/editor/nid', label: 'NID Card', icon: CreditCard, scope: 'nid', section: 'Studio' },
   { href: '/studio/editor/tin', label: 'TIN Record', icon: Landmark, scope: 'tin', section: 'Studio' },
   { href: '/studio/editor/unhcr', label: 'UNHCR ID', icon: Contact, scope: 'unhcr', section: 'Studio' },
+  { href: '/studio/editor/unhcr-s2', label: 'UNHCR ID Server 2', icon: Contact, scope: 'unhcr', section: 'Studio' },
   { href: '/studio/history', label: 'History', icon: History, scope: 'history', section: 'Studio' },
   { href: '/studio/support', label: 'Support Inbox', icon: LifeBuoy, section: 'Studio' },
   { href: '/studio/templates', label: 'Templates', icon: Shapes, scope: 'templates', section: 'Studio' },

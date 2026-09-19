@@ -1,14 +1,24 @@
-import type { SliderSpec, UnhcrCodeKey, UnhcrFieldKey, UnhcrLayout, UnhcrSnapshot } from '../editor/types';
-import { UNHCR_CODE_KEYS, UNHCR_FIELD_KEYS } from '../editor/types';
+import type {
+  SliderSpec,
+  UnhcrCodeKey,
+  UnhcrFieldKey,
+  UnhcrLayout,
+  UnhcrS2Snapshot,
+  UnhcrTestOverlayKey,
+  UnhcrTextOrientation,
+} from '../editor/types';
+import { UNHCR_CODE_KEYS, UNHCR_FIELD_KEYS, UNHCR_TEST_OVERLAY_KEYS } from '../editor/types';
 import { syncUnhcrCodePayloads, UNHCR_BARCODE_TEST_PAYLOAD, UNHCR_QR_TEST_PAYLOAD } from '../unhcrCodes';
 
 /**
- * UNHCR ID-style editor constants.
+ * UNHCR Server 2 editor constants (independent of Server 1).
  *
  * Identity values stay empty by default — this editor does not invent official
  * document data. Layout boxes sit on the uploaded template
  * (`public/assets/Unchar.png`, 2560×1800) so operators can overlay case notes
  * at the printed labels and save/restore font + position settings.
+ *
+ * TEST barcode text and vertical reference-number overlays exist only here.
  */
 
 export const UNHCR_DOC_WIDTH = 2560;
@@ -115,6 +125,42 @@ export const UNHCR_CODE_LABELS: Record<UnhcrCodeKey, string> = {
   qr: 'QR Code',
 };
 
+/** Clearly labeled TEST barcode value printed below the photo. Sample data only. */
+export const UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE = 'TEST-UNHCR-BARCODE-0001';
+
+/** Clearly labeled TEST reference number along the right edge. Sample data only. */
+export const UNHCR_TEST_REF_NO_DEFAULT_VALUE = 'TEST-UNHCR-REF-0001';
+
+export const UNHCR_TEST_BARCODE_TEXT_DEFAULT = {
+  x: 54,
+  y: 1160,
+  w: 752,
+  h: 56,
+  fontSize: 28,
+};
+
+export const UNHCR_TEST_REF_NO_DEFAULT = {
+  x: 2478,
+  y: 120,
+  w: 56,
+  h: 1560,
+  fontSize: 28,
+  orientation: 'vertical' as UnhcrTextOrientation,
+};
+
+export const UNHCR_TEST_OVERLAY_LABELS: Record<UnhcrTestOverlayKey, string> = {
+  testBarcodeText: 'TEST Barcode Text',
+  testRefNo: 'TEST Reference Number',
+};
+
+export const UNHCR_TEST_BOX_RANGES: Record<'x' | 'y' | 'w' | 'h' | 'fontSize', Omit<SliderSpec, 'key'>> = {
+  x: { label: 'X', min: 0, max: UNHCR_DOC_WIDTH, default: UNHCR_TEST_BARCODE_TEXT_DEFAULT.x, mono: true },
+  y: { label: 'Y', min: 0, max: UNHCR_DOC_HEIGHT, default: UNHCR_TEST_BARCODE_TEXT_DEFAULT.y, mono: true },
+  w: { label: 'Width', min: 24, max: UNHCR_DOC_WIDTH, default: UNHCR_TEST_BARCODE_TEXT_DEFAULT.w, mono: true },
+  h: { label: 'Height', min: 24, max: UNHCR_DOC_HEIGHT, default: UNHCR_TEST_BARCODE_TEXT_DEFAULT.h, mono: true },
+  fontSize: { label: 'Font Size', min: 8, max: 120, default: 28, mono: true },
+};
+
 export const UNHCR_BARCODE_RANGES: Record<'x' | 'y' | 'w' | 'h', Omit<SliderSpec, 'key'>> = {
   x: { label: 'X', min: 0, max: UNHCR_DOC_WIDTH, default: UNHCR_BARCODE1_DEFAULT.x, mono: true },
   y: { label: 'Y', min: 0, max: UNHCR_DOC_HEIGHT, default: UNHCR_BARCODE1_DEFAULT.y, mono: true },
@@ -132,10 +178,42 @@ export function isUnhcrCodeKey(value: string): value is UnhcrCodeKey {
   return (UNHCR_CODE_KEYS as readonly string[]).includes(value);
 }
 
-export function unhcrCodeBox(snap: UnhcrSnapshot, key: UnhcrCodeKey): { x: number; y: number; w: number; h: number } {
+export function isUnhcrTestOverlayKey(value: string): value is UnhcrTestOverlayKey {
+  return (UNHCR_TEST_OVERLAY_KEYS as readonly string[]).includes(value);
+}
+
+export function unhcrCodeBox(snap: UnhcrS2Snapshot, key: UnhcrCodeKey): { x: number; y: number; w: number; h: number } {
   if (key === 'barcode1') return { x: snap.barcode1X, y: snap.barcode1Y, w: snap.barcode1W, h: snap.barcode1H };
   if (key === 'barcode2') return { x: snap.barcode2X, y: snap.barcode2Y, w: snap.barcode2W, h: snap.barcode2H };
   return { x: snap.qrX, y: snap.qrY, w: snap.qrSize, h: snap.qrSize };
+}
+
+export function unhcrTestOverlayBox(
+  snap: UnhcrS2Snapshot,
+  key: UnhcrTestOverlayKey,
+): { x: number; y: number; w: number; h: number } {
+  if (key === 'testBarcodeText') {
+    return {
+      x: snap.testBarcodeTextX,
+      y: snap.testBarcodeTextY,
+      w: snap.testBarcodeTextW,
+      h: snap.testBarcodeTextH,
+    };
+  }
+  return {
+    x: snap.testRefNoX,
+    y: snap.testRefNoY,
+    w: snap.testRefNoW,
+    h: snap.testRefNoH,
+  };
+}
+
+function finiteText(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function textOrientation(value: unknown, fallback: UnhcrTextOrientation): UnhcrTextOrientation {
+  return value === 'vertical' || value === 'horizontal' ? value : fallback;
 }
 
 function finiteNumber(value: unknown, fallback: number, min: number, max: number): number {
@@ -144,7 +222,7 @@ function finiteNumber(value: unknown, fallback: number, min: number, max: number
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
-export const UNHCR_DEFAULTS: UnhcrSnapshot = {
+export const UNHCR_DEFAULTS: UnhcrS2Snapshot = {
   unhcrNo: '',
   name: '',
   dob: '',
@@ -171,9 +249,22 @@ export const UNHCR_DEFAULTS: UnhcrSnapshot = {
   qrX: UNHCR_QR_DEFAULT.x,
   qrY: UNHCR_QR_DEFAULT.y,
   qrSize: UNHCR_QR_DEFAULT.size,
+  testBarcodeText: UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE,
+  testBarcodeTextX: UNHCR_TEST_BARCODE_TEXT_DEFAULT.x,
+  testBarcodeTextY: UNHCR_TEST_BARCODE_TEXT_DEFAULT.y,
+  testBarcodeTextW: UNHCR_TEST_BARCODE_TEXT_DEFAULT.w,
+  testBarcodeTextH: UNHCR_TEST_BARCODE_TEXT_DEFAULT.h,
+  testBarcodeTextFontSize: UNHCR_TEST_BARCODE_TEXT_DEFAULT.fontSize,
+  testRefNo: UNHCR_TEST_REF_NO_DEFAULT_VALUE,
+  testRefNoX: UNHCR_TEST_REF_NO_DEFAULT.x,
+  testRefNoY: UNHCR_TEST_REF_NO_DEFAULT.y,
+  testRefNoW: UNHCR_TEST_REF_NO_DEFAULT.w,
+  testRefNoH: UNHCR_TEST_REF_NO_DEFAULT.h,
+  testRefNoFontSize: UNHCR_TEST_REF_NO_DEFAULT.fontSize,
+  testRefNoOrientation: UNHCR_TEST_REF_NO_DEFAULT.orientation,
 };
 
-export function normalizeUnhcrSnapshot(s: Partial<UnhcrSnapshot>): UnhcrSnapshot {
+export function normalizeUnhcrSnapshot(s: Partial<UnhcrS2Snapshot>): UnhcrS2Snapshot {
   const layouts: Partial<Record<UnhcrFieldKey, UnhcrLayout>> = {};
   for (const key of UNHCR_FIELD_KEYS) {
     const saved = s.layouts?.[key];
@@ -182,14 +273,14 @@ export function normalizeUnhcrSnapshot(s: Partial<UnhcrSnapshot>): UnhcrSnapshot
       ...(saved ?? {}),
     };
   }
-  const root: Partial<UnhcrSnapshot> = {};
+  const root: Partial<UnhcrS2Snapshot> = {};
   for (const key of UNHCR_FIELD_KEYS) {
     if (typeof s[key] === 'string') (root as Record<string, string>)[key] = s[key] as string;
   }
   const photoDataUrl = typeof s.photoDataUrl === 'string' && s.photoDataUrl.startsWith('data:image/')
     ? s.photoDataUrl
     : null;
-  const next: UnhcrSnapshot = {
+  const next: UnhcrS2Snapshot = {
     ...UNHCR_DEFAULTS,
     ...root,
     layouts: layouts as Record<UnhcrFieldKey, UnhcrLayout>,
@@ -209,6 +300,69 @@ export function normalizeUnhcrSnapshot(s: Partial<UnhcrSnapshot>): UnhcrSnapshot
     qrX: finiteNumber(s.qrX, UNHCR_QR_DEFAULT.x, UNHCR_QR_RANGES.x.min, UNHCR_QR_RANGES.x.max),
     qrY: finiteNumber(s.qrY, UNHCR_QR_DEFAULT.y, UNHCR_QR_RANGES.y.min, UNHCR_QR_RANGES.y.max),
     qrSize: finiteNumber(s.qrSize, UNHCR_QR_DEFAULT.size, UNHCR_QR_RANGES.size.min, UNHCR_QR_RANGES.size.max),
+    testBarcodeText: finiteText(s.testBarcodeText, UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE),
+    testBarcodeTextX: finiteNumber(
+      s.testBarcodeTextX,
+      UNHCR_TEST_BARCODE_TEXT_DEFAULT.x,
+      UNHCR_TEST_BOX_RANGES.x.min,
+      UNHCR_TEST_BOX_RANGES.x.max,
+    ),
+    testBarcodeTextY: finiteNumber(
+      s.testBarcodeTextY,
+      UNHCR_TEST_BARCODE_TEXT_DEFAULT.y,
+      UNHCR_TEST_BOX_RANGES.y.min,
+      UNHCR_TEST_BOX_RANGES.y.max,
+    ),
+    testBarcodeTextW: finiteNumber(
+      s.testBarcodeTextW,
+      UNHCR_TEST_BARCODE_TEXT_DEFAULT.w,
+      UNHCR_TEST_BOX_RANGES.w.min,
+      UNHCR_TEST_BOX_RANGES.w.max,
+    ),
+    testBarcodeTextH: finiteNumber(
+      s.testBarcodeTextH,
+      UNHCR_TEST_BARCODE_TEXT_DEFAULT.h,
+      UNHCR_TEST_BOX_RANGES.h.min,
+      UNHCR_TEST_BOX_RANGES.h.max,
+    ),
+    testBarcodeTextFontSize: finiteNumber(
+      s.testBarcodeTextFontSize,
+      UNHCR_TEST_BARCODE_TEXT_DEFAULT.fontSize,
+      UNHCR_TEST_BOX_RANGES.fontSize.min,
+      UNHCR_TEST_BOX_RANGES.fontSize.max,
+    ),
+    testRefNo: finiteText(s.testRefNo, UNHCR_TEST_REF_NO_DEFAULT_VALUE),
+    testRefNoX: finiteNumber(
+      s.testRefNoX,
+      UNHCR_TEST_REF_NO_DEFAULT.x,
+      UNHCR_TEST_BOX_RANGES.x.min,
+      UNHCR_TEST_BOX_RANGES.x.max,
+    ),
+    testRefNoY: finiteNumber(
+      s.testRefNoY,
+      UNHCR_TEST_REF_NO_DEFAULT.y,
+      UNHCR_TEST_BOX_RANGES.y.min,
+      UNHCR_TEST_BOX_RANGES.y.max,
+    ),
+    testRefNoW: finiteNumber(
+      s.testRefNoW,
+      UNHCR_TEST_REF_NO_DEFAULT.w,
+      UNHCR_TEST_BOX_RANGES.w.min,
+      UNHCR_TEST_BOX_RANGES.w.max,
+    ),
+    testRefNoH: finiteNumber(
+      s.testRefNoH,
+      UNHCR_TEST_REF_NO_DEFAULT.h,
+      UNHCR_TEST_BOX_RANGES.h.min,
+      UNHCR_TEST_BOX_RANGES.h.max,
+    ),
+    testRefNoFontSize: finiteNumber(
+      s.testRefNoFontSize,
+      UNHCR_TEST_REF_NO_DEFAULT.fontSize,
+      UNHCR_TEST_BOX_RANGES.fontSize.min,
+      UNHCR_TEST_BOX_RANGES.fontSize.max,
+    ),
+    testRefNoOrientation: textOrientation(s.testRefNoOrientation, UNHCR_TEST_REF_NO_DEFAULT.orientation),
   };
   return { ...next, ...syncUnhcrCodePayloads(next) };
 }

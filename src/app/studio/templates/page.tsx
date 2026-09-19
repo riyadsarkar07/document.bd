@@ -165,7 +165,7 @@ export default function TemplatesPage() {
                 Updated {timeAgo(t.updated_at ?? t.created_at)}
               </div>
               <div className="mt-4 flex items-center gap-2">
-                <Link href={`/studio/editor/${t.state?.docKind === 'youtube-trademark' ? 'youtube-trademark' : t.kind}?template=${encodeURIComponent(t.id ?? t.name)}`} className="flex-1">
+                <Link href={`/studio/editor/${t.state?.docKind === 'youtube-trademark' ? 'youtube-trademark' : t.state?.docKind === 'unhcr-s2' ? 'unhcr-s2' : t.kind}?template=${encodeURIComponent(t.id ?? t.name)}`} className="flex-1">
                   <Button variant="secondary" size="sm" icon={<Copy className="h-3.5 w-3.5" />} className="w-full">
                     Use Template
                   </Button>

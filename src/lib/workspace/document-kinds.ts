@@ -15,6 +15,7 @@ export type DocumentKind =
   | 'nid'
   | 'tin'
   | 'unhcr'
+  | 'unhcr-s2'
   | 'pdf'
   | 'page-recover'
   | 'business-manager';
@@ -83,6 +84,15 @@ export const DOCUMENT_KINDS: Record<DocumentKind, DocumentKindMeta> = {
     recordPrefix: 'UNHCR',
     certificate: false,
   },
+  'unhcr-s2': {
+    kind: 'unhcr-s2',
+    label: 'UNHCR ID Server 2',
+    short: 'UNHCR S2',
+    editorPath: '/studio/editor/unhcr-s2',
+    badgeTone: 'blue',
+    recordPrefix: 'UNHCR-S2',
+    certificate: false,
+  },
   pdf: {
     kind: 'pdf',
     label: 'PDF Document',
@@ -119,6 +129,7 @@ export const DOCUMENT_KIND_ORDER: DocumentKind[] = [
   'nid',
   'tin',
   'unhcr',
+  'unhcr-s2',
   'pdf',
   'page-recover',
   'business-manager',
