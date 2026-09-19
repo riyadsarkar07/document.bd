@@ -1,4 +1,4 @@
-import type { UnhcrLayout, UnhcrOverlayKey, UnhcrSnapshot } from '../editor/types';
+import type { UnhcrLayout, UnhcrOverlayKey, UnhcrSnapshot, UnhcrTextOrientation } from '../editor/types';
 import { UNHCR_DEFAULT_LAYOUTS, UNHCR_DOC_HEIGHT, UNHCR_DOC_WIDTH, UNHCR_FIELD_ORDER } from '../constants/unhcr';
 import { buildUnhcrBarcodePayload, buildUnhcrQrPayload, drawUnhcrBarcode, drawUnhcrQr } from '../unhcrCodes';
 
@@ -23,6 +23,35 @@ export function renderUnhcrValue(
   ctx.textAlign = 'left';
   ctx.fillStyle = INK;
   ctx.fillText(text, layout.x, layout.y);
+  ctx.restore();
+}
+
+function drawBoxedTestText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  fontSize: number,
+  orientation: UnhcrTextOrientation = 'horizontal',
+): void {
+  if (!text) return;
+  const boxW = Math.max(8, w);
+  const boxH = Math.max(8, h);
+  const size = Math.max(8, fontSize);
+  ctx.save();
+  ctx.font = `${size}px ${ARIAL_BOLD}`;
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (orientation === 'vertical') {
+    ctx.translate(x + boxW / 2, y + boxH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText(text, 0, 0, boxH);
+  } else {
+    ctx.fillText(text, x + boxW / 2, y + boxH / 2, boxW);
+  }
   ctx.restore();
 }
 
@@ -85,6 +114,27 @@ export function renderUnhcrCard(
   drawUnhcrBarcode(ctx, barcodePayload, snap.barcode2X, snap.barcode2Y, snap.barcode2W, snap.barcode2H);
   drawUnhcrQr(ctx, qrPayload, snap.qrX, snap.qrY, snap.qrSize);
 
+  drawBoxedTestText(
+    ctx,
+    snap.testBarcodeText,
+    snap.testBarcodeTextX,
+    snap.testBarcodeTextY,
+    snap.testBarcodeTextW,
+    snap.testBarcodeTextH,
+    snap.testBarcodeTextFontSize,
+    'horizontal',
+  );
+  drawBoxedTestText(
+    ctx,
+    snap.testRefNo,
+    snap.testRefNoX,
+    snap.testRefNoY,
+    snap.testRefNoW,
+    snap.testRefNoH,
+    snap.testRefNoFontSize,
+    snap.testRefNoOrientation,
+  );
+
   if (highlight === 'photo') {
     ctx.save();
     ctx.strokeStyle = '#2563eb';
@@ -98,6 +148,10 @@ export function renderUnhcrCard(
     strokeCode(ctx, snap.barcode2X, snap.barcode2Y, snap.barcode2W, snap.barcode2H);
   } else if (highlight === 'qr') {
     strokeCode(ctx, snap.qrX, snap.qrY, snap.qrSize, snap.qrSize);
+  } else if (highlight === 'testBarcodeText') {
+    strokeCode(ctx, snap.testBarcodeTextX, snap.testBarcodeTextY, snap.testBarcodeTextW, snap.testBarcodeTextH);
+  } else if (highlight === 'testRefNo') {
+    strokeCode(ctx, snap.testRefNoX, snap.testRefNoY, snap.testRefNoW, snap.testRefNoH);
   } else if (highlight) {
     const layout = snap.layouts[highlight] ?? UNHCR_DEFAULT_LAYOUTS[highlight];
     const text = snap[highlight] || ' ';

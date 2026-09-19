@@ -165,7 +165,13 @@ export const UNHCR_CODE_KEYS = ['barcode1', 'barcode2', 'qr'] as const;
 
 export type UnhcrCodeKey = (typeof UNHCR_CODE_KEYS)[number];
 
-export type UnhcrOverlayKey = UnhcrFieldKey | 'photo' | UnhcrCodeKey;
+export const UNHCR_TEST_OVERLAY_KEYS = ['testBarcodeText', 'testRefNo'] as const;
+
+export type UnhcrTestOverlayKey = (typeof UNHCR_TEST_OVERLAY_KEYS)[number];
+
+export type UnhcrTextOrientation = 'horizontal' | 'vertical';
+
+export type UnhcrOverlayKey = UnhcrFieldKey | 'photo' | UnhcrCodeKey | UnhcrTestOverlayKey;
 
 export interface UnhcrSnapshot {
   unhcrNo: string;
@@ -194,4 +200,17 @@ export interface UnhcrSnapshot {
   qrX: number;
   qrY: number;
   qrSize: number;
+  testBarcodeText: string;
+  testBarcodeTextX: number;
+  testBarcodeTextY: number;
+  testBarcodeTextW: number;
+  testBarcodeTextH: number;
+  testBarcodeTextFontSize: number;
+  testRefNo: string;
+  testRefNoX: number;
+  testRefNoY: number;
+  testRefNoW: number;
+  testRefNoH: number;
+  testRefNoFontSize: number;
+  testRefNoOrientation: UnhcrTextOrientation;
 }

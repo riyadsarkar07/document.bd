@@ -35,7 +35,17 @@ import {
 } from '../src/lib/workspace/document-kinds';
 import { PAGE_RECOVER_CONFIG, BUSINESS_MANAGER_CONFIG, normalizeServiceSnapshot } from '../src/lib/constants/services';
 import { bytesToPdfDataUrl, pdfDataUrlToBytes } from '../src/lib/pdf-editor/serialize';
-import { normalizeUnhcrSnapshot, UNHCR_BARCODE1_DEFAULT, UNHCR_BARCODE2_DEFAULT, UNHCR_PHOTO_DEFAULT, UNHCR_QR_DEFAULT } from '../src/lib/constants/unhcr';
+import {
+  normalizeUnhcrSnapshot,
+  UNHCR_BARCODE1_DEFAULT,
+  UNHCR_BARCODE2_DEFAULT,
+  UNHCR_PHOTO_DEFAULT,
+  UNHCR_QR_DEFAULT,
+  UNHCR_TEST_BARCODE_TEXT_DEFAULT,
+  UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE,
+  UNHCR_TEST_REF_NO_DEFAULT,
+  UNHCR_TEST_REF_NO_DEFAULT_VALUE,
+} from '../src/lib/constants/unhcr';
 import { UNHCR_BARCODE_TEST_PAYLOAD, UNHCR_QR_TEST_PAYLOAD } from '../src/lib/unhcrCodes';
 import {
   UNHCR_CURRENT_RECORD_ID,
@@ -372,6 +382,19 @@ function main() {
     qrX: 2200,
     qrY: 100,
     qrSize: 240,
+    testBarcodeText: 'TEST-UNHCR-BARCODE-0001',
+    testBarcodeTextX: 90,
+    testBarcodeTextY: 1180,
+    testBarcodeTextW: 700,
+    testBarcodeTextH: 60,
+    testBarcodeTextFontSize: 30,
+    testRefNo: 'TEST-UNHCR-REF-0001',
+    testRefNoX: 2460,
+    testRefNoY: 140,
+    testRefNoW: 52,
+    testRefNoH: 1500,
+    testRefNoFontSize: 26,
+    testRefNoOrientation: 'vertical' as const,
   };
   const packedUnhcr = packDetails('', stored, { docKind: 'unhcr', doc: unhcrDoc });
   const unpackedUnhcr = unpackDetails(packedUnhcr);
@@ -392,6 +415,15 @@ function main() {
   assert(restoredUnhcr.barcode2W === 700 && restoredUnhcr.barcode2H === 110, 'UNHCR pack restores barcode 2 size');
   assert(restoredUnhcr.qrPayload === UNHCR_QR_TEST_PAYLOAD, 'UNHCR pack restores QR TEST payload');
   assert(restoredUnhcr.qrX === 2200 && restoredUnhcr.qrY === 100 && restoredUnhcr.qrSize === 240, 'UNHCR pack restores QR X/Y/size');
+  assert(restoredUnhcr.testBarcodeText === 'TEST-UNHCR-BARCODE-0001', 'UNHCR pack restores TEST barcode text');
+  assert(restoredUnhcr.testBarcodeTextX === 90 && restoredUnhcr.testBarcodeTextY === 1180, 'UNHCR pack restores TEST barcode text X/Y');
+  assert(restoredUnhcr.testBarcodeTextW === 700 && restoredUnhcr.testBarcodeTextH === 60, 'UNHCR pack restores TEST barcode text size');
+  assert(restoredUnhcr.testBarcodeTextFontSize === 30, 'UNHCR pack restores TEST barcode text font size');
+  assert(restoredUnhcr.testRefNo === 'TEST-UNHCR-REF-0001', 'UNHCR pack restores TEST reference number');
+  assert(restoredUnhcr.testRefNoX === 2460 && restoredUnhcr.testRefNoY === 140, 'UNHCR pack restores TEST reference X/Y');
+  assert(restoredUnhcr.testRefNoW === 52 && restoredUnhcr.testRefNoH === 1500, 'UNHCR pack restores TEST reference size');
+  assert(restoredUnhcr.testRefNoFontSize === 26, 'UNHCR pack restores TEST reference font size');
+  assert(restoredUnhcr.testRefNoOrientation === 'vertical', 'UNHCR pack restores TEST reference orientation');
   assert(!JSON.stringify(unpackedUnhcr).includes('Facebook Imposter'), 'UNHCR vault payload omits the case banner');
   const normalizedUnhcr = normalizeUnhcrSnapshot({});
   assert(normalizedUnhcr.photoX === UNHCR_PHOTO_DEFAULT.x && normalizedUnhcr.photoY === UNHCR_PHOTO_DEFAULT.y, 'UNHCR photo defaults to cyan placeholder box');
@@ -408,6 +440,13 @@ function main() {
   assert(normalizedUnhcr.barcode2W === 750 && normalizedUnhcr.barcode2H === 121, 'UNHCR barcode 2 default size is 750×121');
   assert(normalizedUnhcr.qrPayload === UNHCR_QR_TEST_PAYLOAD, 'UNHCR QR defaults to TEST sample data');
   assert(normalizedUnhcr.qrX === 1467 && normalizedUnhcr.qrY === 1369 && normalizedUnhcr.qrSize === 263, 'UNHCR QR defaults to 1467,1369 size 263');
+  assert(normalizedUnhcr.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'UNHCR TEST barcode text defaults to labeled TEST data');
+  assert(normalizedUnhcr.testBarcodeTextX === UNHCR_TEST_BARCODE_TEXT_DEFAULT.x && normalizedUnhcr.testBarcodeTextY === UNHCR_TEST_BARCODE_TEXT_DEFAULT.y, 'UNHCR TEST barcode text default X/Y sits below the photo');
+  assert(normalizedUnhcr.testBarcodeTextW === UNHCR_TEST_BARCODE_TEXT_DEFAULT.w && normalizedUnhcr.testBarcodeTextH === UNHCR_TEST_BARCODE_TEXT_DEFAULT.h, 'UNHCR TEST barcode text default size');
+  assert(normalizedUnhcr.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'UNHCR TEST reference number defaults to labeled TEST data');
+  assert(normalizedUnhcr.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x && normalizedUnhcr.testRefNoY === UNHCR_TEST_REF_NO_DEFAULT.y, 'UNHCR TEST reference default X/Y sits on the right edge');
+  assert(normalizedUnhcr.testRefNoW === UNHCR_TEST_REF_NO_DEFAULT.w && normalizedUnhcr.testRefNoH === UNHCR_TEST_REF_NO_DEFAULT.h, 'UNHCR TEST reference default size');
+  assert(normalizedUnhcr.testRefNoOrientation === 'vertical', 'UNHCR TEST reference defaults to vertical orientation');
   assert(UNHCR_BARCODE1_DEFAULT.x === 54 && UNHCR_BARCODE1_DEFAULT.y === 1028, 'UNHCR_BARCODE1_DEFAULT is 54,1028');
   assert(UNHCR_BARCODE2_DEFAULT.x === 1724 && UNHCR_BARCODE2_DEFAULT.y === 99, 'UNHCR_BARCODE2_DEFAULT is 1724,99');
   assert(UNHCR_QR_DEFAULT.x === 1467 && UNHCR_QR_DEFAULT.y === 1369 && UNHCR_QR_DEFAULT.size === 263, 'UNHCR_QR_DEFAULT is 1467,1369 size 263');
@@ -432,6 +471,19 @@ function main() {
     qrX: 2210,
     qrY: 110,
     qrSize: 250,
+    testBarcodeText: 'TEST-UNHCR-BARCODE-0002',
+    testBarcodeTextX: 110,
+    testBarcodeTextY: 1200,
+    testBarcodeTextW: 680,
+    testBarcodeTextH: 64,
+    testBarcodeTextFontSize: 32,
+    testRefNo: 'TEST-UNHCR-REF-0002',
+    testRefNoX: 2440,
+    testRefNoY: 160,
+    testRefNoW: 50,
+    testRefNoH: 1480,
+    testRefNoFontSize: 24,
+    testRefNoOrientation: 'horizontal' as const,
   };
   const packedUnhcrEdit = packDetails('', stored, { docKind: 'unhcr', doc: editedUnhcr });
   const unpackedUnhcrEdit = unpackDetails(packedUnhcrEdit);
@@ -451,10 +503,24 @@ function main() {
   assert(restoredUnhcrEdit.barcode2W === 680 && restoredUnhcrEdit.barcode2H === 108, 'UNHCR re-save persists barcode 2 size');
   assert(restoredUnhcrEdit.qrPayload.includes('TEST DATA'), 'UNHCR re-save persists QR TEST payload');
   assert(restoredUnhcrEdit.qrX === 2210 && restoredUnhcrEdit.qrY === 110 && restoredUnhcrEdit.qrSize === 250, 'UNHCR re-save persists QR X/Y/size');
+  assert(restoredUnhcrEdit.testBarcodeText === 'TEST-UNHCR-BARCODE-0002', 'UNHCR re-save persists TEST barcode text');
+  assert(restoredUnhcrEdit.testBarcodeTextX === 110 && restoredUnhcrEdit.testBarcodeTextY === 1200, 'UNHCR re-save persists TEST barcode text X/Y');
+  assert(restoredUnhcrEdit.testBarcodeTextW === 680 && restoredUnhcrEdit.testBarcodeTextH === 64, 'UNHCR re-save persists TEST barcode text size');
+  assert(restoredUnhcrEdit.testBarcodeTextFontSize === 32, 'UNHCR re-save persists TEST barcode text font size');
+  assert(restoredUnhcrEdit.testRefNo === 'TEST-UNHCR-REF-0002', 'UNHCR re-save persists TEST reference number');
+  assert(restoredUnhcrEdit.testRefNoX === 2440 && restoredUnhcrEdit.testRefNoY === 160, 'UNHCR re-save persists TEST reference X/Y');
+  assert(restoredUnhcrEdit.testRefNoW === 50 && restoredUnhcrEdit.testRefNoH === 1480, 'UNHCR re-save persists TEST reference size');
+  assert(restoredUnhcrEdit.testRefNoFontSize === 24, 'UNHCR re-save persists TEST reference font size');
+  assert(restoredUnhcrEdit.testRefNoOrientation === 'horizontal', 'UNHCR re-save persists TEST reference orientation');
   const reopenedUnhcr = normalizeUnhcrSnapshot(restoredUnhcrEdit as Parameters<typeof normalizeUnhcrSnapshot>[0]);
   assert(reopenedUnhcr.barcode1X === 100 && reopenedUnhcr.barcode1W === 680, 'UNHCR History reopen restores barcode 1 position/size');
   assert(reopenedUnhcr.barcode2X === 110 && reopenedUnhcr.barcode2H === 108, 'UNHCR History reopen restores barcode 2 position/size');
   assert(reopenedUnhcr.qrX === 2210 && reopenedUnhcr.qrY === 110 && reopenedUnhcr.qrSize === 250, 'UNHCR History reopen restores QR position/size');
+  assert(reopenedUnhcr.testBarcodeText === 'TEST-UNHCR-BARCODE-0002', 'UNHCR History reopen restores TEST barcode text');
+  assert(reopenedUnhcr.testBarcodeTextX === 110 && reopenedUnhcr.testBarcodeTextW === 680, 'UNHCR History reopen restores TEST barcode text position/size');
+  assert(reopenedUnhcr.testRefNo === 'TEST-UNHCR-REF-0002', 'UNHCR History reopen restores TEST reference number');
+  assert(reopenedUnhcr.testRefNoX === 2440 && reopenedUnhcr.testRefNoH === 1480, 'UNHCR History reopen restores TEST reference position/size');
+  assert(reopenedUnhcr.testRefNoOrientation === 'horizontal', 'UNHCR History reopen restores TEST reference orientation');
   assert(reopenedUnhcr.barcodePayload === 'MY-1001', 'UNHCR History reopen rebuilds barcode from ID number');
   assert(reopenedUnhcr.qrPayload.includes('ID: MY-1001') && reopenedUnhcr.qrPayload.includes('Name: Updated Subject'), 'UNHCR History reopen rebuilds QR from form fields');
 
@@ -479,6 +545,10 @@ function main() {
   assert(loadedCurrent.photoX === 90 && loadedCurrent.photoW === 650, 'direct editor open restores saved photo position/size');
   assert(loadedCurrent.barcode1X === 100 && loadedCurrent.barcode1W === 680, 'direct editor open restores saved barcode 1');
   assert(loadedCurrent.barcode2Y === 1190 && loadedCurrent.qrSize === 250, 'direct editor open restores saved barcode 2 and QR size');
+  assert(loadedCurrent.testBarcodeText === 'TEST-UNHCR-BARCODE-0002', 'direct editor open restores TEST barcode text');
+  assert(loadedCurrent.testBarcodeTextX === 110 && loadedCurrent.testBarcodeTextH === 64, 'direct editor open restores TEST barcode text position/size');
+  assert(loadedCurrent.testRefNo === 'TEST-UNHCR-REF-0002', 'direct editor open restores TEST reference number');
+  assert(loadedCurrent.testRefNoOrientation === 'horizontal', 'direct editor open restores TEST reference orientation');
   const packedCurrentEdit = packDetails('', stored, { docKind: 'unhcr', doc: { ...editedUnhcr, name: 'Re-saved Subject', qrSize: 280 } });
   const reloadedCurrent = snapshotFromUnhcrVaultDoc(unpackDetails(packedCurrentEdit).doc);
   assert(reloadedCurrent.name === 'Re-saved Subject' && reloadedCurrent.qrSize === 280, 're-edit Save updates the shared current editor state');
