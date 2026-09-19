@@ -273,7 +273,7 @@ export default function DashboardPage() {
             {
               href: '/studio/editor/unhcr-s2',
               title: 'UNHCR ID Server 2',
-              desc: 'Independent UNHCR workspace with TEST barcode text and vertical reference overlays. Not official identity data.',
+              desc: 'Independent UNHCR workspace with barcode value and reference overlays. Not official identity data.',
               icon: Contact,
               tone: 'from-cyan-500 to-sky-600 text-white',
               meta: '2560 × 1800 px · Server 2',

@@ -24,6 +24,7 @@ import {
   isUnhcrCodeKey,
   isUnhcrTestOverlayKey,
   normalizeUnhcrSnapshot,
+  syncUnhcrS2IdOverlays,
   unhcrCodeBox,
   unhcrTestOverlayBox,
 } from '@/lib/constants/unhcr-s2';
@@ -120,7 +121,9 @@ function UnhcrEditorInner() {
     (key: UnhcrFieldKey, value: string) => {
       setSnapshot((prev) => {
         const next = { ...prev, [key]: value };
-        return { ...next, ...syncUnhcrCodePayloads(next) };
+        const synced = { ...next, ...syncUnhcrCodePayloads(next) };
+        if (key !== 'unhcrNo') return synced;
+        return { ...synced, ...syncUnhcrS2IdOverlays(synced) };
       });
     },
     [setSnapshot],
@@ -953,6 +956,14 @@ function UnhcrEditorInner() {
               }}
             />
           ))}
+          <PropertyInput
+            label="Barcode Value"
+            value={present.testBarcodeText}
+            onChange={(v) => {
+              setActiveField('testBarcodeText');
+              patchTestOverlay('testBarcodeText', { text: v });
+            }}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection
@@ -976,16 +987,16 @@ function UnhcrEditorInner() {
             {isCodeField && (
               <p className="rounded-xl border border-line bg-surface-raised px-3 py-2 text-[10.5px] leading-relaxed text-muted">
                 {isBarcodeField
-                  ? 'Both barcodes share the same Code 128 design and encode the ID number (TEST-UNHCR-REF-0001 when empty). The payload is not printed as text on the card.'
-                  : 'Square TEST QR. Encodes labeled ID fields from the form — sample data only, not official identity.'}
+                  ? 'Both barcodes share the same Code 128 design and encode the ID number. The payload is not printed as text on the card.'
+                  : 'Square QR. Encodes labeled ID fields from the form.'}
               </p>
             )}
 
             {isTestOverlay && (
               <p className="rounded-xl border border-line bg-surface-raised px-3 py-2 text-[10.5px] leading-relaxed text-muted">
                 {activeField === 'testBarcodeText'
-                  ? 'TEST-only barcode value printed below the photo. Sample data — independently selectable, editable, and saved with History.'
-                  : 'TEST-only reference number along the right edge. Sample data — vertical text, independently selectable, and saved with History.'}
+                  ? 'Barcode value printed below the photo. Independently selectable and saved with History. Updates when the ID number changes.'
+                  : 'Reference number along the right edge. Independently selectable and saved with History.'}
               </p>
             )}
 
@@ -1026,7 +1037,7 @@ function UnhcrEditorInner() {
               {isTestOverlay ? (
                 <>
                   <PropertyInput
-                    label={activeField === 'testBarcodeText' ? 'TEST Barcode Text' : 'TEST Reference Number'}
+                    label={activeField === 'testBarcodeText' ? 'Barcode Value' : 'Reference Number'}
                     value={activeField === 'testBarcodeText' ? present.testBarcodeText : present.testRefNo}
                     onChange={(v) => patchTestOverlay(activeField, { text: v })}
                     mono
@@ -1057,16 +1068,16 @@ function UnhcrEditorInner() {
                     </div>
                   )}
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlaySize(-10)} aria-label="Decrease TEST overlay size">
+                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlaySize(-10)} aria-label="Decrease overlay size">
                       -
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlaySize(10)} aria-label="Increase TEST overlay size">
+                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlaySize(10)} aria-label="Increase overlay size">
                       +
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlayFont(-1)} aria-label="Decrease TEST overlay font">
+                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlayFont(-1)} aria-label="Decrease overlay font">
                       A-
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlayFont(1)} aria-label="Increase TEST overlay font">
+                    <Button variant="outline" size="sm" onClick={() => bumpTestOverlayFont(1)} aria-label="Increase overlay font">
                       A+
                     </Button>
                     <span className="ml-auto font-mono text-[11px] text-dimm">

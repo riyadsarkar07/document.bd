@@ -48,6 +48,7 @@ import {
   UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE,
   UNHCR_TEST_REF_NO_DEFAULT,
   UNHCR_TEST_REF_NO_DEFAULT_VALUE,
+  syncUnhcrS2IdOverlays,
 } from '../src/lib/constants/unhcr-s2';
 import { UNHCR_BARCODE_TEST_PAYLOAD, UNHCR_QR_TEST_PAYLOAD } from '../src/lib/unhcrCodes';
 import {
@@ -555,13 +556,15 @@ function main() {
   assert(restoredUnhcrS2.testRefNoFontSize === 26, 'UNHCR S2 pack restores TEST reference font size');
   assert(restoredUnhcrS2.testRefNoOrientation === 'vertical', 'UNHCR S2 pack restores TEST reference orientation');
   const normalizedUnhcrS2 = normalizeUnhcrS2Snapshot({});
-  assert(normalizedUnhcrS2.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'UNHCR S2 TEST barcode text defaults to labeled TEST data');
-  assert(normalizedUnhcrS2.testBarcodeTextX === UNHCR_TEST_BARCODE_TEXT_DEFAULT.x && normalizedUnhcrS2.testBarcodeTextY === UNHCR_TEST_BARCODE_TEXT_DEFAULT.y, 'UNHCR S2 TEST barcode text default X/Y sits below the photo');
-  assert(normalizedUnhcrS2.testBarcodeTextW === UNHCR_TEST_BARCODE_TEXT_DEFAULT.w && normalizedUnhcrS2.testBarcodeTextH === UNHCR_TEST_BARCODE_TEXT_DEFAULT.h, 'UNHCR S2 TEST barcode text default size');
-  assert(normalizedUnhcrS2.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'UNHCR S2 TEST reference number defaults to labeled TEST data');
-  assert(normalizedUnhcrS2.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x && normalizedUnhcrS2.testRefNoY === UNHCR_TEST_REF_NO_DEFAULT.y, 'UNHCR S2 TEST reference default X/Y sits on the right edge');
-  assert(normalizedUnhcrS2.testRefNoW === UNHCR_TEST_REF_NO_DEFAULT.w && normalizedUnhcrS2.testRefNoH === UNHCR_TEST_REF_NO_DEFAULT.h, 'UNHCR S2 TEST reference default size');
-  assert(normalizedUnhcrS2.testRefNoOrientation === 'vertical', 'UNHCR S2 TEST reference defaults to vertical orientation');
+  assert(normalizedUnhcrS2.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'UNHCR S2 barcode value defaults empty');
+  assert(normalizedUnhcrS2.testBarcodeTextX === UNHCR_TEST_BARCODE_TEXT_DEFAULT.x && normalizedUnhcrS2.testBarcodeTextY === UNHCR_TEST_BARCODE_TEXT_DEFAULT.y, 'UNHCR S2 barcode value default X/Y sits below the photo');
+  assert(normalizedUnhcrS2.testBarcodeTextW === UNHCR_TEST_BARCODE_TEXT_DEFAULT.w && normalizedUnhcrS2.testBarcodeTextH === UNHCR_TEST_BARCODE_TEXT_DEFAULT.h, 'UNHCR S2 barcode value default size');
+  assert(normalizedUnhcrS2.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'UNHCR S2 reference number defaults empty');
+  assert(normalizedUnhcrS2.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x && normalizedUnhcrS2.testRefNoY === UNHCR_TEST_REF_NO_DEFAULT.y, 'UNHCR S2 reference default X/Y sits on the right edge');
+  assert(normalizedUnhcrS2.testRefNoW === UNHCR_TEST_REF_NO_DEFAULT.w && normalizedUnhcrS2.testRefNoH === UNHCR_TEST_REF_NO_DEFAULT.h, 'UNHCR S2 reference default size');
+  assert(normalizedUnhcrS2.testRefNoOrientation === 'vertical', 'UNHCR S2 reference defaults to vertical orientation');
+  assert(syncUnhcrS2IdOverlays({ unhcrNo: 'MY-1001' }).testBarcodeText === 'MY-1001', 'S2 barcode value syncs from ID number');
+  assert(syncUnhcrS2IdOverlays({ unhcrNo: '' }).testBarcodeText === '', 'S2 barcode value stays empty when ID is empty');
   const editedUnhcrS2 = {
     ...restoredUnhcrS2,
     name: 'Updated S2 Subject',

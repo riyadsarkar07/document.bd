@@ -18,7 +18,7 @@ import { syncUnhcrCodePayloads, UNHCR_BARCODE_TEST_PAYLOAD, UNHCR_QR_TEST_PAYLOA
  * (`public/assets/Unchar.png`, 2560×1800) so operators can overlay case notes
  * at the printed labels and save/restore font + position settings.
  *
- * TEST barcode text and vertical reference-number overlays exist only here.
+ * Barcode-value and vertical reference-number overlays exist only here.
  */
 
 export const UNHCR_DOC_WIDTH = 2560;
@@ -125,11 +125,9 @@ export const UNHCR_CODE_LABELS: Record<UnhcrCodeKey, string> = {
   qr: 'QR Code',
 };
 
-/** Clearly labeled TEST barcode value printed below the photo. Sample data only. */
-export const UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE = 'TEST-UNHCR-BARCODE-0001';
+export const UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE = '';
 
-/** Clearly labeled TEST reference number along the right edge. Sample data only. */
-export const UNHCR_TEST_REF_NO_DEFAULT_VALUE = 'TEST-UNHCR-REF-0001';
+export const UNHCR_TEST_REF_NO_DEFAULT_VALUE = '';
 
 export const UNHCR_TEST_BARCODE_TEXT_DEFAULT = {
   x: 54,
@@ -149,8 +147,8 @@ export const UNHCR_TEST_REF_NO_DEFAULT = {
 };
 
 export const UNHCR_TEST_OVERLAY_LABELS: Record<UnhcrTestOverlayKey, string> = {
-  testBarcodeText: 'TEST Barcode Text',
-  testRefNo: 'TEST Reference Number',
+  testBarcodeText: 'Barcode Value',
+  testRefNo: 'Reference Number',
 };
 
 export const UNHCR_TEST_BOX_RANGES: Record<'x' | 'y' | 'w' | 'h' | 'fontSize', Omit<SliderSpec, 'key'>> = {
@@ -180,6 +178,11 @@ export function isUnhcrCodeKey(value: string): value is UnhcrCodeKey {
 
 export function isUnhcrTestOverlayKey(value: string): value is UnhcrTestOverlayKey {
   return (UNHCR_TEST_OVERLAY_KEYS as readonly string[]).includes(value);
+}
+
+/** Keep the barcode-value overlay in sync with the ID number. Reference number stays independent. */
+export function syncUnhcrS2IdOverlays(snap: Pick<UnhcrS2Snapshot, 'unhcrNo'>): Pick<UnhcrS2Snapshot, 'testBarcodeText'> {
+  return { testBarcodeText: typeof snap.unhcrNo === 'string' ? snap.unhcrNo : '' };
 }
 
 export function unhcrCodeBox(snap: UnhcrS2Snapshot, key: UnhcrCodeKey): { x: number; y: number; w: number; h: number } {
@@ -300,7 +303,10 @@ export function normalizeUnhcrSnapshot(s: Partial<UnhcrS2Snapshot>): UnhcrS2Snap
     qrX: finiteNumber(s.qrX, UNHCR_QR_DEFAULT.x, UNHCR_QR_RANGES.x.min, UNHCR_QR_RANGES.x.max),
     qrY: finiteNumber(s.qrY, UNHCR_QR_DEFAULT.y, UNHCR_QR_RANGES.y.min, UNHCR_QR_RANGES.y.max),
     qrSize: finiteNumber(s.qrSize, UNHCR_QR_DEFAULT.size, UNHCR_QR_RANGES.size.min, UNHCR_QR_RANGES.size.max),
-    testBarcodeText: finiteText(s.testBarcodeText, UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE),
+    testBarcodeText: finiteText(
+      s.testBarcodeText,
+      typeof s.unhcrNo === 'string' ? s.unhcrNo : UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE,
+    ),
     testBarcodeTextX: finiteNumber(
       s.testBarcodeTextX,
       UNHCR_TEST_BARCODE_TEXT_DEFAULT.x,

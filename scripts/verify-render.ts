@@ -50,6 +50,7 @@ import {
   UNHCR_TEST_REF_NO_DEFAULT,
   UNHCR_TEST_REF_NO_DEFAULT_VALUE,
   normalizeUnhcrSnapshot as normalizeUnhcrS2Snapshot,
+  syncUnhcrS2IdOverlays,
 } from '../src/lib/constants/unhcr-s2';
 import {
   UNHCR_BARCODE_TEST_PAYLOAD,
@@ -1024,32 +1025,35 @@ async function main() {
 
   assert(!('testBarcodeText' in UNHCR_DEFAULTS) && !('testRefNo' in UNHCR_DEFAULTS), 'Server 1 UNHCR defaults omit TEST overlays');
 
-  console.log('\n[12] UNHCR Server 2 TEST barcode text and vertical reference number\n');
-  assert(UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE.startsWith('TEST-'), 'S2 TEST barcode text default is clearly labeled TEST data');
-  assert(UNHCR_TEST_REF_NO_DEFAULT_VALUE.startsWith('TEST-'), 'S2 TEST reference number default is clearly labeled TEST data');
-  assert(UNHCR_TEST_BARCODE_TEXT_DEFAULT.y > UNHCR_S2_PHOTO_DEFAULT.y + UNHCR_S2_PHOTO_DEFAULT.h, 'S2 TEST barcode text sits below the photo');
-  assert(UNHCR_TEST_REF_NO_DEFAULT.x > UNHCR_S2_DOC_WIDTH - 120, 'S2 TEST reference number sits along the right edge');
-  assert(UNHCR_TEST_REF_NO_DEFAULT.orientation === 'vertical', 'S2 TEST reference number defaults to vertical orientation');
-  assert(UNHCR_S2_DEFAULTS.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'S2 defaults include TEST barcode text');
-  assert(UNHCR_S2_DEFAULTS.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'S2 defaults include TEST reference number');
-  assert(UNHCR_S2_DEFAULTS.testBarcodeTextX === UNHCR_TEST_BARCODE_TEXT_DEFAULT.x, 'S2 TEST barcode text default X');
-  assert(UNHCR_S2_DEFAULTS.testRefNoOrientation === 'vertical', 'S2 TEST reference orientation default is vertical');
+  console.log('\n[12] UNHCR Server 2 barcode value and vertical reference number\n');
+  assert(UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE === '', 'S2 barcode value default is empty');
+  assert(UNHCR_TEST_REF_NO_DEFAULT_VALUE === '', 'S2 reference number default is empty');
+  assert(UNHCR_TEST_BARCODE_TEXT_DEFAULT.y > UNHCR_S2_PHOTO_DEFAULT.y + UNHCR_S2_PHOTO_DEFAULT.h, 'S2 barcode value sits below the photo');
+  assert(UNHCR_TEST_REF_NO_DEFAULT.x > UNHCR_S2_DOC_WIDTH - 120, 'S2 reference number sits along the right edge');
+  assert(UNHCR_TEST_REF_NO_DEFAULT.orientation === 'vertical', 'S2 reference number defaults to vertical orientation');
+  assert(UNHCR_S2_DEFAULTS.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'S2 defaults include barcode value overlay');
+  assert(UNHCR_S2_DEFAULTS.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'S2 defaults include reference number overlay');
+  assert(UNHCR_S2_DEFAULTS.testBarcodeTextX === UNHCR_TEST_BARCODE_TEXT_DEFAULT.x, 'S2 barcode value default X');
+  assert(UNHCR_S2_DEFAULTS.testRefNoOrientation === 'vertical', 'S2 reference orientation default is vertical');
+  assert(syncUnhcrS2IdOverlays({ unhcrNo: 'MY-42' }).testBarcodeText === 'MY-42', 'S2 barcode value syncs from ID number');
+  assert(normalizeUnhcrS2Snapshot({ unhcrNo: 'MY-42' }).testBarcodeText === 'MY-42', 'S2 missing barcode value restores from ID number');
 
   const blankTestOverlays = normalizeUnhcrS2Snapshot({});
-  assert(blankTestOverlays.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'S2 missing TEST barcode text restores labeled TEST default');
-  assert(blankTestOverlays.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'S2 missing TEST reference number restores labeled TEST default');
-  assert(blankTestOverlays.testBarcodeTextY === UNHCR_TEST_BARCODE_TEXT_DEFAULT.y, 'S2 missing TEST barcode text Y restores default below photo');
-  assert(blankTestOverlays.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x, 'S2 missing TEST reference X restores right-edge default');
-  assert(blankTestOverlays.testRefNoOrientation === 'vertical', 'S2 missing TEST reference orientation restores vertical');
+  assert(blankTestOverlays.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'S2 missing barcode value restores empty default');
+  assert(blankTestOverlays.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'S2 missing reference number restores empty default');
+  assert(blankTestOverlays.testBarcodeTextY === UNHCR_TEST_BARCODE_TEXT_DEFAULT.y, 'S2 missing barcode value Y restores default below photo');
+  assert(blankTestOverlays.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x, 'S2 missing reference X restores right-edge default');
+  assert(blankTestOverlays.testRefNoOrientation === 'vertical', 'S2 missing reference orientation restores vertical');
 
   const movedTestOverlays = normalizeUnhcrS2Snapshot({
-    testBarcodeText: 'TEST-UNHCR-BARCODE-MOVED',
+    unhcrNo: 'MY-MOVED',
+    testBarcodeText: 'MY-MOVED',
     testBarcodeTextX: 120,
     testBarcodeTextY: 1300,
     testBarcodeTextW: 640,
     testBarcodeTextH: 72,
     testBarcodeTextFontSize: 34,
-    testRefNo: 'TEST-UNHCR-REF-MOVED',
+    testRefNo: 'REF-MOVED',
     testRefNoX: 2400,
     testRefNoY: 200,
     testRefNoW: 48,
@@ -1057,15 +1061,15 @@ async function main() {
     testRefNoFontSize: 26,
     testRefNoOrientation: 'horizontal',
   });
-  assert(movedTestOverlays.testBarcodeText === 'TEST-UNHCR-BARCODE-MOVED', 'S2 TEST barcode text persists through normalize');
-  assert(movedTestOverlays.testBarcodeTextX === 120 && movedTestOverlays.testBarcodeTextY === 1300, 'S2 TEST barcode text X/Y persist through normalize');
-  assert(movedTestOverlays.testBarcodeTextW === 640 && movedTestOverlays.testBarcodeTextH === 72, 'S2 TEST barcode text size persists through normalize');
-  assert(movedTestOverlays.testBarcodeTextFontSize === 34, 'S2 TEST barcode text font size persists through normalize');
-  assert(movedTestOverlays.testRefNo === 'TEST-UNHCR-REF-MOVED', 'S2 TEST reference number persists through normalize');
-  assert(movedTestOverlays.testRefNoX === 2400 && movedTestOverlays.testRefNoY === 200, 'S2 TEST reference number X/Y persist through normalize');
-  assert(movedTestOverlays.testRefNoW === 48 && movedTestOverlays.testRefNoH === 1400, 'S2 TEST reference number size persists through normalize');
-  assert(movedTestOverlays.testRefNoFontSize === 26, 'S2 TEST reference number font size persists through normalize');
-  assert(movedTestOverlays.testRefNoOrientation === 'horizontal', 'S2 TEST reference orientation persists through normalize');
+  assert(movedTestOverlays.testBarcodeText === 'MY-MOVED', 'S2 barcode value persists through normalize');
+  assert(movedTestOverlays.testBarcodeTextX === 120 && movedTestOverlays.testBarcodeTextY === 1300, 'S2 barcode value X/Y persist through normalize');
+  assert(movedTestOverlays.testBarcodeTextW === 640 && movedTestOverlays.testBarcodeTextH === 72, 'S2 barcode value size persists through normalize');
+  assert(movedTestOverlays.testBarcodeTextFontSize === 34, 'S2 barcode value font size persists through normalize');
+  assert(movedTestOverlays.testRefNo === 'REF-MOVED', 'S2 reference number persists through normalize');
+  assert(movedTestOverlays.testRefNoX === 2400 && movedTestOverlays.testRefNoY === 200, 'S2 reference number X/Y persist through normalize');
+  assert(movedTestOverlays.testRefNoW === 48 && movedTestOverlays.testRefNoH === 1400, 'S2 reference number size persists through normalize');
+  assert(movedTestOverlays.testRefNoFontSize === 26, 'S2 reference number font size persists through normalize');
+  assert(movedTestOverlays.testRefNoOrientation === 'horizontal', 'S2 reference orientation persists through normalize');
 
   const defaultTestCanvas = createCanvas(1, 1);
   renderUnhcrS2Card(defaultTestCanvas as unknown as HTMLCanvasElement, { ...UNHCR_S2_DEFAULTS }, null, 1);
@@ -1073,18 +1077,18 @@ async function main() {
   const s1Canvas = createCanvas(1, 1);
   renderUnhcrCard(s1Canvas as unknown as HTMLCanvasElement, { ...UNHCR_DEFAULTS }, null, 1);
   const s1Px = Buffer.from(s1Canvas.getContext('2d')!.getImageData(0, 0, s1Canvas.width, s1Canvas.height).data.buffer);
-  assert(!defaultTestPx.equals(s1Px), 'Server 2 default render differs from Server 1 because of TEST overlays');
+  assert(defaultTestPx.equals(s1Px), 'Server 2 default render matches Server 1 when barcode value overlays are empty');
 
   const movedTestCanvas = createCanvas(1, 1);
   renderUnhcrS2Card(movedTestCanvas as unknown as HTMLCanvasElement, movedTestOverlays, null, 1);
   const movedTestPx = Buffer.from(movedTestCanvas.getContext('2d')!.getImageData(0, 0, movedTestCanvas.width, movedTestCanvas.height).data.buffer);
-  assert(!movedTestPx.equals(defaultTestPx), 'S2 TEST overlay text/position/size/orientation changes paint different pixels');
+  assert(!movedTestPx.equals(defaultTestPx), 'S2 barcode overlay text/position/size/orientation changes paint different pixels');
 
   const verticalRef = normalizeUnhcrS2Snapshot({ ...movedTestOverlays, testRefNoOrientation: 'vertical' });
   const verticalCanvas = createCanvas(1, 1);
   renderUnhcrS2Card(verticalCanvas as unknown as HTMLCanvasElement, verticalRef, null, 1);
   const verticalPx = Buffer.from(verticalCanvas.getContext('2d')!.getImageData(0, 0, verticalCanvas.width, verticalCanvas.height).data.buffer);
-  assert(!verticalPx.equals(movedTestPx), 'S2 vertical TEST reference orientation paints different pixels than horizontal');
+  assert(!verticalPx.equals(movedTestPx), 'S2 vertical reference orientation paints different pixels than horizontal');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
