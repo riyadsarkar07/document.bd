@@ -46,8 +46,10 @@ import {
   normalizeUnhcrSnapshot as normalizeUnhcrS2Snapshot,
   UNHCR_TEST_BARCODE_TEXT_DEFAULT,
   UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE,
+  UNHCR_TEST_BOX_RANGES,
   UNHCR_TEST_REF_NO_DEFAULT,
   UNHCR_TEST_REF_NO_DEFAULT_VALUE,
+  UNHCR_TEST_REF_NO_HEIGHT_MAX,
   syncUnhcrS2IdOverlays,
 } from '../src/lib/constants/unhcr-s2';
 import { UNHCR_BARCODE_TEST_PAYLOAD, UNHCR_QR_TEST_PAYLOAD } from '../src/lib/unhcrCodes';
@@ -566,6 +568,19 @@ function main() {
   assert(normalizedUnhcrS2.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x && normalizedUnhcrS2.testRefNoY === UNHCR_TEST_REF_NO_DEFAULT.y, 'UNHCR S2 reference default X/Y sits on the right edge');
   assert(normalizedUnhcrS2.testRefNoW === UNHCR_TEST_REF_NO_DEFAULT.w && normalizedUnhcrS2.testRefNoH === UNHCR_TEST_REF_NO_DEFAULT.h, 'UNHCR S2 reference default size');
   assert(normalizedUnhcrS2.testRefNoOrientation === 'vertical', 'UNHCR S2 reference defaults to vertical orientation');
+  assert(UNHCR_TEST_REF_NO_HEIGHT_MAX > UNHCR_TEST_BOX_RANGES.h.max, 'UNHCR S2 vertical reference Height max exceeds shared TEST box canvas cap');
+  assert(
+    normalizeUnhcrS2Snapshot({ testRefNoH: 3600 }).testRefNoH === 3600,
+    'UNHCR S2 vertical reference Height can extend past the canvas',
+  );
+  assert(
+    normalizeUnhcrS2Snapshot({ testRefNoH: 99999 }).testRefNoH === UNHCR_TEST_REF_NO_HEIGHT_MAX,
+    'UNHCR S2 reference Height clamps to the dedicated vertical max',
+  );
+  assert(
+    normalizeUnhcrS2Snapshot({ testBarcodeTextH: 3600 }).testBarcodeTextH === UNHCR_TEST_BOX_RANGES.h.max,
+    'UNHCR S2 barcode-value Height still clamps to the shared TEST box max',
+  );
   assert(syncUnhcrS2IdOverlays({ unhcrNo: 'MY-1001' }).testBarcodeText === 'MY-1001', 'S2 barcode value syncs from ID number');
   assert(syncUnhcrS2IdOverlays({ unhcrNo: '' }).testBarcodeText === '', 'S2 barcode value stays empty when ID is empty');
   const editedUnhcrS2 = {

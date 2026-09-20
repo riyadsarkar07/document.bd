@@ -159,6 +159,9 @@ export const UNHCR_TEST_BOX_RANGES: Record<'x' | 'y' | 'w' | 'h' | 'fontSize', O
   fontSize: { label: 'Font Size', min: 8, max: 120, default: 28, mono: true },
 };
 
+/** Vertical TEST reference number may extend well past the card so Height can grow downward. */
+export const UNHCR_TEST_REF_NO_HEIGHT_MAX = 4800;
+
 export const UNHCR_BARCODE_RANGES: Record<'x' | 'y' | 'w' | 'h', Omit<SliderSpec, 'key'>> = {
   x: { label: 'X', min: 0, max: UNHCR_DOC_WIDTH, default: UNHCR_BARCODE1_DEFAULT.x, mono: true },
   y: { label: 'Y', min: 0, max: UNHCR_DOC_HEIGHT, default: UNHCR_BARCODE1_DEFAULT.y, mono: true },
@@ -360,7 +363,7 @@ export function normalizeUnhcrSnapshot(s: Partial<UnhcrS2Snapshot>): UnhcrS2Snap
       s.testRefNoH,
       UNHCR_TEST_REF_NO_DEFAULT.h,
       UNHCR_TEST_BOX_RANGES.h.min,
-      UNHCR_TEST_BOX_RANGES.h.max,
+      UNHCR_TEST_REF_NO_HEIGHT_MAX,
     ),
     testRefNoFontSize: finiteNumber(
       s.testRefNoFontSize,

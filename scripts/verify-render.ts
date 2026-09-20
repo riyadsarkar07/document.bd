@@ -47,8 +47,10 @@ import {
   UNHCR_PHOTO_DEFAULT as UNHCR_S2_PHOTO_DEFAULT,
   UNHCR_TEST_BARCODE_TEXT_DEFAULT,
   UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE,
+  UNHCR_TEST_BOX_RANGES,
   UNHCR_TEST_REF_NO_DEFAULT,
   UNHCR_TEST_REF_NO_DEFAULT_VALUE,
+  UNHCR_TEST_REF_NO_HEIGHT_MAX,
   normalizeUnhcrSnapshot as normalizeUnhcrS2Snapshot,
   syncUnhcrS2IdOverlays,
 } from '../src/lib/constants/unhcr-s2';
@@ -1031,6 +1033,8 @@ async function main() {
   assert(UNHCR_TEST_BARCODE_TEXT_DEFAULT.y > UNHCR_S2_PHOTO_DEFAULT.y + UNHCR_S2_PHOTO_DEFAULT.h, 'S2 barcode value sits below the photo');
   assert(UNHCR_TEST_REF_NO_DEFAULT.x > UNHCR_S2_DOC_WIDTH - 120, 'S2 reference number sits along the right edge');
   assert(UNHCR_TEST_REF_NO_DEFAULT.orientation === 'vertical', 'S2 reference number defaults to vertical orientation');
+  assert(UNHCR_TEST_REF_NO_HEIGHT_MAX > UNHCR_TEST_BOX_RANGES.h.max, 'S2 vertical reference Height max exceeds shared TEST box canvas cap');
+  assert(UNHCR_TEST_BOX_RANGES.h.max === 1800, 'S2 shared TEST Height max stays at canvas height');
   assert(UNHCR_S2_DEFAULTS.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'S2 defaults include barcode value overlay');
   assert(UNHCR_S2_DEFAULTS.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'S2 defaults include reference number overlay');
   assert(UNHCR_S2_DEFAULTS.testBarcodeTextX === UNHCR_TEST_BARCODE_TEXT_DEFAULT.x, 'S2 barcode value default X');
@@ -1083,6 +1087,21 @@ async function main() {
   renderUnhcrS2Card(movedTestCanvas as unknown as HTMLCanvasElement, movedTestOverlays, null, 1);
   const movedTestPx = Buffer.from(movedTestCanvas.getContext('2d')!.getImageData(0, 0, movedTestCanvas.width, movedTestCanvas.height).data.buffer);
   assert(!movedTestPx.equals(defaultTestPx), 'S2 barcode overlay text/position/size/orientation changes paint different pixels');
+
+  const tallVerticalRef = normalizeUnhcrS2Snapshot({
+    ...movedTestOverlays,
+    testRefNoH: 3600,
+    testRefNoOrientation: 'vertical',
+  });
+  assert(tallVerticalRef.testRefNoH === 3600, 'S2 vertical reference Height can extend past the canvas');
+  assert(
+    normalizeUnhcrS2Snapshot({ ...movedTestOverlays, testRefNoH: 99999 }).testRefNoH === UNHCR_TEST_REF_NO_HEIGHT_MAX,
+    'S2 reference Height clamps to the dedicated vertical max',
+  );
+  assert(
+    normalizeUnhcrS2Snapshot({ ...movedTestOverlays, testBarcodeTextH: 3600 }).testBarcodeTextH === UNHCR_TEST_BOX_RANGES.h.max,
+    'S2 barcode-value Height still clamps to the shared TEST box max',
+  );
 
   const verticalRef = normalizeUnhcrS2Snapshot({ ...movedTestOverlays, testRefNoOrientation: 'vertical' });
   const verticalCanvas = createCanvas(1, 1);

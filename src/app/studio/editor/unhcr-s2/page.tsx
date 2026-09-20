@@ -21,6 +21,7 @@ import {
   UNHCR_QR_RANGES,
   UNHCR_TEST_BOX_RANGES,
   UNHCR_TEST_OVERLAY_LABELS,
+  UNHCR_TEST_REF_NO_HEIGHT_MAX,
   isUnhcrCodeKey,
   isUnhcrTestOverlayKey,
   normalizeUnhcrSnapshot,
@@ -467,7 +468,7 @@ function UnhcrEditorInner() {
       const box = unhcrTestOverlayBox(presentRef.current, field);
       if (field === 'testRefNo' && presentRef.current.testRefNoOrientation === 'vertical') {
         patchTestOverlay(field, {
-          h: clamp(box.h + delta, UNHCR_TEST_BOX_RANGES.h.min, UNHCR_TEST_BOX_RANGES.h.max),
+          h: clamp(box.h + delta, UNHCR_TEST_BOX_RANGES.h.min, UNHCR_TEST_REF_NO_HEIGHT_MAX),
         });
         return;
       }
@@ -1131,7 +1132,11 @@ function UnhcrEditorInner() {
                     label="Height"
                     value={activeField === 'testBarcodeText' ? present.testBarcodeTextH : present.testRefNoH}
                     min={UNHCR_TEST_BOX_RANGES.h.min}
-                    max={UNHCR_TEST_BOX_RANGES.h.max}
+                    max={
+                      activeField === 'testRefNo' && present.testRefNoOrientation === 'vertical'
+                        ? UNHCR_TEST_REF_NO_HEIGHT_MAX
+                        : UNHCR_TEST_BOX_RANGES.h.max
+                    }
                     step={UNHCR_TEST_BOX_RANGES.h.step}
                     mono
                     onChange={(v) => patchTestOverlay(activeField, { h: v })}
