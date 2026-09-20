@@ -16,6 +16,7 @@ import {
 import { isUnhcrCurrentRecordId, UNHCR_CURRENT_RECORD_ID } from '@/lib/unhcrCurrentState';
 import {
   coerceUnhcrS2CurrentRpcRow,
+  coerceUnhcrS2Details,
   isUnhcrS2CurrentRecordId,
   UNHCR_S2_CURRENT_RECORD_ID,
 } from '@/lib/unhcrS2CurrentState';
@@ -511,6 +512,8 @@ export async function saveUnhcrCurrentState(input: {
 function mapUnhcrS2CurrentRow(data: unknown): VaultRecord | null {
   const row = coerceUnhcrS2CurrentRpcRow(data);
   if (!row) return null;
+  const details = coerceUnhcrS2Details(row.details);
+  if (details != null) row.details = details;
   const mapped = mapVaultRow(row as VaultRow);
   if (!isUnhcrS2CurrentRecordId(mapped.trademarkNo)) return null;
   if (mapped.docKind !== 'unhcr-s2' && mapped.doc == null) return null;
