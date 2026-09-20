@@ -526,19 +526,28 @@ function mapUnhcrS2CurrentRow(data: unknown): VaultRecord | null {
  */
 export async function getUnhcrS2CurrentState(): Promise<{ record: VaultRecord | null; error: string | null }> {
   const { data, error } = await supabase.rpc('get_unhcr_s2_current_state');
+  if (error && !isMissingUnhcrCurrentRpc(error.message)) {
+    return { record: null, error: error.message };
+  }
   if (!error) {
     const record = mapUnhcrS2CurrentRow(data);
     if (record) return { record, error: null };
-  } else if (!isMissingUnhcrCurrentRpc(error.message)) {
-    return { record: null, error: error.message };
   }
   const fallback = await supabase
     .from('certificates')
     .select('*')
     .eq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID)
     .limit(1);
-  if (fallback.error) return { record: mapUnhcrS2CurrentRow(data), error: fallback.error.message };
-  return { record: mapUnhcrS2CurrentRow(fallback.data?.[0] ?? data), error: null };
+  if (fallback.error) {
+    const rpcRecord = mapUnhcrS2CurrentRow(data);
+    return { record: rpcRecord, error: rpcRecord ? null : fallback.error.message };
+  }
+  const fallbackRecord = mapUnhcrS2CurrentRow(fallback.data?.[0] ?? data);
+  if (fallbackRecord) return { record: fallbackRecord, error: null };
+  const rowPresent =
+    coerceUnhcrS2CurrentRpcRow(data) != null || coerceUnhcrS2CurrentRpcRow(fallback.data?.[0]) != null;
+  if (rowPresent) return { record: null, error: 'Could not restore Server 2 editor state' };
+  return { record: null, error: null };
 }
 
 export async function saveUnhcrS2CurrentState(input: {

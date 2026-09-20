@@ -69,6 +69,7 @@ import {
   coerceUnhcrS2CurrentRpcRow,
   coerceUnhcrS2Details,
   copyUnhcrServer1SnapshotToServer2,
+  decideUnhcrS2DirectOpenAction,
 } from '../src/lib/unhcrS2CurrentState';
 
 const ROOT = process.cwd();
@@ -658,6 +659,12 @@ function main() {
   assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: false }) === 'defaults', 'S2 direct editor open uses defaults when no current state exists');
   assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: false, hasServer1CurrentState: true }) === 'server1-seed', 'S2 first open copies current Server 1 template when S2 current is empty');
   assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: true, hasServer1CurrentState: true }) === 'current-state', 'S2 current state wins over a later Server 1 template');
+  assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: false, hasServer1CurrentState: true, currentStateError: true }) === 'defaults', 'S2 load error does not fall through to a Server 1 seed');
+  assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: true, hasServer1Record: true }) === 'apply-current', 'S2 direct open applies saved current state before any Server 1 seed');
+  assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: true, currentError: 'timeout', hasServer1Record: true }) === 'apply-current', 'S2 saved current still wins if a later lookup errors');
+  assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: false, currentError: 'not authenticated', hasServer1Record: true }) === 'load-error', 'S2 load error must not seed Server 1 over missing current mapping');
+  assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: false, hasServer1Record: true }) === 'seed-server1', 'S2 seeds Server 1 only when current state is confirmed missing');
+  assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: false, hasServer1Record: false }) === 'defaults', 'S2 stays on defaults when neither current state exists');
   assert(unhcrS2HistoryRecordIdForSave(null, 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-MY-1001', 'S2 Save from a blank editor creates a History case id from the ID number');
   assert(unhcrS2HistoryRecordIdForSave(UNHCR_S2_CURRENT_RECORD_ID, 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-MY-1001', 'S2 Save never binds History to the shared current-state id');
   assert(unhcrS2HistoryRecordIdForSave('UNHCR-S2-abc', 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-abc', 'S2 re-save of an explicit History record keeps that record id');
@@ -684,9 +691,10 @@ function main() {
   assert(vault.includes('coerceUnhcrS2CurrentRpcRow'), 'S2 current-state loader unwraps PostgREST RPC payload shapes');
   assert(vault.includes('coerceUnhcrS2Details'), 'S2 current-state mapper coerces jsonb details before unpack');
   assert(
-    /if \(!error\) \{[\s\S]*mapUnhcrS2CurrentRow\(data\)[\s\S]*if \(record\) return[\s\S]*from\('certificates'\)[\s\S]*eq\('trademark_no', UNHCR_S2_CURRENT_RECORD_ID\)/.test(vault),
+    /if \(error && !isMissingUnhcrCurrentRpc\(error\.message\)\) \{[\s\S]*return \{ record: null, error: error\.message \};[\s\S]*if \(!error\) \{[\s\S]*mapUnhcrS2CurrentRow\(data\)[\s\S]*if \(record\) return[\s\S]*from\('certificates'\)[\s\S]*eq\('trademark_no', UNHCR_S2_CURRENT_RECORD_ID\)/.test(vault),
     'S2 current-state load falls back to UNHCR-S2-CURRENT when RPC mapping is empty',
   );
+  assert(vault.includes("if (rowPresent) return { record: null, error: 'Could not restore Server 2 editor state' }"), 'S2 unmapped current row is an error, not an empty workspace');
   const s2RpcObject = { trademark_no: 'UNHCR-S2-CURRENT', details: packedS2Current };
   const s2RpcArray = [s2RpcObject];
   const s2RpcString = JSON.stringify(s2RpcObject);
@@ -721,6 +729,10 @@ function main() {
   assert(s2Editor.includes('getUnhcrS2CurrentState()'), 'Server 2 direct open loads S2 current state');
   assert(s2Editor.includes('copyUnhcrServer1SnapshotToServer2'), 'Server 2 first open copies the current Server 1 template');
   assert(s2Editor.includes('getUnhcrCurrentState()'), 'Server 2 seed reads Server 1 current state once');
+  assert(s2Editor.includes('decideUnhcrS2DirectOpenAction'), 'Server 2 direct open uses an explicit load-order decision');
+  assert(s2Editor.includes('Loading Server 2 editor'), 'Server 2 waits behind a loading state until current workspace is ready');
+  assert(s2Editor.includes('if (!workspaceReady)'), 'Server 2 does not render defaults before current state hydrates');
+  assert(s2Editor.includes("seedAction !== 'seed-server1'"), 'Server 2 never seeds Server 1 unless current state is confirmed missing');
   assert(s2Editor.includes('saveUnhcrS2CurrentState'), 'Server 2 Save updates S2 current state');
   assert(!s2Editor.includes('saveUnhcrCurrentState'), 'Server 2 Save does not write Server 1 current state');
   assert(s1Editor.includes('if (current.error || !current.record) return;'), 'Server 1 direct-open guard is unchanged');

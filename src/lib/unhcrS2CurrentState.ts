@@ -105,13 +105,33 @@ export function resolveUnhcrS2EditorLoadSource(params: {
   templateName?: string | null;
   hasCurrentState?: boolean;
   hasServer1CurrentState?: boolean;
+  currentStateError?: boolean;
 }): UnhcrS2EditorLoadSource {
   const recordNo = (params.recordNo ?? '').trim();
   if (recordNo && !isUnhcrS2CurrentRecordId(recordNo)) return 'history-record';
   if ((params.projectId ?? '').trim()) return 'project';
   if ((params.templateName ?? '').trim()) return 'template';
   if (params.hasCurrentState) return 'current-state';
+  if (params.currentStateError) return 'defaults';
   if (params.hasServer1CurrentState) return 'server1-seed';
+  return 'defaults';
+}
+
+export type UnhcrS2DirectOpenAction = 'apply-current' | 'seed-server1' | 'defaults' | 'load-error';
+
+/**
+ * Direct open must apply saved Server 2 current state when the row exists.
+ * Server 1 is only a one-time seed when S2 current is confirmed missing.
+ * A load error must not be treated as "empty" or Server 1 will overwrite S2.
+ */
+export function decideUnhcrS2DirectOpenAction(params: {
+  currentError?: string | null;
+  hasCurrentRecord?: boolean;
+  hasServer1Record?: boolean;
+}): UnhcrS2DirectOpenAction {
+  if (params.hasCurrentRecord) return 'apply-current';
+  if (params.currentError) return 'load-error';
+  if (params.hasServer1Record) return 'seed-server1';
   return 'defaults';
 }
 
