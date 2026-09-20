@@ -72,6 +72,8 @@ import {
   decideUnhcrS2DirectOpenAction,
   hydrateUnhcrS2CurrentSnapshot,
   unhcrS2InitialCurrentSnapshot,
+  isUnhcrS2EditorPath,
+  resolveUnhcrS2StudioMount,
 } from '../src/lib/unhcrS2CurrentState';
 
 const ROOT = process.cwd();
@@ -763,8 +765,33 @@ function main() {
   assert(s2Editor.includes('unhcrS2InitialCurrentSnapshot'), 'Server 2 initializes missing current from TEST defaults');
   assert(!s2Editor.includes('workspaceReady'), 'Server 2 does not gate first paint behind a loading flag');
   assert(!s2Editor.includes('Loading Server 2 editor'), 'Server 2 does not show a current-state loading gate');
+  assert(!s2Editor.includes('authLoading'), 'Server 2 does not wait for studio profile loading');
+  assert(s2Editor.includes('loadUnhcrS2Fonts()'), 'Server 2 loads its own Arial faces');
+  assert(!s2Editor.includes('loadDocumentFonts'), 'Server 2 does not wait for NID/TM/workspace fonts');
+  assert(!s2Editor.includes('loadVault'), 'Server 2 does not load Dashboard vault records');
   assert(s2Editor.includes('saveUnhcrS2CurrentState'), 'Server 2 Save updates S2 current state');
   assert(!s2Editor.includes('saveUnhcrCurrentState'), 'Server 2 Save does not write Server 1 current state');
+  assert(isUnhcrS2EditorPath('/studio/editor/unhcr-s2'), 'UNHCR S2 editor path is recognized');
+  assert(!isUnhcrS2EditorPath('/studio/editor/unhcr'), 'Server 1 editor path is not treated as Server 2');
+  assert(!isUnhcrS2EditorPath('/studio'), 'Dashboard path is not treated as Server 2');
+  assert(resolveUnhcrS2StudioMount({ hasSession: true, sessionLoading: true, profileReady: false }) === 'mount', 'S2 mounts from session without waiting for profiles');
+  assert(resolveUnhcrS2StudioMount({ hasSession: true, sessionLoading: false, profileReady: false }) === 'mount', 'S2 mounts even when Dashboard profile is still empty');
+  assert(resolveUnhcrS2StudioMount({ hasSession: false, sessionLoading: true }) === 'wait-session', 'S2 waits only for its own auth session');
+  assert(resolveUnhcrS2StudioMount({ hasSession: false, sessionLoading: false }) === 'login', 'S2 without a session goes to login');
+  assert(resolveUnhcrS2StudioMount({ hasSession: true, profileReady: true, hasUnhcrAccess: false }) === 'blocked', 'S2 still honors an explicit unhcr deny after profile loads');
+  const studioLayout = readFileSync(join(ROOT, 'src/app/studio/layout.tsx'), 'utf8');
+  const fontsSrc = readFileSync(join(ROOT, 'src/lib/fonts.ts'), 'utf8');
+  const dashboard = readFileSync(join(ROOT, 'src/app/studio/page.tsx'), 'utf8');
+  assert(studioLayout.includes('resolveUnhcrS2StudioMount'), 'studio layout mounts Server 2 independently of Dashboard profile');
+  assert(studioLayout.includes('isUnhcrS2EditorPath'), 'studio layout special-cases the Server 2 editor path');
+  assert(fontsSrc.includes('export function loadUnhcrS2Fonts'), 'S2 font loader is dedicated');
+  assert(fontsSrc.includes('UNHCR_S2_FONT_FACES'), 'S2 font loader registers UNHCR S2 faces');
+  const s2FontStart = fontsSrc.indexOf('export function loadUnhcrS2Fonts');
+  const s2FontEnd = fontsSrc.indexOf('export async function ensureTmFontsReady');
+  const s2FontFn = fontsSrc.slice(s2FontStart, s2FontEnd > s2FontStart ? s2FontEnd : undefined);
+  assert(s2FontFn.includes('UNHCR_S2_FONT_FACES'), 'S2 font loader body uses UNHCR S2 faces');
+  assert(!s2FontFn.includes('Kalpurush') && !s2FontFn.includes('Corsiva') && !s2FontFn.includes('waitForDocumentFonts'), 'S2 font loader does not wait for NID/TM workspace fonts');
+  assert(dashboard.includes('loadVault()') && dashboard.includes('listTemplates()') && dashboard.includes('listProjects()'), 'Dashboard still loads vault/templates/projects');
   assert(s1Editor.includes('if (current.error || !current.record) return;'), 'Server 1 direct-open guard is unchanged');
   assert(s1Editor.includes('getUnhcrCurrentState()') && !s1Editor.includes('getUnhcrS2CurrentState'), 'Server 1 does not read Server 2 current state');
   assert(!s1Editor.includes('copyUnhcrServer1SnapshotToServer2'), 'Server 1 is not seeded from Server 2');

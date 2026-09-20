@@ -6,6 +6,7 @@ import { Loader2, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { canManageUsers } from '@/lib/auth/types';
 import { hasToolAccess, type ToolScope } from '@/lib/workspace/access';
+import { isUnhcrS2EditorPath, resolveUnhcrS2StudioMount } from '@/lib/unhcrS2CurrentState';
 import { StudioShell } from '@/components/layout/studio-shell';
 import { Button } from '@/components/ui/button';
 
@@ -39,11 +40,30 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
     path === prefix || path.startsWith(`${prefix}/`);
 
   const isAdminRoute = ADMIN_ROUTES.some((prefix) => matchesPrefix(pathname, prefix));
+  const isUnhcrS2 = isUnhcrS2EditorPath(pathname);
   const blockedTool = TOOL_ROUTES.find(
     ({ prefix, scope }) => matchesPrefix(pathname, prefix) && !hasToolAccess(profile, scope),
   );
+  const s2Mount = resolveUnhcrS2StudioMount({
+    hasSession: Boolean(user),
+    sessionLoading: loading,
+    profileReady: Boolean(profile),
+    hasUnhcrAccess: profile ? hasToolAccess(profile, 'unhcr') : undefined,
+    disabled: profile?.status === 'disabled',
+  });
 
   useEffect(() => {
+    if (isUnhcrS2) {
+      if (s2Mount === 'login') {
+        setChecked(false);
+        router.replace('/login');
+      } else if (s2Mount === 'blocked') {
+        router.replace('/studio');
+      } else if (s2Mount === 'mount') {
+        setChecked(true);
+      }
+      return;
+    }
     if (!loading) {
       if (!user) {
         setChecked(false);
@@ -52,7 +72,7 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
         setChecked(true);
       }
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, isUnhcrS2, s2Mount]);
 
   useEffect(() => {
     if (checked && isAdminRoute && !canManageUsers(role)) {
@@ -61,10 +81,47 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
   }, [checked, isAdminRoute, role, router]);
 
   useEffect(() => {
+    if (isUnhcrS2) return;
     if (checked && blockedTool) {
       router.replace('/studio');
     }
-  }, [checked, blockedTool, router]);
+  }, [checked, blockedTool, router, isUnhcrS2]);
+
+  if (isUnhcrS2) {
+    if (s2Mount === 'disabled') {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-canvas px-6 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-danger/30 bg-danger/10 text-danger">
+            <ShieldAlert className="h-8 w-8" />
+          </div>
+          <div>
+            <h1 className="font-display text-2xl font-bold text-primary">Account suspended</h1>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted">
+              This account has been suspended by an administrator. You cannot access Document
+              Studio until it is reactivated. Your existing documents and projects remain safe.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              await signOut();
+              router.replace('/login');
+            }}
+          >
+            Back to sign in
+          </Button>
+        </div>
+      );
+    }
+    if (s2Mount === 'wait-session' || s2Mount === 'login' || s2Mount === 'blocked') {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-canvas">
+          <Loader2 className="h-7 w-7 animate-spin text-accent" />
+        </div>
+      );
+    }
+    return <StudioShell>{children}</StudioShell>;
+  }
 
   if (loading || !checked) {
     return (

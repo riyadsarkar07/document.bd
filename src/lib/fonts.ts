@@ -2,8 +2,10 @@
 
 import { FONT_FACES } from '@/lib/constants/nid';
 import { UNHCR_FONT_FACES } from '@/lib/constants/unhcr';
+import { UNHCR_FONT_FACES as UNHCR_S2_FONT_FACES } from '@/lib/constants/unhcr-s2';
 
 let loadPromise: Promise<boolean> | null = null;
+let s2FontPromise: Promise<boolean> | null = null;
 
 const TM_FONT_SPECS = [
   "16px 'Arial Regular'",
@@ -92,6 +94,38 @@ export function loadDocumentFonts(): Promise<boolean> {
   })();
 
   return loadPromise;
+}
+
+/**
+ * Server 2 Arial faces only. Must not wait for NID/Kalpurush, TM Corsiva, or
+ * other workspace asset fonts before the UNHCR S2 canvas can paint.
+ */
+export function loadUnhcrS2Fonts(): Promise<boolean> {
+  if (typeof document === 'undefined') return Promise.resolve(false);
+  if (s2FontPromise) return s2FontPromise;
+
+  s2FontPromise = (async () => {
+    for (const face of UNHCR_S2_FONT_FACES) {
+      try {
+        const ff = new FontFace(face.family, `url(${face.url})`);
+        await ff.load();
+        document.fonts.add(ff);
+      } catch (err) {
+        console.warn(`[fonts] Failed to load Server 2 "${face.family}" from ${face.url}`, err);
+      }
+    }
+    try {
+      await document.fonts.load("16px 'Arial Regular'");
+      await document.fonts.load("16px 'Arial Bold MT'");
+    } catch {
+      // ignore
+    }
+    const ok = fontFaceLoaded("16px 'Arial Regular'");
+    if (!ok) s2FontPromise = null;
+    return ok;
+  })();
+
+  return s2FontPromise;
 }
 
 /** Block TM canvas work until the certificate fonts are actually usable. */

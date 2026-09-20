@@ -43,7 +43,7 @@ import { renderUnhcrCard } from '@/lib/renderers/unhcrS2Renderer';
 import { syncUnhcrCodePayloads } from '@/lib/unhcrCodes';
 import { loadDataUrlImage, loadImage } from '@/lib/images';
 import { validateImageFile } from '@/lib/uploads';
-import { loadDocumentFonts } from '@/lib/fonts';
+import { loadUnhcrS2Fonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import {
   commitDocument,
@@ -98,7 +98,7 @@ export default function UnhcrEditorPage() {
 
 function UnhcrEditorInner() {
   const searchParams = useSearchParams();
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const toast = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
@@ -213,7 +213,6 @@ function UnhcrEditorInner() {
         }
         return;
       }
-      if (authLoading) return;
       if (!user) return;
       const current = await getUnhcrS2CurrentState();
       if (stale()) return;
@@ -237,10 +236,10 @@ function UnhcrEditorInner() {
       await persistCurrent(initial);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, templateName, recordNo, user?.id, authLoading]);
+  }, [projectId, templateName, recordNo, user?.id]);
 
   useEffect(() => {
-    loadDocumentFonts().then((ok) => {
+    loadUnhcrS2Fonts().then((ok) => {
       setFontsLoaded(ok);
       if (ok) setStatus('Renderer fonts loaded');
     });

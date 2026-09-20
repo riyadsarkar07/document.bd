@@ -24,6 +24,31 @@ export function isUnhcrS2CurrentRecordId(value: string | null | undefined): bool
   return (value ?? '').trim() === UNHCR_S2_CURRENT_RECORD_ID;
 }
 
+export function isUnhcrS2EditorPath(pathname: string | null | undefined): boolean {
+  const path = (pathname ?? '').trim();
+  return path === '/studio/editor/unhcr-s2' || path.startsWith('/studio/editor/unhcr-s2/');
+}
+
+export type UnhcrS2StudioMount = 'mount' | 'wait-session' | 'login' | 'blocked' | 'disabled';
+
+/**
+ * Server 2 must mount from its own session + S2 state. A missing profiles row
+ * (Dashboard / tool-access) must not hold or redirect the editor to /studio.
+ */
+export function resolveUnhcrS2StudioMount(params: {
+  hasSession?: boolean;
+  sessionLoading?: boolean;
+  profileReady?: boolean;
+  hasUnhcrAccess?: boolean;
+  disabled?: boolean;
+}): UnhcrS2StudioMount {
+  if (params.disabled) return 'disabled';
+  if (params.profileReady && params.hasUnhcrAccess === false) return 'blocked';
+  if (params.hasSession) return 'mount';
+  if (params.sessionLoading) return 'wait-session';
+  return 'login';
+}
+
 function parseJsonValue(value: string): unknown | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
