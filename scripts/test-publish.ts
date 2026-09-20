@@ -70,6 +70,8 @@ import {
   coerceUnhcrS2Details,
   copyUnhcrServer1SnapshotToServer2,
   decideUnhcrS2DirectOpenAction,
+  hydrateUnhcrS2CurrentSnapshot,
+  unhcrS2InitialCurrentSnapshot,
 } from '../src/lib/unhcrS2CurrentState';
 
 const ROOT = process.cwd();
@@ -657,14 +659,41 @@ function main() {
   assert(resolveUnhcrS2EditorLoadSource({ templateName: 't1', hasCurrentState: true }) === 'template', 'S2 explicit template wins over current state');
   assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: true }) === 'current-state', 'S2 direct editor open loads shared current state');
   assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: false }) === 'defaults', 'S2 direct editor open uses defaults when no current state exists');
-  assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: false, hasServer1CurrentState: true }) === 'server1-seed', 'S2 first open copies current Server 1 template when S2 current is empty');
+  assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: false, hasServer1CurrentState: true }) === 'defaults', 'S2 first open uses Server 2 TEST defaults when S2 current is empty');
   assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: true, hasServer1CurrentState: true }) === 'current-state', 'S2 current state wins over a later Server 1 template');
   assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: false, hasServer1CurrentState: true, currentStateError: true }) === 'defaults', 'S2 load error does not fall through to a Server 1 seed');
   assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: true, hasServer1Record: true }) === 'apply-current', 'S2 direct open applies saved current state before any Server 1 seed');
   assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: true, currentError: 'timeout', hasServer1Record: true }) === 'apply-current', 'S2 saved current still wins if a later lookup errors');
   assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: false, currentError: 'not authenticated', hasServer1Record: true }) === 'load-error', 'S2 load error must not seed Server 1 over missing current mapping');
-  assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: false, hasServer1Record: true }) === 'seed-server1', 'S2 seeds Server 1 only when current state is confirmed missing');
-  assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: false, hasServer1Record: false }) === 'defaults', 'S2 stays on defaults when neither current state exists');
+  assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: false, hasServer1Record: true }) === 'init-defaults', 'S2 initializes TEST defaults when current state is confirmed missing');
+  assert(decideUnhcrS2DirectOpenAction({ hasCurrentRecord: false, hasServer1Record: false }) === 'init-defaults', 'S2 initializes TEST defaults when neither current state exists');
+  const initialS2 = unhcrS2InitialCurrentSnapshot();
+  assert(initialS2.testBarcodeTextH === 61 && initialS2.testBarcodeTextFontSize === 62, 'S2 initial current has barcode value Height 61 / font 62');
+  assert(initialS2.testRefNo === '1838-SAB227535', 'S2 initial current has TEST reference 1838-SAB227535');
+  assert(initialS2.testRefNoFontSize === 53 && initialS2.testRefNoH === 2646, 'S2 initial current has reference font 53 / Height 2646');
+  assert(initialS2.testRefNoX === 2408 && initialS2.testRefNoY === 120, 'S2 initial current has reference X 2408 / Y 120');
+  assert(initialS2.testRefNoOrientation === 'vertical', 'S2 initial current keeps vertical reference orientation');
+  const legacyS2Current = hydrateUnhcrS2CurrentSnapshot({
+    name: 'Legacy S2',
+    testBarcodeTextH: 56,
+    testBarcodeTextFontSize: 28,
+    testRefNo: '',
+    testRefNoX: 2478,
+    testRefNoY: 120,
+    testRefNoH: 1560,
+    testRefNoFontSize: 28,
+    testRefNoOrientation: 'vertical',
+  });
+  assert(legacyS2Current.upgraded, 'legacy S2 current is upgraded to the TEST template');
+  assert(legacyS2Current.snapshot.name === 'Legacy S2', 'legacy S2 upgrade keeps saved identity fields');
+  assert(legacyS2Current.snapshot.testBarcodeTextH === 61 && legacyS2Current.snapshot.testBarcodeTextFontSize === 62, 'legacy S2 upgrade restores barcode Height/font');
+  assert(legacyS2Current.snapshot.testRefNo === '1838-SAB227535', 'legacy S2 upgrade restores TEST reference text');
+  assert(legacyS2Current.snapshot.testRefNoH === 2646 && legacyS2Current.snapshot.testRefNoFontSize === 53, 'legacy S2 upgrade restores reference Height/font');
+  assert(legacyS2Current.snapshot.testRefNoX === 2408 && legacyS2Current.snapshot.testRefNoY === 120, 'legacy S2 upgrade restores reference X/Y');
+  const alreadyTemplated = hydrateUnhcrS2CurrentSnapshot(initialS2);
+  assert(!alreadyTemplated.upgraded, 'hydrating an already-templated S2 current does not rewrite it');
+  const customS2 = hydrateUnhcrS2CurrentSnapshot(editedUnhcrS2);
+  assert(!customS2.upgraded && customS2.snapshot.testRefNo === 'TEST-UNHCR-REF-0002', 'explicitly saved S2 TEST overlays are not overwritten by the template');
   assert(unhcrS2HistoryRecordIdForSave(null, 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-MY-1001', 'S2 Save from a blank editor creates a History case id from the ID number');
   assert(unhcrS2HistoryRecordIdForSave(UNHCR_S2_CURRENT_RECORD_ID, 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-MY-1001', 'S2 Save never binds History to the shared current-state id');
   assert(unhcrS2HistoryRecordIdForSave('UNHCR-S2-abc', 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-abc', 'S2 re-save of an explicit History record keeps that record id');
@@ -727,12 +756,13 @@ function main() {
   const s2Editor = readFileSync(join(ROOT, 'src/app/studio/editor/unhcr-s2/page.tsx'), 'utf8');
   const s1Editor = readFileSync(join(ROOT, 'src/app/studio/editor/unhcr/page.tsx'), 'utf8');
   assert(s2Editor.includes('getUnhcrS2CurrentState()'), 'Server 2 direct open loads S2 current state');
-  assert(s2Editor.includes('copyUnhcrServer1SnapshotToServer2'), 'Server 2 first open copies the current Server 1 template');
-  assert(s2Editor.includes('getUnhcrCurrentState()'), 'Server 2 seed reads Server 1 current state once');
+  assert(!s2Editor.includes('getUnhcrCurrentState()'), 'Server 2 direct open does not read Server 1 current state');
+  assert(!s2Editor.includes('copyUnhcrServer1SnapshotToServer2'), 'Server 2 direct open does not seed from Server 1');
   assert(s2Editor.includes('decideUnhcrS2DirectOpenAction'), 'Server 2 direct open uses an explicit load-order decision');
-  assert(s2Editor.includes('Loading Server 2 editor'), 'Server 2 waits behind a loading state until current workspace is ready');
-  assert(s2Editor.includes('if (!workspaceReady)'), 'Server 2 does not render defaults before current state hydrates');
-  assert(s2Editor.includes("seedAction !== 'seed-server1'"), 'Server 2 never seeds Server 1 unless current state is confirmed missing');
+  assert(s2Editor.includes('hydrateUnhcrS2CurrentSnapshot'), 'Server 2 hydrates legacy current rows onto the TEST template');
+  assert(s2Editor.includes('unhcrS2InitialCurrentSnapshot'), 'Server 2 initializes missing current from TEST defaults');
+  assert(!s2Editor.includes('workspaceReady'), 'Server 2 does not gate first paint behind a loading flag');
+  assert(!s2Editor.includes('Loading Server 2 editor'), 'Server 2 does not show a current-state loading gate');
   assert(s2Editor.includes('saveUnhcrS2CurrentState'), 'Server 2 Save updates S2 current state');
   assert(!s2Editor.includes('saveUnhcrCurrentState'), 'Server 2 Save does not write Server 1 current state');
   assert(s1Editor.includes('if (current.error || !current.record) return;'), 'Server 1 direct-open guard is unchanged');

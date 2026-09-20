@@ -1,5 +1,11 @@
 import type { UnhcrS2Snapshot } from './editor/types';
-import { normalizeUnhcrSnapshot } from './constants/unhcr-s2';
+import {
+  UNHCR_DEFAULTS,
+  UNHCR_TEST_BARCODE_TEXT_DEFAULT,
+  UNHCR_TEST_REF_NO_DEFAULT,
+  UNHCR_TEST_REF_NO_DEFAULT_VALUE,
+  normalizeUnhcrSnapshot,
+} from './constants/unhcr-s2';
 
 /**
  * Dedicated vault id for the UNHCR Server 2 editor's shared current workspace.
@@ -12,7 +18,6 @@ export type UnhcrS2EditorLoadSource =
   | 'project'
   | 'template'
   | 'current-state'
-  | 'server1-seed'
   | 'defaults';
 
 export function isUnhcrS2CurrentRecordId(value: string | null | undefined): boolean {
@@ -113,15 +118,14 @@ export function resolveUnhcrS2EditorLoadSource(params: {
   if ((params.templateName ?? '').trim()) return 'template';
   if (params.hasCurrentState) return 'current-state';
   if (params.currentStateError) return 'defaults';
-  if (params.hasServer1CurrentState) return 'server1-seed';
   return 'defaults';
 }
 
-export type UnhcrS2DirectOpenAction = 'apply-current' | 'seed-server1' | 'defaults' | 'load-error';
+export type UnhcrS2DirectOpenAction = 'apply-current' | 'init-defaults' | 'defaults' | 'load-error';
 
 /**
  * Direct open must apply saved Server 2 current state when the row exists.
- * Server 1 is only a one-time seed when S2 current is confirmed missing.
+ * Missing current is initialized from Server 2 TEST defaults, not Server 1.
  * A load error must not be treated as "empty" or Server 1 will overwrite S2.
  */
 export function decideUnhcrS2DirectOpenAction(params: {
@@ -131,8 +135,61 @@ export function decideUnhcrS2DirectOpenAction(params: {
 }): UnhcrS2DirectOpenAction {
   if (params.hasCurrentRecord) return 'apply-current';
   if (params.currentError) return 'load-error';
-  if (params.hasServer1Record) return 'seed-server1';
-  return 'defaults';
+  return 'init-defaults';
+}
+
+const LEGACY_TEST_REF_NO = { x: 2478, h: 1560, fontSize: 28 };
+const LEGACY_TEST_BARCODE = { h: 56, fontSize: 28 };
+
+export function hasUnhcrS2TestTemplate(snap: UnhcrS2Snapshot): boolean {
+  return (
+    snap.testBarcodeTextH === UNHCR_TEST_BARCODE_TEXT_DEFAULT.h &&
+    snap.testBarcodeTextFontSize === UNHCR_TEST_BARCODE_TEXT_DEFAULT.fontSize &&
+    snap.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE &&
+    snap.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x &&
+    snap.testRefNoY === UNHCR_TEST_REF_NO_DEFAULT.y &&
+    snap.testRefNoH === UNHCR_TEST_REF_NO_DEFAULT.h &&
+    snap.testRefNoFontSize === UNHCR_TEST_REF_NO_DEFAULT.fontSize &&
+    snap.testRefNoOrientation === UNHCR_TEST_REF_NO_DEFAULT.orientation
+  );
+}
+
+/** Pre-template S2 current rows still have empty/legacy TEST overlays from the Server 1 seed. */
+export function needsUnhcrS2TestTemplate(snap: UnhcrS2Snapshot): boolean {
+  if (hasUnhcrS2TestTemplate(snap)) return false;
+  const legacyRef =
+    !snap.testRefNo.trim() ||
+    snap.testRefNoX === LEGACY_TEST_REF_NO.x ||
+    snap.testRefNoH === LEGACY_TEST_REF_NO.h ||
+    snap.testRefNoFontSize === LEGACY_TEST_REF_NO.fontSize;
+  const legacyBarcode =
+    snap.testBarcodeTextH === LEGACY_TEST_BARCODE.h ||
+    snap.testBarcodeTextFontSize === LEGACY_TEST_BARCODE.fontSize;
+  return legacyRef || legacyBarcode;
+}
+
+export function applyUnhcrS2TestTemplate(snap: UnhcrS2Snapshot): UnhcrS2Snapshot {
+  return {
+    ...snap,
+    testBarcodeTextH: UNHCR_TEST_BARCODE_TEXT_DEFAULT.h,
+    testBarcodeTextFontSize: UNHCR_TEST_BARCODE_TEXT_DEFAULT.fontSize,
+    testRefNo: UNHCR_TEST_REF_NO_DEFAULT_VALUE,
+    testRefNoX: UNHCR_TEST_REF_NO_DEFAULT.x,
+    testRefNoY: UNHCR_TEST_REF_NO_DEFAULT.y,
+    testRefNoH: UNHCR_TEST_REF_NO_DEFAULT.h,
+    testRefNoFontSize: UNHCR_TEST_REF_NO_DEFAULT.fontSize,
+    testRefNoOrientation: UNHCR_TEST_REF_NO_DEFAULT.orientation,
+  };
+}
+
+export function hydrateUnhcrS2CurrentSnapshot(doc: unknown): { snapshot: UnhcrS2Snapshot; upgraded: boolean } {
+  const snapshot = snapshotFromUnhcrS2VaultDoc(doc);
+  if (!needsUnhcrS2TestTemplate(snapshot)) return { snapshot, upgraded: false };
+  return { snapshot: applyUnhcrS2TestTemplate(snapshot), upgraded: true };
+}
+
+export function unhcrS2InitialCurrentSnapshot(): UnhcrS2Snapshot {
+  return applyUnhcrS2TestTemplate({ ...UNHCR_DEFAULTS, layouts: { ...UNHCR_DEFAULTS.layouts } });
 }
 
 /**

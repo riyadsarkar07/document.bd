@@ -47,18 +47,18 @@ import { loadDocumentFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import {
   commitDocument,
-  getUnhcrCurrentState,
   getUnhcrS2CurrentState,
   getVaultRecord,
   saveUnhcrS2CurrentState,
 } from '@/lib/workspace/vault';
 import { newRecordId } from '@/lib/workspace/document-kinds';
 import {
-  copyUnhcrServer1SnapshotToServer2,
   decideUnhcrS2DirectOpenAction,
+  hydrateUnhcrS2CurrentSnapshot,
   isUnhcrS2CurrentRecordId,
   snapshotFromUnhcrS2VaultDoc,
   unhcrS2HistoryRecordIdForSave,
+  unhcrS2InitialCurrentSnapshot,
 } from '@/lib/unhcrS2CurrentState';
 import { checkLimit } from '@/lib/workspace/limits';
 import { useAuth } from '@/lib/auth/auth-context';
@@ -111,8 +111,8 @@ function UnhcrEditorInner() {
   const [dragging, setDragging] = useState(false);
   const [photoImage, setPhotoImage] = useState<HTMLImageElement | null>(null);
   const [photoName, setPhotoName] = useState<string | null>(null);
-  const [workspaceReady, setWorkspaceReady] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadGenRef = useRef(0);
 
   const externalCacheRef = useRef<UnhcrS2Snapshot | null>(null);
 
@@ -155,28 +155,36 @@ function UnhcrEditorInner() {
     origY: number;
   } | null>(null);
 
+  const projectId = searchParams.get('project');
+  const templateName = searchParams.get('template');
+  const recordNo = searchParams.get('record');
+
   useEffect(() => {
-    const projectId = searchParams.get('project');
-    const templateName = searchParams.get('template');
-    const recordNo = searchParams.get('record');
-    let cancelled = false;
-    setWorkspaceReady(false);
-    setRendered(false);
+    const gen = ++loadGenRef.current;
+    const stale = () => loadGenRef.current !== gen;
+    const applyWorkspace = (next: UnhcrS2Snapshot, status: string) => {
+      if (stale()) return;
+      externalCacheRef.current = next;
+      editor.replace(next);
+      setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
+      setStatus(status);
+    };
+    const persistCurrent = async (snapshot: UnhcrS2Snapshot) => {
+      if (!user || stale()) return;
+      const title = snapshot.unhcrNo.trim() ? `UNHCR S2 ${snapshot.unhcrNo.trim()}` : 'UNHCR ID Server 2';
+      await saveUnhcrS2CurrentState({
+        snapshot,
+        title,
+        subtitle: snapshot.name.trim() || undefined,
+        createdBy: user.id,
+      });
+    };
     (async () => {
-      const applyWorkspace = (next: UnhcrS2Snapshot, status: string) => {
-        if (cancelled) return;
-        externalCacheRef.current = next;
-        editor.replace(next);
-        setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
-        setStatus(status);
-        setWorkspaceReady(true);
-      };
       if (recordNo && !isUnhcrS2CurrentRecordId(recordNo)) {
         const res = await getVaultRecord(recordNo);
-        if (cancelled) return;
+        if (stale()) return;
         if (res.error || !res.record) {
           toast.error(res.error ?? 'Could not load History record');
-          setWorkspaceReady(true);
           return;
         }
         const next = snapshotFromUnhcrS2VaultDoc(res.record.doc);
@@ -187,76 +195,49 @@ function UnhcrEditorInner() {
       }
       if (projectId) {
         const res = await listProjects();
-        if (cancelled) return;
+        if (stale()) return;
         const found = res.data.find((p) => String(p.id) === projectId || p.name === projectId);
         if (found) {
           applyWorkspace(normalizeUnhcrSnapshot(found.state as Partial<UnhcrS2Snapshot>), `Project "${found.name}" loaded`);
           toast.success(`Project "${found.name}" loaded`);
-          return;
         }
-        setWorkspaceReady(true);
         return;
       }
       if (templateName) {
         const res = await listTemplates();
-        if (cancelled) return;
+        if (stale()) return;
         const found = res.data.find((t) => String(t.id) === templateName || t.name === templateName);
         if (found) {
           applyWorkspace(normalizeUnhcrSnapshot(found.state as Partial<UnhcrS2Snapshot>), `Template "${found.name}" applied`);
           toast.success(`Template "${found.name}" applied`);
-          return;
         }
-        setWorkspaceReady(true);
         return;
       }
       if (authLoading) return;
-      if (!user) {
-        setWorkspaceReady(true);
-        return;
-      }
+      if (!user) return;
       const current = await getUnhcrS2CurrentState();
-      if (cancelled) return;
+      if (stale()) return;
       const action = decideUnhcrS2DirectOpenAction({
         currentError: current.error,
         hasCurrentRecord: Boolean(current.record),
-        hasServer1Record: false,
       });
       if (action === 'apply-current' && current.record) {
-        applyWorkspace(snapshotFromUnhcrS2VaultDoc(current.record.doc), 'Saved editor state loaded');
+        const hydrated = hydrateUnhcrS2CurrentSnapshot(current.record.doc);
+        applyWorkspace(hydrated.snapshot, 'Saved editor state loaded');
+        if (hydrated.upgraded) await persistCurrent(hydrated.snapshot);
         return;
       }
       if (action === 'load-error' || current.error) {
+        applyWorkspace(unhcrS2InitialCurrentSnapshot(), 'Server 2 template loaded');
         toast.error(current.error ?? 'Could not load Server 2 editor state');
-        setStatus(current.error ?? 'Could not load Server 2 editor state');
-        setWorkspaceReady(true);
         return;
       }
-      const server1 = await getUnhcrCurrentState();
-      if (cancelled) return;
-      const seedAction = decideUnhcrS2DirectOpenAction({
-        currentError: current.error,
-        hasCurrentRecord: Boolean(current.record),
-        hasServer1Record: Boolean(server1.record) && !server1.error,
-      });
-      if (seedAction !== 'seed-server1' || !server1.record) {
-        setWorkspaceReady(true);
-        return;
-      }
-      const seeded = copyUnhcrServer1SnapshotToServer2(server1.record.doc);
-      applyWorkspace(seeded, 'Copied Server 1 template');
-      const title = seeded.unhcrNo.trim() ? `UNHCR S2 ${seeded.unhcrNo.trim()}` : 'UNHCR ID Server 2';
-      await saveUnhcrS2CurrentState({
-        snapshot: seeded,
-        title,
-        subtitle: seeded.name.trim() || undefined,
-        createdBy: user.id,
-      });
+      const initial = unhcrS2InitialCurrentSnapshot();
+      applyWorkspace(initial, 'Server 2 template loaded');
+      await persistCurrent(initial);
     })();
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, user?.id, authLoading]);
+  }, [projectId, templateName, recordNo, user?.id, authLoading]);
 
   useEffect(() => {
     loadDocumentFonts().then((ok) => {
@@ -293,7 +274,6 @@ function UnhcrEditorInner() {
   );
 
   useEffect(() => {
-    if (!workspaceReady) return;
     liveScaleRef.current = Math.min(1, Math.max(zoom, 0.35));
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
@@ -301,7 +281,7 @@ function UnhcrEditorInner() {
       if (canvas) void draw(canvas, liveScaleRef.current);
     });
     return () => cancelAnimationFrame(rafRef.current);
-  }, [present, fontsLoaded, bgImg, photoImage, zoom, draw, activeField, workspaceReady]);
+  }, [present, fontsLoaded, bgImg, photoImage, zoom, draw, activeField]);
 
   const forceRender = useCallback(async () => {
     const canvas = canvasRef.current;
@@ -917,14 +897,6 @@ function UnhcrEditorInner() {
     ...UNHCR_CODE_KEYS.map((key) => ({ value: key, label: UNHCR_CODE_LABELS[key] })),
     ...UNHCR_TEST_OVERLAY_KEYS.map((key) => ({ value: key, label: UNHCR_TEST_OVERLAY_LABELS[key] })),
   ];
-
-  if (!workspaceReady) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-sm text-dimm">
-        Loading Server 2 editor…
-      </div>
-    );
-  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
