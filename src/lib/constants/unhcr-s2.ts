@@ -131,7 +131,7 @@ export const UNHCR_TEST_REF_NO_DEFAULT_VALUE = '1838-SAB227535';
 
 export const UNHCR_TEST_BARCODE_TEXT_DEFAULT = {
   x: 54,
-  y: 1160,
+  y: 1180,
   w: 752,
   h: 61,
   fontSize: 62,
