@@ -64,6 +64,7 @@ import {
   resolveUnhcrS2EditorLoadSource,
   snapshotFromUnhcrS2VaultDoc,
   unhcrS2HistoryRecordIdForSave,
+  coerceUnhcrS2CurrentRpcRow,
 } from '../src/lib/unhcrS2CurrentState';
 
 const ROOT = process.cwd();
@@ -658,6 +659,32 @@ function main() {
   assert(schema.includes("trademark_no = 'UNHCR-S2-CURRENT'"), 'UNHCR S2 RPCs only touch the S2 current-state row');
   assert(vault.includes("neq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID)"), 'History listing hides UNHCR-S2-CURRENT');
   assert(vault.includes("rpc('get_unhcr_s2_current_state')") && vault.includes("rpc('save_unhcr_s2_current_state'"), 'S2 editor load/save uses shared UNHCR S2 RPCs');
+  assert(vault.includes('coerceUnhcrS2CurrentRpcRow'), 'S2 current-state loader unwraps PostgREST RPC payload shapes');
+  assert(
+    /if \(!error\) \{[\s\S]*mapUnhcrS2CurrentRow\(data\)[\s\S]*if \(record\) return[\s\S]*from\('certificates'\)[\s\S]*eq\('trademark_no', UNHCR_S2_CURRENT_RECORD_ID\)/.test(vault),
+    'S2 current-state load falls back to UNHCR-S2-CURRENT when RPC mapping is empty',
+  );
+  const s2RpcObject = { trademark_no: 'UNHCR-S2-CURRENT', details: packedS2Current };
+  const s2RpcArray = [s2RpcObject];
+  const s2RpcString = JSON.stringify(s2RpcObject);
+  assert(coerceUnhcrS2CurrentRpcRow(s2RpcObject)?.trademark_no === 'UNHCR-S2-CURRENT', 'S2 RPC object payload is accepted');
+  assert(coerceUnhcrS2CurrentRpcRow(s2RpcArray)?.trademark_no === 'UNHCR-S2-CURRENT', 'S2 RPC one-row array payload is unwrapped');
+  assert(coerceUnhcrS2CurrentRpcRow(s2RpcString)?.trademark_no === 'UNHCR-S2-CURRENT', 'S2 RPC JSON-string payload is unwrapped');
+  assert(coerceUnhcrS2CurrentRpcRow(null) === null, 'S2 RPC null payload stays empty');
+  assert(coerceUnhcrS2CurrentRpcRow([]) === null, 'S2 RPC empty array stays empty');
+  const unwrappedS2Current = coerceUnhcrS2CurrentRpcRow(s2RpcArray);
+  const loadedS2FromRpcArray = snapshotFromUnhcrS2VaultDoc(unpackDetails(String(unwrappedS2Current?.details ?? '')).doc);
+  assert(loadedS2FromRpcArray.name === 'Updated S2 Subject', 'S2 direct open restores fields from wrapped RPC current-state');
+  assert(loadedS2FromRpcArray.qrSize === 250 && loadedS2FromRpcArray.photoX === 90, 'S2 direct open restores QR/photo from wrapped RPC current-state');
+  assert(loadedS2FromRpcArray.testBarcodeText === 'TEST-UNHCR-BARCODE-0002', 'S2 direct open restores barcodes from wrapped RPC current-state');
+  assert(vault.includes("if (!error) return { record: mapUnhcrCurrentRow(data), error: null };"), 'Server 1 current-state load is unchanged');
+  const s2Editor = readFileSync(join(ROOT, 'src/app/studio/editor/unhcr-s2/page.tsx'), 'utf8');
+  const s1Editor = readFileSync(join(ROOT, 'src/app/studio/editor/unhcr/page.tsx'), 'utf8');
+  assert(s2Editor.includes('getUnhcrS2CurrentState()'), 'Server 2 direct open loads S2 current state');
+  assert(s2Editor.includes('if (!current.record) return;'), 'Server 2 still applies current state when RPC mapping needed a table fallback');
+  assert(s2Editor.includes('saveUnhcrS2CurrentState'), 'Server 2 Save updates S2 current state');
+  assert(s1Editor.includes('if (current.error || !current.record) return;'), 'Server 1 direct-open guard is unchanged');
+  assert(s1Editor.includes('getUnhcrCurrentState()') && !s1Editor.includes('getUnhcrS2CurrentState'), 'Server 1 does not read Server 2 current state');
 
   const pdfDoc = {
     fileName: 'brief.pdf',

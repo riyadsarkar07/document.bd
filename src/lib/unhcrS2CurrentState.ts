@@ -18,6 +18,27 @@ export function isUnhcrS2CurrentRecordId(value: string | null | undefined): bool
   return (value ?? '').trim() === UNHCR_S2_CURRENT_RECORD_ID;
 }
 
+/**
+ * PostgREST may return a jsonb RPC as an object, a one-row array, or a JSON
+ * string. Direct editor open must unwrap those shapes; rejecting them leaves
+ * Server 2 on built-in defaults even when UNHCR-S2-CURRENT exists.
+ */
+export function coerceUnhcrS2CurrentRpcRow(data: unknown): Record<string, unknown> | null {
+  let row: unknown = data;
+  if (typeof row === 'string') {
+    const trimmed = row.trim();
+    if (!trimmed) return null;
+    try {
+      row = JSON.parse(trimmed) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(row)) row = row[0] ?? null;
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
+  return row as Record<string, unknown>;
+}
+
 export function resolveUnhcrS2EditorLoadSource(params: {
   recordNo?: string | null;
   projectId?: string | null;

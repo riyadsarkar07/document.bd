@@ -193,7 +193,7 @@ function UnhcrEditorInner() {
       }
       if (!user) return;
       const current = await getUnhcrS2CurrentState();
-      if (current.error || !current.record) return;
+      if (!current.record) return;
       const next = snapshotFromUnhcrS2VaultDoc(current.record.doc);
       externalCacheRef.current = next;
       editor.replace(next);

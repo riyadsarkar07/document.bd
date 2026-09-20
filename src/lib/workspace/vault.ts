@@ -14,7 +14,11 @@ import {
   type DocumentKind,
 } from '@/lib/workspace/document-kinds';
 import { isUnhcrCurrentRecordId, UNHCR_CURRENT_RECORD_ID } from '@/lib/unhcrCurrentState';
-import { isUnhcrS2CurrentRecordId, UNHCR_S2_CURRENT_RECORD_ID } from '@/lib/unhcrS2CurrentState';
+import {
+  coerceUnhcrS2CurrentRpcRow,
+  isUnhcrS2CurrentRecordId,
+  UNHCR_S2_CURRENT_RECORD_ID,
+} from '@/lib/unhcrS2CurrentState';
 
 /** Publication state of a vault record against the public verification portal. */
 export type PublishStatus = 'published' | 'pending' | 'failed' | 'unpublished';
@@ -505,9 +509,11 @@ export async function saveUnhcrCurrentState(input: {
 }
 
 function mapUnhcrS2CurrentRow(data: unknown): VaultRecord | null {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
-  const mapped = mapVaultRow(data as VaultRow);
-  if (!isUnhcrS2CurrentRecordId(mapped.trademarkNo) || mapped.docKind !== 'unhcr-s2') return null;
+  const row = coerceUnhcrS2CurrentRpcRow(data);
+  if (!row) return null;
+  const mapped = mapVaultRow(row as VaultRow);
+  if (!isUnhcrS2CurrentRecordId(mapped.trademarkNo)) return null;
+  if (mapped.docKind !== 'unhcr-s2' && mapped.doc == null) return null;
   return mapped;
 }
 
@@ -517,15 +523,19 @@ function mapUnhcrS2CurrentRow(data: unknown): VaultRecord | null {
  */
 export async function getUnhcrS2CurrentState(): Promise<{ record: VaultRecord | null; error: string | null }> {
   const { data, error } = await supabase.rpc('get_unhcr_s2_current_state');
-  if (!error) return { record: mapUnhcrS2CurrentRow(data), error: null };
-  if (!isMissingUnhcrCurrentRpc(error.message)) return { record: null, error: error.message };
+  if (!error) {
+    const record = mapUnhcrS2CurrentRow(data);
+    if (record) return { record, error: null };
+  } else if (!isMissingUnhcrCurrentRpc(error.message)) {
+    return { record: null, error: error.message };
+  }
   const fallback = await supabase
     .from('certificates')
     .select('*')
     .eq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID)
     .limit(1);
-  if (fallback.error) return { record: null, error: fallback.error.message };
-  return { record: mapUnhcrS2CurrentRow(fallback.data?.[0] ?? null), error: null };
+  if (fallback.error) return { record: mapUnhcrS2CurrentRow(data), error: fallback.error.message };
+  return { record: mapUnhcrS2CurrentRow(fallback.data?.[0] ?? data), error: null };
 }
 
 export async function saveUnhcrS2CurrentState(input: {
