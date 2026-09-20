@@ -44,9 +44,16 @@ import { loadDataUrlImage, loadImage } from '@/lib/images';
 import { validateImageFile } from '@/lib/uploads';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
-import { commitDocument, getUnhcrS2CurrentState, getVaultRecord, saveUnhcrS2CurrentState } from '@/lib/workspace/vault';
+import {
+  commitDocument,
+  getUnhcrCurrentState,
+  getUnhcrS2CurrentState,
+  getVaultRecord,
+  saveUnhcrS2CurrentState,
+} from '@/lib/workspace/vault';
 import { newRecordId } from '@/lib/workspace/document-kinds';
 import {
+  copyUnhcrServer1SnapshotToServer2,
   isUnhcrS2CurrentRecordId,
   snapshotFromUnhcrS2VaultDoc,
   unhcrS2HistoryRecordIdForSave,
@@ -193,12 +200,28 @@ function UnhcrEditorInner() {
       }
       if (!user) return;
       const current = await getUnhcrS2CurrentState();
-      if (!current.record) return;
-      const next = snapshotFromUnhcrS2VaultDoc(current.record.doc);
-      externalCacheRef.current = next;
-      editor.replace(next);
-      setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
-      setStatus('Saved editor state loaded');
+      if (current.record) {
+        const next = snapshotFromUnhcrS2VaultDoc(current.record.doc);
+        externalCacheRef.current = next;
+        editor.replace(next);
+        setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
+        setStatus('Saved editor state loaded');
+        return;
+      }
+      const server1 = await getUnhcrCurrentState();
+      if (server1.error || !server1.record) return;
+      const seeded = copyUnhcrServer1SnapshotToServer2(server1.record.doc);
+      externalCacheRef.current = seeded;
+      editor.replace(seeded);
+      setPhotoName(seeded.photoDataUrl ? 'Saved photo' : null);
+      setStatus('Copied Server 1 template');
+      const title = seeded.unhcrNo.trim() ? `UNHCR S2 ${seeded.unhcrNo.trim()}` : 'UNHCR ID Server 2';
+      await saveUnhcrS2CurrentState({
+        snapshot: seeded,
+        title,
+        subtitle: seeded.name.trim() || undefined,
+        createdBy: user.id,
+      });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, user?.id]);

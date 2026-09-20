@@ -12,6 +12,7 @@ export type UnhcrS2EditorLoadSource =
   | 'project'
   | 'template'
   | 'current-state'
+  | 'server1-seed'
   | 'defaults';
 
 export function isUnhcrS2CurrentRecordId(value: string | null | undefined): boolean {
@@ -103,13 +104,33 @@ export function resolveUnhcrS2EditorLoadSource(params: {
   projectId?: string | null;
   templateName?: string | null;
   hasCurrentState?: boolean;
+  hasServer1CurrentState?: boolean;
 }): UnhcrS2EditorLoadSource {
   const recordNo = (params.recordNo ?? '').trim();
   if (recordNo && !isUnhcrS2CurrentRecordId(recordNo)) return 'history-record';
   if ((params.projectId ?? '').trim()) return 'project';
   if ((params.templateName ?? '').trim()) return 'template';
   if (params.hasCurrentState) return 'current-state';
+  if (params.hasServer1CurrentState) return 'server1-seed';
   return 'defaults';
+}
+
+/**
+ * One-time copy of Server 1 workspace configuration into an independent
+ * Server 2 snapshot. S2-only overlays stay on Server 2 defaults. Mutating
+ * the result must not change the Server 1 source.
+ */
+export function copyUnhcrServer1SnapshotToServer2(doc: unknown): UnhcrS2Snapshot {
+  const raw = (doc ?? {}) as Record<string, unknown>;
+  const cloned: Record<string, unknown> = { ...raw };
+  if (raw.layouts && typeof raw.layouts === 'object' && !Array.isArray(raw.layouts)) {
+    const layouts: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(raw.layouts as Record<string, unknown>)) {
+      layouts[key] = value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : value;
+    }
+    cloned.layouts = layouts;
+  }
+  return normalizeUnhcrSnapshot(cloned as Partial<UnhcrS2Snapshot>);
 }
 
 /**

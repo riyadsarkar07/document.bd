@@ -66,6 +66,7 @@ import {
   unhcrS2HistoryRecordIdForSave,
   coerceUnhcrS2CurrentRpcRow,
   coerceUnhcrS2Details,
+  copyUnhcrServer1SnapshotToServer2,
 } from '../src/lib/unhcrS2CurrentState';
 
 const ROOT = process.cwd();
@@ -637,6 +638,8 @@ function main() {
   assert(resolveUnhcrS2EditorLoadSource({ templateName: 't1', hasCurrentState: true }) === 'template', 'S2 explicit template wins over current state');
   assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: true }) === 'current-state', 'S2 direct editor open loads shared current state');
   assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: false }) === 'defaults', 'S2 direct editor open uses defaults when no current state exists');
+  assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: false, hasServer1CurrentState: true }) === 'server1-seed', 'S2 first open copies current Server 1 template when S2 current is empty');
+  assert(resolveUnhcrS2EditorLoadSource({ hasCurrentState: true, hasServer1CurrentState: true }) === 'current-state', 'S2 current state wins over a later Server 1 template');
   assert(unhcrS2HistoryRecordIdForSave(null, 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-MY-1001', 'S2 Save from a blank editor creates a History case id from the ID number');
   assert(unhcrS2HistoryRecordIdForSave(UNHCR_S2_CURRENT_RECORD_ID, 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-MY-1001', 'S2 Save never binds History to the shared current-state id');
   assert(unhcrS2HistoryRecordIdForSave('UNHCR-S2-abc', 'MY-1001', 'UNHCR-S2-gen') === 'UNHCR-S2-abc', 'S2 re-save of an explicit History record keeps that record id');
@@ -698,10 +701,34 @@ function main() {
   const s2Editor = readFileSync(join(ROOT, 'src/app/studio/editor/unhcr-s2/page.tsx'), 'utf8');
   const s1Editor = readFileSync(join(ROOT, 'src/app/studio/editor/unhcr/page.tsx'), 'utf8');
   assert(s2Editor.includes('getUnhcrS2CurrentState()'), 'Server 2 direct open loads S2 current state');
-  assert(s2Editor.includes('if (!current.record) return;'), 'Server 2 still applies current state when RPC mapping needed a table fallback');
+  assert(s2Editor.includes('copyUnhcrServer1SnapshotToServer2'), 'Server 2 first open copies the current Server 1 template');
+  assert(s2Editor.includes('getUnhcrCurrentState()'), 'Server 2 seed reads Server 1 current state once');
   assert(s2Editor.includes('saveUnhcrS2CurrentState'), 'Server 2 Save updates S2 current state');
+  assert(!s2Editor.includes('saveUnhcrCurrentState'), 'Server 2 Save does not write Server 1 current state');
   assert(s1Editor.includes('if (current.error || !current.record) return;'), 'Server 1 direct-open guard is unchanged');
   assert(s1Editor.includes('getUnhcrCurrentState()') && !s1Editor.includes('getUnhcrS2CurrentState'), 'Server 1 does not read Server 2 current state');
+  assert(!s1Editor.includes('copyUnhcrServer1SnapshotToServer2'), 'Server 1 is not seeded from Server 2');
+  const seededFromS1 = copyUnhcrServer1SnapshotToServer2(editedUnhcr);
+  assert(seededFromS1.layouts.name.x === 870 && seededFromS1.layouts.name.fontSize === 38, 'S2 seed copies Server 1 field positions and fonts');
+  assert(seededFromS1.photoX === 90 && seededFromS1.photoW === 650, 'S2 seed copies Server 1 photo area');
+  assert(seededFromS1.barcode1X === 100 && seededFromS1.barcode1W === 680, 'S2 seed copies Server 1 barcode 1');
+  assert(seededFromS1.barcode2Y === 1190 && seededFromS1.qrSize === 250, 'S2 seed copies Server 1 barcode 2 and QR');
+  assert(seededFromS1.photoDataUrl === TINY_JPEG, 'S2 seed copies Server 1 photo artwork');
+  assert(seededFromS1.testBarcodeText === seededFromS1.unhcrNo, 'S2 seed keeps barcode-value overlay on Server 2 rules');
+  assert(seededFromS1.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'S2 seed keeps Server 2 reference overlay defaults');
+  assert(seededFromS1.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x, 'S2 seed keeps Server 2 reference overlay position');
+  const s1Source = JSON.parse(JSON.stringify(editedUnhcr)) as typeof editedUnhcr;
+  const s2Copy = copyUnhcrServer1SnapshotToServer2(s1Source);
+  s2Copy.layouts.name.x = 1;
+  s2Copy.photoX = 1;
+  s2Copy.qrSize = 99;
+  assert(s1Source.layouts.name.x === 870 && s1Source.photoX === 90 && s1Source.qrSize === 250, 'mutating the S2 seed does not change Server 1 source');
+  const packedS1AfterS2Edit = packDetails('', stored, { docKind: 'unhcr', doc: s1Source });
+  const packedS2AfterSeedEdit = packDetails('', stored, { docKind: 'unhcr-s2', doc: { ...s2Copy, name: 'S2 Only Subject' } });
+  assert(unpackDetails(packedS1AfterS2Edit).docKind === 'unhcr', 'Server 1 pack stays unhcr after S2 seed');
+  assert((unpackDetails(packedS1AfterS2Edit).doc as { name: string }).name === 'Updated Subject', 'Server 1 Save stays independent of Server 2');
+  assert(unpackDetails(packedS2AfterSeedEdit).docKind === 'unhcr-s2', 'Server 2 pack stays unhcr-s2 after seed');
+  assert((unpackDetails(packedS2AfterSeedEdit).doc as { name: string }).name === 'S2 Only Subject', 'Server 2 Save stays independent of Server 1');
 
   const pdfDoc = {
     fileName: 'brief.pdf',
