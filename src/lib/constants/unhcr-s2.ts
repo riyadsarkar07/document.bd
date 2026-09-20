@@ -127,22 +127,22 @@ export const UNHCR_CODE_LABELS: Record<UnhcrCodeKey, string> = {
 
 export const UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE = '';
 
-export const UNHCR_TEST_REF_NO_DEFAULT_VALUE = '';
+export const UNHCR_TEST_REF_NO_DEFAULT_VALUE = '1838-SAB227535';
 
 export const UNHCR_TEST_BARCODE_TEXT_DEFAULT = {
   x: 54,
   y: 1160,
   w: 752,
-  h: 56,
-  fontSize: 28,
+  h: 61,
+  fontSize: 62,
 };
 
 export const UNHCR_TEST_REF_NO_DEFAULT = {
-  x: 2478,
+  x: 2408,
   y: 120,
   w: 56,
-  h: 1560,
-  fontSize: 28,
+  h: 2646,
+  fontSize: 53,
   orientation: 'vertical' as UnhcrTextOrientation,
 };
 

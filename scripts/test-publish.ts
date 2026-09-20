@@ -564,9 +564,12 @@ function main() {
   assert(normalizedUnhcrS2.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'UNHCR S2 barcode value defaults empty');
   assert(normalizedUnhcrS2.testBarcodeTextX === UNHCR_TEST_BARCODE_TEXT_DEFAULT.x && normalizedUnhcrS2.testBarcodeTextY === UNHCR_TEST_BARCODE_TEXT_DEFAULT.y, 'UNHCR S2 barcode value default X/Y sits below the photo');
   assert(normalizedUnhcrS2.testBarcodeTextW === UNHCR_TEST_BARCODE_TEXT_DEFAULT.w && normalizedUnhcrS2.testBarcodeTextH === UNHCR_TEST_BARCODE_TEXT_DEFAULT.h, 'UNHCR S2 barcode value default size');
-  assert(normalizedUnhcrS2.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'UNHCR S2 reference number defaults empty');
-  assert(normalizedUnhcrS2.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x && normalizedUnhcrS2.testRefNoY === UNHCR_TEST_REF_NO_DEFAULT.y, 'UNHCR S2 reference default X/Y sits on the right edge');
+  assert(normalizedUnhcrS2.testBarcodeTextH === 61 && normalizedUnhcrS2.testBarcodeTextFontSize === 62, 'UNHCR S2 barcode value default Height/font size');
+  assert(normalizedUnhcrS2.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'UNHCR S2 reference number defaults to TEST value');
+  assert(normalizedUnhcrS2.testRefNo === '1838-SAB227535', 'UNHCR S2 reference number default text is 1838-SAB227535');
+  assert(normalizedUnhcrS2.testRefNoX === 2408 && normalizedUnhcrS2.testRefNoY === 120, 'UNHCR S2 reference default X/Y sits on the right edge');
   assert(normalizedUnhcrS2.testRefNoW === UNHCR_TEST_REF_NO_DEFAULT.w && normalizedUnhcrS2.testRefNoH === UNHCR_TEST_REF_NO_DEFAULT.h, 'UNHCR S2 reference default size');
+  assert(normalizedUnhcrS2.testRefNoH === 2646 && normalizedUnhcrS2.testRefNoFontSize === 53, 'UNHCR S2 reference default Height/font size');
   assert(normalizedUnhcrS2.testRefNoOrientation === 'vertical', 'UNHCR S2 reference defaults to vertical orientation');
   assert(UNHCR_TEST_REF_NO_HEIGHT_MAX > UNHCR_TEST_BOX_RANGES.h.max, 'UNHCR S2 vertical reference Height max exceeds shared TEST box canvas cap');
   assert(

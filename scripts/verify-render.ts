@@ -1029,9 +1029,12 @@ async function main() {
 
   console.log('\n[12] UNHCR Server 2 barcode value and vertical reference number\n');
   assert(UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE === '', 'S2 barcode value default is empty');
-  assert(UNHCR_TEST_REF_NO_DEFAULT_VALUE === '', 'S2 reference number default is empty');
+  assert(UNHCR_TEST_REF_NO_DEFAULT_VALUE === '1838-SAB227535', 'S2 reference number default is the TEST value');
   assert(UNHCR_TEST_BARCODE_TEXT_DEFAULT.y > UNHCR_S2_PHOTO_DEFAULT.y + UNHCR_S2_PHOTO_DEFAULT.h, 'S2 barcode value sits below the photo');
-  assert(UNHCR_TEST_REF_NO_DEFAULT.x > UNHCR_S2_DOC_WIDTH - 120, 'S2 reference number sits along the right edge');
+  assert(UNHCR_TEST_BARCODE_TEXT_DEFAULT.h === 61 && UNHCR_TEST_BARCODE_TEXT_DEFAULT.fontSize === 62, 'S2 barcode value default Height/font size');
+  assert(UNHCR_TEST_REF_NO_DEFAULT.x === 2408 && UNHCR_TEST_REF_NO_DEFAULT.y === 120, 'S2 reference number default X/Y');
+  assert(UNHCR_TEST_REF_NO_DEFAULT.h === 2646 && UNHCR_TEST_REF_NO_DEFAULT.fontSize === 53, 'S2 reference number default Height/font size');
+  assert(UNHCR_TEST_REF_NO_DEFAULT.x > UNHCR_S2_DOC_WIDTH - 160, 'S2 reference number sits along the right edge');
   assert(UNHCR_TEST_REF_NO_DEFAULT.orientation === 'vertical', 'S2 reference number defaults to vertical orientation');
   assert(UNHCR_TEST_REF_NO_HEIGHT_MAX > UNHCR_TEST_BOX_RANGES.h.max, 'S2 vertical reference Height max exceeds shared TEST box canvas cap');
   assert(UNHCR_TEST_BOX_RANGES.h.max === 1800, 'S2 shared TEST Height max stays at canvas height');
@@ -1044,7 +1047,7 @@ async function main() {
 
   const blankTestOverlays = normalizeUnhcrS2Snapshot({});
   assert(blankTestOverlays.testBarcodeText === UNHCR_TEST_BARCODE_TEXT_DEFAULT_VALUE, 'S2 missing barcode value restores empty default');
-  assert(blankTestOverlays.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'S2 missing reference number restores empty default');
+  assert(blankTestOverlays.testRefNo === UNHCR_TEST_REF_NO_DEFAULT_VALUE, 'S2 missing reference number restores TEST default');
   assert(blankTestOverlays.testBarcodeTextY === UNHCR_TEST_BARCODE_TEXT_DEFAULT.y, 'S2 missing barcode value Y restores default below photo');
   assert(blankTestOverlays.testRefNoX === UNHCR_TEST_REF_NO_DEFAULT.x, 'S2 missing reference X restores right-edge default');
   assert(blankTestOverlays.testRefNoOrientation === 'vertical', 'S2 missing reference orientation restores vertical');
@@ -1075,13 +1078,19 @@ async function main() {
   assert(movedTestOverlays.testRefNoFontSize === 26, 'S2 reference number font size persists through normalize');
   assert(movedTestOverlays.testRefNoOrientation === 'horizontal', 'S2 reference orientation persists through normalize');
 
-  const defaultTestCanvas = createCanvas(1, 1);
-  renderUnhcrS2Card(defaultTestCanvas as unknown as HTMLCanvasElement, { ...UNHCR_S2_DEFAULTS }, null, 1);
-  const defaultTestPx = Buffer.from(defaultTestCanvas.getContext('2d')!.getImageData(0, 0, defaultTestCanvas.width, defaultTestCanvas.height).data.buffer);
+  const emptyOverlayS2 = { ...UNHCR_S2_DEFAULTS, testBarcodeText: '', testRefNo: '' };
+  const emptyOverlayCanvas = createCanvas(1, 1);
+  renderUnhcrS2Card(emptyOverlayCanvas as unknown as HTMLCanvasElement, emptyOverlayS2, null, 1);
+  const emptyOverlayPx = Buffer.from(emptyOverlayCanvas.getContext('2d')!.getImageData(0, 0, emptyOverlayCanvas.width, emptyOverlayCanvas.height).data.buffer);
   const s1Canvas = createCanvas(1, 1);
   renderUnhcrCard(s1Canvas as unknown as HTMLCanvasElement, { ...UNHCR_DEFAULTS }, null, 1);
   const s1Px = Buffer.from(s1Canvas.getContext('2d')!.getImageData(0, 0, s1Canvas.width, s1Canvas.height).data.buffer);
-  assert(defaultTestPx.equals(s1Px), 'Server 2 default render matches Server 1 when barcode value overlays are empty');
+  assert(emptyOverlayPx.equals(s1Px), 'Server 2 render matches Server 1 when TEST overlay texts are empty');
+
+  const defaultTestCanvas = createCanvas(1, 1);
+  renderUnhcrS2Card(defaultTestCanvas as unknown as HTMLCanvasElement, { ...UNHCR_S2_DEFAULTS }, null, 1);
+  const defaultTestPx = Buffer.from(defaultTestCanvas.getContext('2d')!.getImageData(0, 0, defaultTestCanvas.width, defaultTestCanvas.height).data.buffer);
+  assert(!defaultTestPx.equals(s1Px), 'S2 default TEST reference text paints on the card');
 
   const movedTestCanvas = createCanvas(1, 1);
   renderUnhcrS2Card(movedTestCanvas as unknown as HTMLCanvasElement, movedTestOverlays, null, 1);
