@@ -40,8 +40,9 @@ export async function logAudit(entry: {
   let actorEmail: string | null = null;
   try {
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user) return;
     actorId = user.id;
     actorEmail = user.email ?? null;

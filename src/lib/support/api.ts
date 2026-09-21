@@ -249,8 +249,9 @@ async function uploadAttachments(ticketId: string, files: File[], messageId?: st
     return `At most ${SUPPORT_ATTACHMENT_MAX_FILES} files can be attached.`;
   }
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return 'Not signed in.';
 
   const { data: ticketRow } = await supabase

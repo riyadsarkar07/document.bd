@@ -94,33 +94,40 @@ export default function HistoryPage() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const res = await listVaultRecords({
-      search,
-      company,
-      owner,
-      type,
-      createdBy,
-      dateFrom: dateFrom || undefined,
-      dateTo: dateTo || undefined,
-      status: view,
-      page,
-      pageSize: PAGE_SIZE,
-    });
-    if (res.error) {
-      setError(res.error);
+    try {
+      const res = await listVaultRecords({
+        search,
+        company,
+        owner,
+        type,
+        createdBy,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+        status: view,
+        page,
+        pageSize: PAGE_SIZE,
+      });
+      if (res.error) {
+        setError(res.error);
+        setRecords([]);
+        setTotal(0);
+      } else {
+        const resolved = await resolveCreatorEmails(res.records, {
+          currentUserId: user?.id,
+          currentUserEmail: user?.email ?? profile?.email ?? null,
+          role: profile?.role ?? null,
+        });
+        setRecords(resolved);
+        setTotal(res.total);
+        setError(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load vault records.');
       setRecords([]);
       setTotal(0);
-    } else {
-      const resolved = await resolveCreatorEmails(res.records, {
-        currentUserId: user?.id,
-        currentUserEmail: user?.email ?? profile?.email ?? null,
-        role: profile?.role ?? null,
-      });
-      setRecords(resolved);
-      setTotal(res.total);
-      setError(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [search, company, owner, type, dateFrom, dateTo, createdBy, view, page, user, profile]);
 
   useEffect(() => {

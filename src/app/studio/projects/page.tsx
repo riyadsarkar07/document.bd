@@ -43,10 +43,16 @@ export default function ProjectsPage() {
   const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
 
   const refresh = useCallback(async () => {
-    const res = await listProjects();
-    setProjects(res.data);
-    setSource(res.source);
-    setLoading(false);
+    try {
+      const res = await listProjects();
+      setProjects(res.data);
+      setSource(res.source);
+    } catch {
+      setProjects([]);
+      setSource('local');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {

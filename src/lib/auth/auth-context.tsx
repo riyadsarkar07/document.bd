@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { User } from '@supabase/supabase-js';
+import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
 import type { Profile, Role, UserStatus } from '@/lib/auth/types';
 import { isAdminUserId } from '@/lib/auth/admin';
@@ -34,106 +34,117 @@ const AuthContext = createContext<AuthState>({
   refreshProfile: async () => {},
 });
 
+function fallbackProfile(userId: string, email: string, role: Role = 'viewer'): Profile {
+  return { id: userId, email, role, status: 'active' };
+}
+
+function mapProfileRow(data: Record<string, unknown>, email: string): Profile {
+  return {
+    id: String(data.id),
+    email: (typeof data.email === 'string' && data.email) || email,
+    full_name: typeof data.full_name === 'string' ? data.full_name : null,
+    role: (data.role as Role) || 'viewer',
+    status: (data.status as UserStatus) || 'active',
+    max_projects: data.max_projects != null ? Number(data.max_projects) : null,
+    max_documents: data.max_documents != null ? Number(data.max_documents) : null,
+    max_exports: data.max_exports != null ? Number(data.max_exports) : null,
+    allowed_tools: Array.isArray(data.allowed_tools) ? (data.allowed_tools as string[]) : null,
+    gen_period: typeof data.gen_period === 'string' ? data.gen_period : null,
+    gen_limit: data.gen_limit != null ? Number(data.gen_limit) : null,
+    can_self_publish: Boolean(data.can_self_publish),
+    created_at: typeof data.created_at === 'string' ? data.created_at : undefined,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async (userId: string, email: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (data) {
-      setProfile({
-        id: data.id,
-        email: data.email || email,
-        full_name: data.full_name,
-        role: (data.role as Role) || 'viewer',
-        status: (data.status as UserStatus) || 'active',
-        max_projects: data.max_projects != null ? Number(data.max_projects) : null,
-        max_documents: data.max_documents != null ? Number(data.max_documents) : null,
-        max_exports: data.max_exports != null ? Number(data.max_exports) : null,
-        allowed_tools: Array.isArray(data.allowed_tools) ? (data.allowed_tools as string[]) : null,
-        gen_period: typeof data.gen_period === 'string' ? data.gen_period : null,
-        gen_limit: data.gen_limit != null ? Number(data.gen_limit) : null,
-        can_self_publish: Boolean(data.can_self_publish),
-        created_at: data.created_at,
-      });
-      return;
+      if (data) {
+        setProfile(mapProfileRow(data as Record<string, unknown>, email));
+        return;
+      }
+
+      if (error) {
+        setProfile(fallbackProfile(userId, email));
+        return;
+      }
+
+      const bootstrapRole: Role = isAdminUserId(userId) ? 'admin' : 'viewer';
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('profiles')
+        .insert({ id: userId, email, role: bootstrapRole, status: 'active' })
+        .select()
+        .maybeSingle();
+
+      if (insertError || !inserted) {
+        setProfile(fallbackProfile(userId, email, bootstrapRole));
+        return;
+      }
+      setProfile(mapProfileRow(inserted as Record<string, unknown>, email));
+    } catch {
+      setProfile(fallbackProfile(userId, email));
     }
-
-    // No profile row yet — attempt to create one (RLS permitting).
-    if (error) {
-      // Table missing or no permission: default to viewer so the studio still loads.
-      setProfile({ id: userId, email, role: 'viewer', status: 'active' });
-      return;
-    }
-
-    const bootstrapRole: Role = isAdminUserId(userId) ? 'admin' : 'viewer';
-
-    const { data: inserted, error: insertError } = await supabase
-      .from('profiles')
-      .insert({ id: userId, email, role: bootstrapRole, status: 'active' })
-      .select()
-      .maybeSingle();
-
-    if (insertError || !inserted) {
-      setProfile({ id: userId, email, role: bootstrapRole, status: 'active' });
-      return;
-    }
-    setProfile({
-      id: inserted.id,
-      email: inserted.email || email,
-      full_name: inserted.full_name,
-      role: (inserted.role as Role) || 'viewer',
-      status: (inserted.status as UserStatus) || 'active',
-      max_projects: inserted.max_projects != null ? Number(inserted.max_projects) : null,
-      max_documents: inserted.max_documents != null ? Number(inserted.max_documents) : null,
-      max_exports: inserted.max_exports != null ? Number(inserted.max_exports) : null,
-      allowed_tools: Array.isArray(inserted.allowed_tools) ? (inserted.allowed_tools as string[]) : null,
-      gen_period: typeof inserted.gen_period === 'string' ? inserted.gen_period : null,
-      gen_limit: inserted.gen_limit != null ? Number(inserted.gen_limit) : null,
-      can_self_publish: Boolean(inserted.can_self_publish),
-      created_at: inserted.created_at,
-    });
   }, []);
+
+  const applySession = useCallback(
+    (session: Session | null) => {
+      if (session?.user) {
+        setUser(session.user);
+        void loadProfile(session.user.id, session.user.email || '').finally(() => setLoading(false));
+        return;
+      }
+      setUser(null);
+      setProfile(null);
+      setLoading(false);
+    },
+    [loadProfile],
+  );
 
   const refreshProfile = useCallback(async () => {
     const {
-      data: { user: current },
-    } = await supabase.auth.getUser();
-    if (current) {
-      setUser(current);
-      await loadProfile(current.id, current.email || '');
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.user) {
+      setUser(session.user);
+      await loadProfile(session.user.id, session.user.email || '');
     }
   }, [loadProfile]);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user: current } }) => {
-      if (current) {
-        setUser(current);
-        void loadProfile(current.id, current.email || '').finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    });
+    let cancelled = false;
+
+    const apply = (session: Session | null) => {
+      if (cancelled) return;
+      applySession(session);
+    };
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser(session.user);
-        void loadProfile(session.user.id, session.user.email || '');
-      } else {
-        setUser(null);
-        setProfile(null);
-      }
-      setLoading(false);
+      setTimeout(() => apply(session), 0);
     });
 
-    return () => sub.subscription.unsubscribe();
-  }, [loadProfile]);
+    void supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => apply(session))
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, [applySession]);
 
   const signIn = useCallback(
     async (email: string, password: string) => {

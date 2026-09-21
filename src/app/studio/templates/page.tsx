@@ -44,10 +44,16 @@ export default function TemplatesPage() {
   const [deleteTarget, setDeleteTarget] = useState<TemplateRecord | null>(null);
 
   const refresh = useCallback(async () => {
-    const res = await listTemplates();
-    setTemplates(res.data);
-    setSource(res.source);
-    setLoading(false);
+    try {
+      const res = await listTemplates();
+      setTemplates(res.data);
+      setSource(res.source);
+    } catch {
+      setTemplates([]);
+      setSource('local');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {

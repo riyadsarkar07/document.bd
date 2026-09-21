@@ -399,39 +399,49 @@ export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultLis
   const pageSize = Math.min(200, Math.max(1, q.pageSize ?? 50));
   const status = q.status ?? 'active';
 
-  const build = (withTrash: boolean) => {
-    let query = supabase
-      .from('certificates')
-      .select('*', { count: 'exact' })
-      .neq('trademark_no', UNHCR_CURRENT_RECORD_ID)
-      .neq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID);
-    if (withTrash) {
-      query = status === 'trashed' ? query.not('deleted_at', 'is', null) : query.is('deleted_at', null);
-    }
-    const search = escapePostgrestSearch(q.search ?? '');
-    if (search) {
-      query = query.or(`trademark_no.ilike.%${search}%,name.ilike.%${search}%,owner_name.ilike.%${search}%`);
-    }
-    if (q.company?.trim()) query = query.ilike('name', `%${escapePostgrestSearch(q.company)}%`);
-    if (q.owner?.trim()) query = query.ilike('owner_name', `%${escapePostgrestSearch(q.owner)}%`);
-    if (q.type?.trim()) query = query.ilike('company_type', `%${escapePostgrestSearch(q.type)}%`);
-    if (q.createdBy) query = query.eq('created_by', q.createdBy);
-    if (q.dateFrom) query = query.gte('synced_at', new Date(`${q.dateFrom}T00:00:00`).toISOString());
-    if (q.dateTo) query = query.lte('synced_at', new Date(`${q.dateTo}T23:59:59.999`).toISOString());
-    return query.order('synced_at', { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1);
-  };
+  try {
+    const build = (withTrash: boolean) => {
+      let query = supabase
+        .from('certificates')
+        .select('*', { count: 'exact' })
+        .neq('trademark_no', UNHCR_CURRENT_RECORD_ID)
+        .neq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID);
+      if (withTrash) {
+        query = status === 'trashed' ? query.not('deleted_at', 'is', null) : query.is('deleted_at', null);
+      }
+      const search = escapePostgrestSearch(q.search ?? '');
+      if (search) {
+        query = query.or(`trademark_no.ilike.%${search}%,name.ilike.%${search}%,owner_name.ilike.%${search}%`);
+      }
+      if (q.company?.trim()) query = query.ilike('name', `%${escapePostgrestSearch(q.company)}%`);
+      if (q.owner?.trim()) query = query.ilike('owner_name', `%${escapePostgrestSearch(q.owner)}%`);
+      if (q.type?.trim()) query = query.ilike('company_type', `%${escapePostgrestSearch(q.type)}%`);
+      if (q.createdBy) query = query.eq('created_by', q.createdBy);
+      if (q.dateFrom) query = query.gte('synced_at', new Date(`${q.dateFrom}T00:00:00`).toISOString());
+      if (q.dateTo) query = query.lte('synced_at', new Date(`${q.dateTo}T23:59:59.999`).toISOString());
+      return query.order('synced_at', { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1);
+    };
 
-  let { data, error, count } = await build(true);
-  if (error && isMissingDeletedAt(error)) {
-    const fallback = await build(false);
-    data = fallback.data;
-    error = fallback.error;
-    count = fallback.count;
+    let { data, error, count } = await build(true);
+    if (error && isMissingDeletedAt(error)) {
+      const fallback = await build(false);
+      data = fallback.data;
+      error = fallback.error;
+      count = fallback.count;
+    }
+
+    if (error) return { records: [], total: 0, page, pageSize, error: error.message };
+    const records = (data ?? []).map(mapVaultRow);
+    return { records, total: count ?? records.length, page, pageSize, error: null };
+  } catch (err) {
+    return {
+      records: [],
+      total: 0,
+      page,
+      pageSize,
+      error: err instanceof Error ? err.message : 'Could not load vault records.',
+    };
   }
-
-  if (error) return { records: [], total: 0, page, pageSize, error: error.message };
-  const records = (data ?? []).map(mapVaultRow);
-  return { records, total: count ?? records.length, page, pageSize, error: null };
 }
 
 /** Load one vault certificate by trademark number for History → editor reopen. */
@@ -583,26 +593,30 @@ export async function saveUnhcrS2CurrentState(input: {
  * (non-trashed) view as `listVaultRecords` with no pagination.
  */
 export async function loadVault(): Promise<{ records: VaultRecord[]; error: string | null }> {
-  const build = (withTrash: boolean) => {
-    let query = supabase
-      .from('certificates')
-      .select('*')
-      .neq('trademark_no', UNHCR_CURRENT_RECORD_ID)
-      .neq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID);
-    if (withTrash) query = query.is('deleted_at', null);
-    return query.order('synced_at', { ascending: false });
-  };
+  try {
+    const build = (withTrash: boolean) => {
+      let query = supabase
+        .from('certificates')
+        .select('*')
+        .neq('trademark_no', UNHCR_CURRENT_RECORD_ID)
+        .neq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID);
+      if (withTrash) query = query.is('deleted_at', null);
+      return query.order('synced_at', { ascending: false });
+    };
 
-  let { data, error } = await build(true);
-  if (error && isMissingDeletedAt(error)) {
-    const fallback = await build(false);
-    data = fallback.data;
-    error = fallback.error;
+    let { data, error } = await build(true);
+    if (error && isMissingDeletedAt(error)) {
+      const fallback = await build(false);
+      data = fallback.data;
+      error = fallback.error;
+    }
+
+    if (error) return { records: [], error: error.message };
+    const records = (data || []).map(mapVaultRow);
+    return { records, error: null };
+  } catch (err) {
+    return { records: [], error: err instanceof Error ? err.message : 'Could not load vault records.' };
   }
-
-  if (error) return { records: [], error: error.message };
-  const records = (data || []).map(mapVaultRow);
-  return { records, error: null };
 }
 
 /**

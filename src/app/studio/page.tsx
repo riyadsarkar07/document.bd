@@ -42,21 +42,27 @@ export default function DashboardPage() {
 
   useEffect(() => {
     (async () => {
-      const [vault, tpl, proj] = await Promise.all([loadVault(), listTemplates(), listProjects()]);
-      setStats({
-        records: vault.records.length,
-        templates: tpl.data.length,
-        projects: proj.data.length,
-        lastSync: vault.records[0]?.timestamp ?? null,
-      });
       try {
-        const activityKey = await getScopedStorageKey('studio.activity');
-        const local = JSON.parse(window.localStorage.getItem(activityKey) || '[]') as ActivityRecord[];
-        setActivity(local.slice(0, 5));
+        const [vault, tpl, proj] = await Promise.all([loadVault(), listTemplates(), listProjects()]);
+        setStats({
+          records: vault.records.length,
+          templates: tpl.data.length,
+          projects: proj.data.length,
+          lastSync: vault.records[0]?.timestamp ?? null,
+        });
+        try {
+          const activityKey = await getScopedStorageKey('studio.activity');
+          const local = JSON.parse(window.localStorage.getItem(activityKey) || '[]') as ActivityRecord[];
+          setActivity(local.slice(0, 5));
+        } catch {
+          setActivity([]);
+        }
       } catch {
+        setStats({ records: 0, templates: 0, projects: 0, lastSync: null });
         setActivity([]);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     })();
   }, []);
 

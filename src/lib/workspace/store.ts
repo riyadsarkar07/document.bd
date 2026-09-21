@@ -33,8 +33,8 @@ const LS_ACTIVITY_BASE = 'studio.activity';
  */
 export async function getScopedStorageKey(base: string): Promise<string> {
   try {
-    const { data } = await supabase.auth.getUser();
-    if (data?.user?.id) return `${base}.${data.user.id}`;
+    const { data } = await supabase.auth.getSession();
+    if (data?.session?.user?.id) return `${base}.${data.session.user.id}`;
   } catch {
     // fall through to anon scope
   }
@@ -65,12 +65,20 @@ function writeLocal<T>(key: string, value: T): void {
 export async function listTemplates(): Promise<StoreResult<TemplateRecord[]>> {
   const key = await getScopedStorageKey(LS_TEMPLATES_BASE);
   const local = readLocal<TemplateRecord[]>(key, []);
-  const { data, error } = await supabase
-    .from('templates')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) return { data: local, source: 'local', error: null };
-  return { data: data as TemplateRecord[], source: 'supabase', error: null };
+  try {
+    const { data, error } = await supabase
+      .from('templates')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) return { data: local, source: 'local', error: null };
+    return { data: data as TemplateRecord[], source: 'supabase', error: null };
+  } catch (err) {
+    return {
+      data: local,
+      source: 'local',
+      error: err instanceof Error ? err.message : 'Could not load templates.',
+    };
+  }
 }
 
 function withLocalId<T extends { id?: string }>(record: T): T {
@@ -85,8 +93,8 @@ function withLocalId<T extends { id?: string }>(record: T): T {
 export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<TemplateRecord | null>> {
   // Templates are always attributed to the current user so RLS ownership holds
   // even if a caller forgets to set owner_id.
-  const { data: authData } = await supabase.auth.getUser();
-  const ownerId = authData?.user?.id ?? tpl.owner_id;
+  const { data: authData } = await supabase.auth.getSession();
+  const ownerId = authData?.session?.user?.id ?? tpl.owner_id;
   const { data, error } = await supabase
     .from('templates')
     .upsert({ ...tpl, owner_id: ownerId, updated_at: new Date().toISOString() })
@@ -136,12 +144,20 @@ export async function deleteTemplate(id: string): Promise<StoreResult<null>> {
 export async function listProjects(): Promise<StoreResult<ProjectRecord[]>> {
   const key = await getScopedStorageKey(LS_PROJECTS_BASE);
   const local = readLocal<ProjectRecord[]>(key, []);
-  const { data, error } = await supabase
-    .from('projects')
-    .select('*')
-    .order('updated_at', { ascending: false });
-  if (error) return { data: local, source: 'local', error: null };
-  return { data: data as ProjectRecord[], source: 'supabase', error: null };
+  try {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (error) return { data: local, source: 'local', error: null };
+    return { data: data as ProjectRecord[], source: 'supabase', error: null };
+  } catch (err) {
+    return {
+      data: local,
+      source: 'local',
+      error: err instanceof Error ? err.message : 'Could not load projects.',
+    };
+  }
 }
 
 export async function saveProject(proj: ProjectRecord): Promise<StoreResult<ProjectRecord | null>> {
