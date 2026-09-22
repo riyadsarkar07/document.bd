@@ -7,16 +7,43 @@ import { UNHCR_FONT_FACES as UNHCR_S2_FONT_FACES } from '@/lib/constants/unhcr-s
 let loadPromise: Promise<boolean> | null = null;
 let s2FontPromise: Promise<boolean> | null = null;
 
+const TM_CORSIVA_FAMILY = 'Monotype Corsiva Bold Italic';
+
 const TM_FONT_SPECS = [
   "16px 'Arial Regular'",
   "bold 16px 'Arial Regular'",
-  "italic bold 16px 'Monotype Corsiva Bold Italic'",
+  `16px '${TM_CORSIVA_FAMILY}'`,
+  `italic 16px '${TM_CORSIVA_FAMILY}'`,
+  `bold 16px '${TM_CORSIVA_FAMILY}'`,
+  `italic bold 16px '${TM_CORSIVA_FAMILY}'`,
 ] as const;
 
 const TM_FONT_CHECKS = [
   "16px 'Arial Regular'",
-  "16px 'Monotype Corsiva Bold Italic'",
+  `16px '${TM_CORSIVA_FAMILY}'`,
+  `italic bold 16px '${TM_CORSIVA_FAMILY}'`,
 ] as const;
+
+const TM_CORSIVA_DESCRIPTORS: FontFaceDescriptors[] = [
+  {},
+  { style: 'italic' },
+  { weight: 'bold' },
+  { style: 'italic', weight: 'bold' },
+];
+
+async function registerTmCorsivaFaces(): Promise<void> {
+  const src = FONT_FACES.find((face) => face.family === TM_CORSIVA_FAMILY);
+  if (!src) return;
+  for (const descriptor of TM_CORSIVA_DESCRIPTORS) {
+    try {
+      const ff = new FontFace(TM_CORSIVA_FAMILY, `url(${src.url})`, descriptor);
+      await ff.load();
+      document.fonts.add(ff);
+    } catch (err) {
+      console.warn(`[fonts] Failed to load "${TM_CORSIVA_FAMILY}" from ${src.url}`, err);
+    }
+  }
+}
 
 async function waitForDocumentFonts(): Promise<void> {
   try {
@@ -69,6 +96,7 @@ export function loadDocumentFonts(): Promise<boolean> {
   loadPromise = (async () => {
     const faces = [...FONT_FACES, ...UNHCR_FONT_FACES];
     for (const face of faces) {
+      if (face.family === TM_CORSIVA_FAMILY) continue;
       try {
         const descriptor: FontFaceDescriptors = 'weight' in face && face.weight
           ? { weight: face.weight }
@@ -80,6 +108,7 @@ export function loadDocumentFonts(): Promise<boolean> {
         console.warn(`[fonts] Failed to load "${face.family}" from ${face.url}`, err);
       }
     }
+    await registerTmCorsivaFaces();
     try {
       await document.fonts.load("16px 'Arial Bold MT'");
     } catch {

@@ -533,6 +533,34 @@ async function main() {
   assert(r1.ported.w === r1.original.w && r1.ported.h === r1.original.h, 'TM canvas dimensions match');
   assert(buffersEqual(r1.original.buffer, r1.ported.buffer), 'TM default render — pixels identical');
 
+  const corsivaFamily = 'Monotype Corsiva Bold Italic';
+  const corsivaMeasure = (spec: string, sample: string) => {
+    const c = createCanvas(800, 120);
+    const ctx = c.getContext('2d');
+    ctx.font = spec;
+    return ctx.measureText(sample).width;
+  };
+  const corsivaSample = 'Proprietor, Riyad Sarkar';
+  const corsivaPlain = corsivaMeasure(`62px '${corsivaFamily}'`, corsivaSample);
+  const corsivaItalicBold = corsivaMeasure(`italic bold 62px '${corsivaFamily}'`, corsivaSample);
+  const timesItalic = corsivaMeasure("italic 62px 'Times New Roman',serif", corsivaSample);
+  const arialItalic = corsivaMeasure("italic bold 62px 'Arial Regular',sans-serif", corsivaSample);
+  assert(corsivaPlain > 0 && corsivaItalicBold > 0, 'TM Corsiva face measures italic description text');
+  assert(corsivaPlain === corsivaItalicBold, 'TM Corsiva italic/bold descriptors use the same Corsiva file (no synthesized size drift)');
+  assert(corsivaItalicBold !== timesItalic, 'TM italic description is Corsiva, not Times New Roman');
+  assert(corsivaItalicBold !== arialItalic, 'TM italic description is Corsiva, not Arial');
+  const tmRendererSrc = readFileSync(join(ROOT, 'src/lib/renderers/tmRenderer.ts'), 'utf8');
+  const fontsSrcForTm = readFileSync(join(ROOT, 'src/lib/fonts.ts'), 'utf8');
+  const editorSrc = readFileSync(join(ROOT, 'src/components/editor/certificate-editor.tsx'), 'utf8');
+  const historySrcForTm = readFileSync(join(ROOT, 'src/app/studio/history/page.tsx'), 'utf8');
+  assert(
+    tmRendererSrc.includes("italic: `italic bold ${corsivSize}px 'Monotype Corsiva Bold Italic',cursive,serif`"),
+    'TM renderer italic description uses Corsiva at the saved corsivSize',
+  );
+  assert(!tmRendererSrc.includes('Times New Roman'), 'TM renderer does not substitute Times New Roman');
+  assert(fontsSrcForTm.includes("url(${src.url})") && fontsSrcForTm.includes("style: 'italic', weight: 'bold'"), 'TM Corsiva file is registered for italic+bold');
+  assert(editorSrc.includes('ensureTmFontsReady') && historySrcForTm.includes('ensureTmFontsReady'), 'User editor and Admin history both wait for the same Corsiva face');
+
   // TM with logo + logo text (exercises custom logo box + logoText box branches)
   const logoImg = await loadImage('public/assets/nid-bg.png');
   const tmCustom = {

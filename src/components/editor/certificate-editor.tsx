@@ -18,7 +18,7 @@ import { CERTIFICATE_VARIANTS } from '@/lib/editor/certificate-variant';
 import type { CertificateDocKind } from '@/lib/workspace/vault';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
 import { loadImage, loadDataUrlImage } from '@/lib/images';
-import { loadDocumentFonts } from '@/lib/fonts';
+import { ensureTmFontsReady } from '@/lib/fonts';
 import { commitCertificate, getVaultRecord } from '@/lib/workspace/vault';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import { checkLimit } from '@/lib/workspace/limits';
@@ -138,9 +138,10 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // Load renderer fonts once
+  // Load renderer fonts once. Wait for Corsiva itself, not just Arial, so
+  // Admin/User live preview never paints italic description with a substitute.
   useEffect(() => {
-    loadDocumentFonts().then((ok) => {
+    ensureTmFontsReady().then((ok) => {
       setFontsLoaded(ok);
       if (ok) setStatus('Renderer fonts loaded');
     });
@@ -155,6 +156,8 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
   // every frame while typing.
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
+      const fontsOk = await ensureTmFontsReady();
+      if (!fontsOk) return;
       const bg = await loadImage(TM_BACKGROUND);
       const sign = await loadImage(TM_SIGNATURE);
       renderTMCertificate(canvas, presentRef.current, bg, logoImageRef.current, sign, scale);
@@ -211,6 +214,11 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
       toast.error(generationLimit.message ?? 'Generation limit reached.');
       return;
     }
+    const fontsOk = await ensureTmFontsReady();
+    if (!fontsOk) {
+      toast.error('Certificate fonts are not ready. Please try again.');
+      return;
+    }
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
     const canvas = document.createElement('canvas');
@@ -240,6 +248,11 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
     const generationLimit = await checkLimit('generation');
     if (!generationLimit.ok) {
       toast.error(generationLimit.message ?? 'Generation limit reached.');
+      return;
+    }
+    const fontsOk = await ensureTmFontsReady();
+    if (!fontsOk) {
+      toast.error('Certificate fonts are not ready. Please try again.');
       return;
     }
     const bg = await loadImage(TM_BACKGROUND);
@@ -277,13 +290,18 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
   }, [user, toast, setStatus, config]);
 
   const preview = useCallback(async () => {
+    const fontsOk = await ensureTmFontsReady();
+    if (!fontsOk) {
+      toast.error('Certificate fonts are not ready. Please try again.');
+      return;
+    }
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
     const canvas = document.createElement('canvas');
     renderTMCertificate(canvas, presentRef.current, bg, logoImageRef.current, sign, 1);
     setPreviewDataUrl(canvas.toDataURL('image/jpeg', 0.96));
     setPreviewOpen(true);
-  }, []);
+  }, [toast]);
 
   const handleLogoUpload = useCallback(
     async (file: File) => {
@@ -387,6 +405,13 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
       return;
     }
     setStatus('Rendering web-optimized certificate…');
+    const fontsOk = await ensureTmFontsReady();
+    if (!fontsOk) {
+      setBusy(false);
+      setStatus('Publish aborted — fonts not ready');
+      toast.error('Certificate fonts are not ready. Please try again.');
+      return;
+    }
     const bg = await loadImage(TM_BACKGROUND);
     const sign = await loadImage(TM_SIGNATURE);
     const canvas = document.createElement('canvas');
