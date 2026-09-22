@@ -65,24 +65,29 @@ export default function SupportTicketPage() {
   const [savingMeta, setSavingMeta] = useState(false);
 
   const load = useCallback(async () => {
-    const [ticketRes, msgRes, attRes, noteRes] = await Promise.all([
-      getSupportTicket(ticketId),
-      listSupportMessages(ticketId),
-      listSupportAttachments(ticketId),
-      isAdmin ? listSupportNotes(ticketId) : Promise.resolve({ notes: [] as SupportNote[], error: null }),
-    ]);
-    if (ticketRes.error || !ticketRes.ticket) {
+    try {
+      const [ticketRes, msgRes, attRes, noteRes] = await Promise.all([
+        getSupportTicket(ticketId),
+        listSupportMessages(ticketId),
+        listSupportAttachments(ticketId),
+        isAdmin ? listSupportNotes(ticketId) : Promise.resolve({ notes: [] as SupportNote[], error: null }),
+      ]);
+      if (ticketRes.error || !ticketRes.ticket) {
+        setTicket(null);
+        setError(ticketRes.error ?? 'Ticket not found.');
+        return;
+      }
+      setTicket(ticketRes.ticket);
+      setMessages(msgRes.messages);
+      setAttachments(attRes.attachments);
+      setNotes(noteRes.notes);
+      setError(msgRes.error || attRes.error || noteRes.error);
+    } catch (err) {
       setTicket(null);
-      setError(ticketRes.error ?? 'Ticket not found.');
+      setError(err instanceof Error ? err.message : 'Could not load ticket.');
+    } finally {
       setLoading(false);
-      return;
     }
-    setTicket(ticketRes.ticket);
-    setMessages(msgRes.messages);
-    setAttachments(attRes.attachments);
-    setNotes(noteRes.notes);
-    setError(msgRes.error || attRes.error || noteRes.error);
-    setLoading(false);
   }, [ticketId, isAdmin]);
 
   useEffect(() => {

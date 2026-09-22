@@ -35,6 +35,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [source, setSource] = useState<'supabase' | 'local'>('supabase');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' | 'tin' | 'unhcr' }>({
     open: false,
     kind: 'tm',
@@ -43,13 +44,16 @@ export default function ProjectsPage() {
   const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await listProjects();
       setProjects(res.data);
       setSource(res.source);
-    } catch {
+      setError(res.error);
+    } catch (err) {
       setProjects([]);
       setSource('local');
+      setError(err instanceof Error ? err.message : 'Could not load projects.');
     } finally {
       setLoading(false);
     }
@@ -131,6 +135,13 @@ export default function ProjectsPage() {
 
       {loading ? (
         <div className="py-16 text-center text-sm text-dimm">Loading projects…</div>
+      ) : error && projects.length === 0 ? (
+        <EmptyState
+          icon={<FolderKanban className="h-8 w-8" />}
+          title="Projects unavailable"
+          description={error}
+          className="border-danger/30"
+        />
       ) : projects.length === 0 ? (
         <EmptyState
           icon={<FolderKanban className="h-8 w-8" />}

@@ -1,6 +1,6 @@
 'use client';
 
-import { supabase } from '@/lib/supabase/client';
+import { getCachedSession, settleWithTimeout, supabaseData, timedOutQuery, WORKSPACE_QUERY_TIMEOUT_MS } from '@/lib/supabase/client';
 import { validateSupportAttachment } from '@/lib/uploads';
 import { escapePostgrestSearch } from '@/lib/utils';
 import { logAudit } from '@/lib/workspace/audit';
@@ -149,7 +149,7 @@ export async function listSupportTickets(q: SupportTicketQuery = {}): Promise<Su
   const page = Math.max(1, q.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, q.pageSize ?? 20));
 
-  let query = supabase
+  let query = supabaseData
     .from('support_tickets')
     .select(
       'id, ticket_no, user_id, user_email, category, subject, status, priority, assigned_admin_id, assigned_admin_email, last_reply_at, last_reply_by, created_at, updated_at',
@@ -169,7 +169,11 @@ export async function listSupportTickets(q: SupportTicketQuery = {}): Promise<Su
     .order('updated_at', { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1);
 
-  const { data, error, count } = await query;
+  const { data, error, count } = await settleWithTimeout(
+    query,
+    timedOutQuery('Support inbox request timed out.'),
+    WORKSPACE_QUERY_TIMEOUT_MS,
+  );
   if (error) {
     return { tickets: [], total: 0, page, pageSize, error: fail(error.message) };
   }
@@ -181,13 +185,17 @@ export async function getSupportTicket(id: string): Promise<{
   ticket: SupportTicket | null;
   error: string | null;
 }> {
-  const { data, error } = await supabase
-    .from('support_tickets')
-    .select(
-      'id, ticket_no, user_id, user_email, category, subject, status, priority, assigned_admin_id, assigned_admin_email, last_reply_at, last_reply_by, created_at, updated_at',
-    )
-    .eq('id', id)
-    .maybeSingle();
+  const { data, error } = await settleWithTimeout(
+    supabaseData
+      .from('support_tickets')
+      .select(
+        'id, ticket_no, user_id, user_email, category, subject, status, priority, assigned_admin_id, assigned_admin_email, last_reply_at, last_reply_by, created_at, updated_at',
+      )
+      .eq('id', id)
+      .maybeSingle(),
+    timedOutQuery('Support ticket request timed out.'),
+    WORKSPACE_QUERY_TIMEOUT_MS,
+  );
   if (error) return { ticket: null, error: fail(error.message) };
   if (!data) return { ticket: null, error: 'Ticket not found.' };
   return { ticket: mapTicket(data as TicketRow), error: null };
@@ -197,7 +205,7 @@ export async function listSupportMessages(ticketId: string): Promise<{
   messages: SupportMessage[];
   error: string | null;
 }> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseData
     .from('support_messages')
     .select('id, ticket_id, author_id, author_email, author_role, body, created_at')
     .eq('ticket_id', ticketId)
@@ -210,7 +218,7 @@ export async function listSupportNotes(ticketId: string): Promise<{
   notes: SupportNote[];
   error: string | null;
 }> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseData
     .from('support_notes')
     .select('id, ticket_id, author_id, author_email, body, created_at')
     .eq('ticket_id', ticketId)
@@ -223,7 +231,7 @@ export async function listSupportAttachments(ticketId: string): Promise<{
   attachments: SupportAttachment[];
   error: string | null;
 }> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseData
     .from('support_attachments')
     .select(
       'id, ticket_id, message_id, uploaded_by, storage_path, file_name, mime_type, byte_size, created_at',
@@ -234,7 +242,7 @@ export async function listSupportAttachments(ticketId: string): Promise<{
   const rows = (data ?? []) as AttachmentRow[];
   const attachments = await Promise.all(
     rows.map(async (row) => {
-      const { data: signed } = await supabase.storage
+      const { data: signed } = await supabaseData.storage
         .from('support-attachments')
         .createSignedUrl(row.storage_path, 3600);
       return mapAttachment(row, signed?.signedUrl ?? null);
@@ -248,13 +256,10 @@ async function uploadAttachments(ticketId: string, files: File[], messageId?: st
   if (files.length > SUPPORT_ATTACHMENT_MAX_FILES) {
     return `At most ${SUPPORT_ATTACHMENT_MAX_FILES} files can be attached.`;
   }
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const user = session?.user;
+  const user = getCachedSession()?.user;
   if (!user) return 'Not signed in.';
 
-  const { data: ticketRow } = await supabase
+  const { data: ticketRow } = await supabaseData
     .from('support_tickets')
     .select('user_id')
     .eq('id', ticketId)
@@ -269,12 +274,12 @@ async function uploadAttachments(ticketId: string, files: File[], messageId?: st
   for (const file of files) {
     const mime = sniffedMime(file);
     const path = `${ownerId}/${ticketId}/${crypto.randomUUID()}-${safeFileName(file.name)}`;
-    const { error: upErr } = await supabase.storage.from('support-attachments').upload(path, file, {
+    const { error: upErr } = await supabaseData.storage.from('support-attachments').upload(path, file, {
       contentType: mime,
       upsert: false,
     });
     if (upErr) return fail(upErr.message);
-    const { error: rowErr } = await supabase.from('support_attachments').insert({
+    const { error: rowErr } = await supabaseData.from('support_attachments').insert({
       ticket_id: ticketId,
       message_id: messageId ?? null,
       uploaded_by: user.id,
@@ -305,7 +310,7 @@ export async function createSupportTicket(input: {
     if (invalid) return { ticket: null, error: invalid };
   }
 
-  const { data, error } = await supabase.rpc('create_support_ticket', {
+  const { data, error } = await supabaseData.rpc('create_support_ticket', {
     p_category: input.category,
     p_subject: input.subject.trim(),
     p_body: input.body.trim(),
@@ -340,7 +345,7 @@ export async function replySupportTicket(input: {
     if (invalid) return { message: null, error: invalid };
   }
 
-  const { data, error } = await supabase.rpc('reply_support_ticket', {
+  const { data, error } = await supabaseData.rpc('reply_support_ticket', {
     p_ticket_id: input.ticketId,
     p_body: input.body.trim(),
   });
@@ -364,7 +369,7 @@ export async function markSupportTicketInReview(ticketId: string): Promise<{
   ticket: SupportTicket | null;
   error: string | null;
 }> {
-  const { data, error } = await supabase.rpc('mark_support_ticket_in_review', {
+  const { data, error } = await supabaseData.rpc('mark_support_ticket_in_review', {
     p_ticket_id: ticketId,
   });
   if (error || !data) {
@@ -388,7 +393,7 @@ export async function updateSupportTicket(input: {
   priority?: SupportPriority;
   assignSelf?: boolean;
 }): Promise<{ ticket: SupportTicket | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('update_support_ticket', {
+  const { data, error } = await supabaseData.rpc('update_support_ticket', {
     p_ticket_id: input.ticketId,
     p_status: input.status ?? null,
     p_priority: input.priority ?? null,
@@ -416,7 +421,7 @@ export async function addSupportNote(ticketId: string, body: string): Promise<{
 }> {
   const bodyError = validateReplyBody(body);
   if (bodyError) return { note: null, error: bodyError };
-  const { data, error } = await supabase.rpc('add_support_note', {
+  const { data, error } = await supabaseData.rpc('add_support_note', {
     p_ticket_id: ticketId,
     p_body: body.trim(),
   });
@@ -432,18 +437,18 @@ export async function addSupportNote(ticketId: string, body: string): Promise<{
 }
 
 export function subscribeSupportInbox(onChange: () => void): () => void {
-  const channel = supabase
+  const channel = supabaseData
     .channel(`support-inbox-${Date.now()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, onChange)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages' }, onChange)
     .subscribe();
   return () => {
-    void supabase.removeChannel(channel);
+    void supabaseData.removeChannel(channel);
   };
 }
 
 export function subscribeSupportTicket(ticketId: string, onChange: () => void): () => void {
-  const channel = supabase
+  const channel = supabaseData
     .channel(`support-ticket-${ticketId}`)
     .on(
       'postgres_changes',
@@ -467,7 +472,7 @@ export function subscribeSupportTicket(ticketId: string, onChange: () => void): 
     )
     .subscribe();
   return () => {
-    void supabase.removeChannel(channel);
+    void supabaseData.removeChannel(channel);
   };
 }
 

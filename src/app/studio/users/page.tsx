@@ -11,7 +11,7 @@ import {
   Unlock,
   Users,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase/client';
+import { settleWithTimeout, supabaseData, timedOutQuery, WORKSPACE_QUERY_TIMEOUT_MS } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/auth/auth-context';
 import { logActivity } from '@/lib/workspace/store';
 import {
@@ -87,22 +87,22 @@ export default function UsersPage() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-
-    let profileQuery = supabase.from('profiles').select('*', { count: 'exact' }).order('created_at');
+    try {
+    let profileQuery = supabaseData.from('profiles').select('*', { count: 'exact' }).order('created_at');
     const search = escapePostgrestSearch(searchTerm);
     if (search) profileQuery = profileQuery.ilike('email', `%${search}%`);
     profileQuery = profileQuery.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
+    const timedOut = timedOutQuery('Users request timed out.');
     const [profilesRes, usageRes, certsRes] = await Promise.all([
-      profileQuery,
-      supabase.rpc('admin_user_usage'),
-      supabase.rpc('admin_certificate_counts'),
+      settleWithTimeout(profileQuery, timedOut, WORKSPACE_QUERY_TIMEOUT_MS),
+      settleWithTimeout(supabaseData.rpc('admin_user_usage'), timedOut, WORKSPACE_QUERY_TIMEOUT_MS),
+      settleWithTimeout(supabaseData.rpc('admin_certificate_counts'), timedOut, WORKSPACE_QUERY_TIMEOUT_MS),
     ]);
 
     if (profilesRes.error) {
       setError(profilesRes.error.message);
       setUsers([]);
-      setLoading(false);
       return;
     }
 
@@ -147,7 +147,12 @@ export default function UsersPage() {
     setUsers(rows);
     setTotal(profilesRes.count ?? rows.length);
     setError(null);
-    setLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load users.');
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
   }, [searchTerm, page]);
 
   useEffect(() => {
@@ -155,7 +160,7 @@ export default function UsersPage() {
   }, [refresh]);
 
   const setStatus = async (target: AdminUserRow, status: UserStatus) => {
-    const { error: err } = await supabase.from('profiles').update({ status }).eq('id', target.id);
+    const { error: err } = await supabaseData.from('profiles').update({ status }).eq('id', target.id);
     if (err) {
       toast.error(`Update blocked: ${err.message}`);
       return;
@@ -179,7 +184,7 @@ export default function UsersPage() {
       toast.error('You cannot change your own role');
       return;
     }
-    const { error: err } = await supabase.from('profiles').update({ role: newRole }).eq('id', target.id);
+    const { error: err } = await supabaseData.from('profiles').update({ role: newRole }).eq('id', target.id);
     if (err) {
       toast.error(`Role update blocked: ${err.message}`);
       return;
@@ -233,7 +238,7 @@ export default function UsersPage() {
     }
 
     setSavingLimits(true);
-    const { error: err } = await supabase.from('profiles').update(next).eq('id', limitsTarget.id);
+    const { error: err } = await supabaseData.from('profiles').update(next).eq('id', limitsTarget.id);
     setSavingLimits(false);
     if (err) {
       toast.error(`Limit update blocked: ${err.message}`);
@@ -276,7 +281,7 @@ export default function UsersPage() {
       can_self_publish: accessForm.selfPublish,
     };
     setSavingAccess(true);
-    const { error: err } = await supabase.from('profiles').update(next).eq('id', accessTarget.id);
+    const { error: err } = await supabaseData.from('profiles').update(next).eq('id', accessTarget.id);
     setSavingAccess(false);
     if (err) {
       toast.error(`Access update blocked: ${err.message}`);

@@ -1,6 +1,6 @@
 'use client';
 
-import { supabase } from '@/lib/supabase/client';
+import { settleWithTimeout, supabaseData, timedOutQuery, WORKSPACE_QUERY_TIMEOUT_MS } from '@/lib/supabase/client';
 import { TM_DEFAULTS } from '@/lib/constants/tm';
 import { escapePostgrestSearch, formatTimestamp } from '@/lib/utils';
 import { logAudit } from '@/lib/workspace/audit';
@@ -140,7 +140,7 @@ async function writeVaultRow(
   payload: Record<string, unknown>,
   createdBy?: string | null,
 ): Promise<{ error: { message: string } | null }> {
-  const existing = await supabase
+  const existing = await supabaseData
     .from('certificates')
     .select('registration_no, created_by')
     .eq('trademark_no', trademarkNo)
@@ -157,10 +157,10 @@ async function writeVaultRow(
   if (existingRow) {
     if (existingRow.registration_no) payload.registration_no = existingRow.registration_no;
     if (existingRow.created_by) delete payload.created_by;
-    result = await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo);
+    result = await supabaseData.from('certificates').update(payload).eq('trademark_no', trademarkNo);
   } else {
     payload.registration_no = Math.floor(Date.now() / 1000);
-    result = await supabase.from('certificates').insert([payload]);
+    result = await supabaseData.from('certificates').insert([payload]);
   }
 
   let attempts = 0;
@@ -178,8 +178,8 @@ async function writeVaultRow(
     if (drops.length === 0) break;
     for (const key of drops) delete payload[key];
     result = existingRow
-      ? await supabase.from('certificates').update(payload).eq('trademark_no', trademarkNo)
-      : await supabase.from('certificates').insert([payload]);
+      ? await supabaseData.from('certificates').update(payload).eq('trademark_no', trademarkNo)
+      : await supabaseData.from('certificates').insert([payload]);
     attempts += 1;
   }
 
@@ -351,7 +351,7 @@ export async function resolveCreatorEmails(
   // Admins can read any profile (RLS `profiles_admin_select`), so every other
   // creator email is resolved from the `profiles` table (authoritative).
   if (opts.role === 'admin' && ids.length) {
-    const { data, error } = await supabase.from('profiles').select('id, email').in('id', ids);
+    const { data, error } = await supabaseData.from('profiles').select('id, email').in('id', ids);
     if (!error && data) {
       for (const p of data) {
         if (p.id && p.email) map.set(String(p.id), String(p.email));
@@ -401,7 +401,7 @@ export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultLis
 
   try {
     const build = (withTrash: boolean) => {
-      let query = supabase
+      let query = supabaseData
         .from('certificates')
         .select('*', { count: 'exact' })
         .neq('trademark_no', UNHCR_CURRENT_RECORD_ID)
@@ -422,9 +422,10 @@ export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultLis
       return query.order('synced_at', { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1);
     };
 
-    let { data, error, count } = await build(true);
+    const timedOut = timedOutQuery('Vault request timed out.');
+    let { data, error, count } = await settleWithTimeout(build(true), timedOut);
     if (error && isMissingDeletedAt(error)) {
-      const fallback = await build(false);
+      const fallback = await settleWithTimeout(build(false), timedOut);
       data = fallback.data;
       error = fallback.error;
       count = fallback.count;
@@ -451,7 +452,11 @@ export async function getVaultRecord(
   const tm = trademarkNo.trim();
   if (!tm) return { record: null, error: 'Missing Trademark No.' };
   if (isUnhcrCurrentRecordId(tm) || isUnhcrS2CurrentRecordId(tm)) return { record: null, error: 'Record not found.' };
-  const { data, error } = await supabase.from('certificates').select('*').eq('trademark_no', tm).limit(1);
+  const { data, error } = await settleWithTimeout(
+    supabaseData.from('certificates').select('*').eq('trademark_no', tm).limit(1),
+    timedOutQuery('Vault record request timed out.'),
+    WORKSPACE_QUERY_TIMEOUT_MS,
+  );
   if (error) return { record: null, error: error.message };
   const row = data?.[0];
   if (!row) return { record: null, error: 'Record not found.' };
@@ -475,10 +480,10 @@ function mapUnhcrCurrentRow(data: unknown): VaultRecord | null {
  * same workspace row. Private History cases stay behind certificates RLS.
  */
 export async function getUnhcrCurrentState(): Promise<{ record: VaultRecord | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('get_unhcr_current_state');
+  const { data, error } = await supabaseData.rpc('get_unhcr_current_state');
   if (!error) return { record: mapUnhcrCurrentRow(data), error: null };
   if (!isMissingUnhcrCurrentRpc(error.message)) return { record: null, error: error.message };
-  const fallback = await supabase
+  const fallback = await supabaseData
     .from('certificates')
     .select('*')
     .eq('trademark_no', UNHCR_CURRENT_RECORD_ID)
@@ -499,7 +504,7 @@ export async function saveUnhcrCurrentState(input: {
 }): Promise<{ error: string | null; skipped: boolean }> {
   const layout = layoutFromSnapshot(TM_DEFAULTS);
   const details = packDetails('', layout, { docKind: 'unhcr', doc: input.snapshot });
-  const { error } = await supabase.rpc('save_unhcr_current_state', {
+  const { error } = await supabaseData.rpc('save_unhcr_current_state', {
     p_title: input.title || 'UNHCR ID',
     p_subtitle: input.subtitle ?? '',
     p_details: details,
@@ -535,7 +540,11 @@ function mapUnhcrS2CurrentRow(data: unknown): VaultRecord | null {
  * Independent of Server 1 (`UNHCR-CURRENT`). Same `unhcr` tool access.
  */
 export async function getUnhcrS2CurrentState(): Promise<{ record: VaultRecord | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('get_unhcr_s2_current_state');
+  const { data, error } = await settleWithTimeout(
+    supabaseData.rpc('get_unhcr_s2_current_state'),
+    timedOutQuery('Server 2 current-state request timed out.'),
+    WORKSPACE_QUERY_TIMEOUT_MS,
+  );
   if (error && !isMissingUnhcrCurrentRpc(error.message)) {
     return { record: null, error: error.message };
   }
@@ -543,11 +552,15 @@ export async function getUnhcrS2CurrentState(): Promise<{ record: VaultRecord | 
     const record = mapUnhcrS2CurrentRow(data);
     if (record) return { record, error: null };
   }
-  const fallback = await supabase
-    .from('certificates')
-    .select('*')
-    .eq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID)
-    .limit(1);
+  const fallback = await settleWithTimeout(
+    supabaseData
+      .from('certificates')
+      .select('*')
+      .eq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID)
+      .limit(1),
+    timedOutQuery('Server 2 current-state fallback timed out.'),
+    WORKSPACE_QUERY_TIMEOUT_MS,
+  );
   if (fallback.error) {
     const rpcRecord = mapUnhcrS2CurrentRow(data);
     return { record: rpcRecord, error: rpcRecord ? null : fallback.error.message };
@@ -568,7 +581,7 @@ export async function saveUnhcrS2CurrentState(input: {
 }): Promise<{ error: string | null; skipped: boolean }> {
   const layout = layoutFromSnapshot(TM_DEFAULTS);
   const details = packDetails('', layout, { docKind: 'unhcr-s2', doc: input.snapshot });
-  const { error } = await supabase.rpc('save_unhcr_s2_current_state', {
+  const { error } = await supabaseData.rpc('save_unhcr_s2_current_state', {
     p_title: input.title || 'UNHCR ID Server 2',
     p_subtitle: input.subtitle ?? '',
     p_details: details,
@@ -595,7 +608,7 @@ export async function saveUnhcrS2CurrentState(input: {
 export async function loadVault(): Promise<{ records: VaultRecord[]; error: string | null }> {
   try {
     const build = (withTrash: boolean) => {
-      let query = supabase
+      let query = supabaseData
         .from('certificates')
         .select('*')
         .neq('trademark_no', UNHCR_CURRENT_RECORD_ID)
@@ -604,9 +617,10 @@ export async function loadVault(): Promise<{ records: VaultRecord[]; error: stri
       return query.order('synced_at', { ascending: false });
     };
 
-    let { data, error } = await build(true);
+    const timedOut = timedOutQuery('Vault request timed out.');
+    let { data, error } = await settleWithTimeout(build(true), timedOut);
     if (error && isMissingDeletedAt(error)) {
-      const fallback = await build(false);
+      const fallback = await settleWithTimeout(build(false), timedOut);
       data = fallback.data;
       error = fallback.error;
     }
@@ -627,7 +641,11 @@ export async function listVaultOwnerOptions(): Promise<{
   options: { id: string; email: string }[];
   error: string | null;
 }> {
-  const { data, error } = await supabase.from('profiles').select('id, email');
+  const { data, error } = await settleWithTimeout(
+    supabaseData.from('profiles').select('id, email'),
+    timedOutQuery('Vault owner list timed out.'),
+    WORKSPACE_QUERY_TIMEOUT_MS,
+  );
   if (error) return { options: [], error: error.message };
   const options = (data ?? [])
     .filter((p): p is { id: string; email: string } => Boolean(p.id && p.email))
@@ -640,7 +658,7 @@ export async function listVaultOwnerOptions(): Promise<{
 export async function trashVaultRecord(trademarkNo: string): Promise<{ error: string | null }> {
   if (!trademarkNo) return { error: 'Missing Trademark No. — cannot trash the record.' };
   if (isUnhcrCurrentRecordId(trademarkNo)) return { error: 'Shared UNHCR editor state cannot be moved to History trash.' };
-  const { data, error } = await supabase
+  const { data, error } = await supabaseData
     .from('certificates')
     .update({ deleted_at: new Date().toISOString() })
     .eq('trademark_no', trademarkNo)
@@ -656,7 +674,7 @@ export async function trashVaultRecord(trademarkNo: string): Promise<{ error: st
 export async function restoreVaultRecord(trademarkNo: string): Promise<{ error: string | null }> {
   if (!trademarkNo) return { error: 'Missing Trademark No. — cannot restore the record.' };
   if (isUnhcrCurrentRecordId(trademarkNo)) return { error: 'Shared UNHCR editor state is not a History record.' };
-  const { data, error } = await supabase
+  const { data, error } = await supabaseData
     .from('certificates')
     .update({ deleted_at: null })
     .eq('trademark_no', trademarkNo)
@@ -679,7 +697,7 @@ export async function restoreVaultRecord(trademarkNo: string): Promise<{ error: 
 export async function permanentDeleteVaultRecord(trademarkNo: string): Promise<{ error: string | null }> {
   if (!trademarkNo) return { error: 'Missing Trademark No. — cannot delete the record.' };
   if (isUnhcrCurrentRecordId(trademarkNo)) return { error: 'Shared UNHCR editor state cannot be deleted from History.' };
-  const { data, error } = await supabase
+  const { data, error } = await supabaseData
     .from('certificates')
     .delete()
     .eq('trademark_no', trademarkNo)

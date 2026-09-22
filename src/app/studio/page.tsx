@@ -38,30 +38,52 @@ export default function DashboardPage() {
     lastSync: null as string | null,
   });
   const [activity, setActivity] = useState<ActivityRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [vaultLoading, setVaultLoading] = useState(true);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [projectsLoading, setProjectsLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
-        const [vault, tpl, proj] = await Promise.all([loadVault(), listTemplates(), listProjects()]);
-        setStats({
+        const vault = await loadVault();
+        setStats((prev) => ({
+          ...prev,
           records: vault.records.length,
-          templates: tpl.data.length,
-          projects: proj.data.length,
           lastSync: vault.records[0]?.timestamp ?? null,
-        });
-        try {
-          const activityKey = await getScopedStorageKey('studio.activity');
-          const local = JSON.parse(window.localStorage.getItem(activityKey) || '[]') as ActivityRecord[];
-          setActivity(local.slice(0, 5));
-        } catch {
-          setActivity([]);
-        }
+        }));
       } catch {
-        setStats({ records: 0, templates: 0, projects: 0, lastSync: null });
-        setActivity([]);
+        setStats((prev) => ({ ...prev, records: 0, lastSync: null }));
       } finally {
-        setLoading(false);
+        setVaultLoading(false);
+      }
+    })();
+    void (async () => {
+      try {
+        const tpl = await listTemplates();
+        setStats((prev) => ({ ...prev, templates: tpl.data.length }));
+      } catch {
+        setStats((prev) => ({ ...prev, templates: 0 }));
+      } finally {
+        setTemplatesLoading(false);
+      }
+    })();
+    void (async () => {
+      try {
+        const proj = await listProjects();
+        setStats((prev) => ({ ...prev, projects: proj.data.length }));
+      } catch {
+        setStats((prev) => ({ ...prev, projects: 0 }));
+      } finally {
+        setProjectsLoading(false);
+      }
+    })();
+    void (async () => {
+      try {
+        const activityKey = await getScopedStorageKey('studio.activity');
+        const local = JSON.parse(window.localStorage.getItem(activityKey) || '[]') as ActivityRecord[];
+        setActivity(local.slice(0, 5));
+      } catch {
+        setActivity([]);
       }
     })();
   }, []);
@@ -162,7 +184,7 @@ export default function DashboardPage() {
               hint={stats.lastSync ? `Last sync ${timeAgo(stats.lastSync)}` : 'No syncs yet'}
               icon={<History className="h-5 w-5" />}
               tone="gold"
-              loading={loading}
+              loading={vaultLoading}
             />
           </Link>
         ) : (
@@ -173,7 +195,7 @@ export default function DashboardPage() {
               hint="Admin permission required"
               icon={<Lock className="h-5 w-5" />}
               tone="gold"
-              loading={loading}
+              loading={vaultLoading}
             />
           </button>
         )}
@@ -185,7 +207,7 @@ export default function DashboardPage() {
               hint="Reusable document presets"
               icon={<Shapes className="h-5 w-5" />}
               tone="blue"
-              loading={loading}
+              loading={templatesLoading}
             />
           </Link>
         ) : (
@@ -196,7 +218,7 @@ export default function DashboardPage() {
               hint="Admin permission required"
               icon={<Lock className="h-5 w-5" />}
               tone="blue"
-              loading={loading}
+              loading={templatesLoading}
             />
           </button>
         )}
@@ -208,7 +230,7 @@ export default function DashboardPage() {
               hint="Saved working documents"
               icon={<Package className="h-5 w-5" />}
               tone="green"
-              loading={loading}
+              loading={projectsLoading}
             />
           </Link>
         ) : (
@@ -219,7 +241,7 @@ export default function DashboardPage() {
               hint="Admin permission required"
               icon={<Lock className="h-5 w-5" />}
               tone="green"
-              loading={loading}
+              loading={projectsLoading}
             />
           </button>
         )}

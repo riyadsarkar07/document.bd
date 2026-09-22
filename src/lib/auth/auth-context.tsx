@@ -10,7 +10,15 @@ import {
   type ReactNode,
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase/client';
+import {
+  getCachedSession,
+  rememberSession,
+  settleWithTimeout,
+  supabase,
+  supabaseData,
+  timedOutQuery,
+  WORKSPACE_QUERY_TIMEOUT_MS,
+} from '@/lib/supabase/client';
 import type { Profile, Role, UserStatus } from '@/lib/auth/types';
 import { isAdminUserId } from '@/lib/auth/admin';
 
@@ -63,35 +71,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadProfile = useCallback(async (userId: string, email: string) => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      const result = await settleWithTimeout(
+        supabaseData.from('profiles').select('*').eq('id', userId).maybeSingle(),
+        timedOutQuery('Profile request timed out.'),
+        WORKSPACE_QUERY_TIMEOUT_MS,
+      );
 
-      if (data) {
-        setProfile(mapProfileRow(data as Record<string, unknown>, email));
+      if (result.data) {
+        setProfile(mapProfileRow(result.data as Record<string, unknown>, email));
         return;
       }
 
-      if (error) {
+      if (result.error) {
         setProfile(fallbackProfile(userId, email));
         return;
       }
 
       const bootstrapRole: Role = isAdminUserId(userId) ? 'admin' : 'viewer';
 
-      const { data: inserted, error: insertError } = await supabase
-        .from('profiles')
-        .insert({ id: userId, email, role: bootstrapRole, status: 'active' })
-        .select()
-        .maybeSingle();
+      const insertResult = await settleWithTimeout(
+        supabaseData
+          .from('profiles')
+          .insert({ id: userId, email, role: bootstrapRole, status: 'active' })
+          .select()
+          .maybeSingle(),
+        timedOutQuery('Profile bootstrap timed out.'),
+        WORKSPACE_QUERY_TIMEOUT_MS,
+      );
 
-      if (insertError || !inserted) {
+      if (insertResult.error || !insertResult.data) {
         setProfile(fallbackProfile(userId, email, bootstrapRole));
         return;
       }
-      setProfile(mapProfileRow(inserted as Record<string, unknown>, email));
+      setProfile(mapProfileRow(insertResult.data as Record<string, unknown>, email));
     } catch {
       setProfile(fallbackProfile(userId, email));
     }
@@ -99,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const applySession = useCallback(
     (session: Session | null) => {
+      rememberSession(session);
       if (session?.user) {
         setUser(session.user);
         void loadProfile(session.user.id, session.user.email || '').finally(() => setLoading(false));
@@ -114,7 +127,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshProfile = useCallback(async () => {
     const {
       data: { session },
-    } = await supabase.auth.getSession();
+    } = await settleWithTimeout(
+      supabase.auth.getSession(),
+      { data: { session: null }, error: null },
+      8000,
+    );
+    rememberSession(session);
     if (session?.user) {
       setUser(session.user);
       await loadProfile(session.user.id, session.user.email || '');
@@ -129,6 +147,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       applySession(session);
     };
 
+    const cached = getCachedSession();
+    if (cached?.user) apply(cached);
+
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setTimeout(() => apply(session), 0);
     });
@@ -140,8 +161,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setLoading(false);
       });
 
+    const bootstrapTimer = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 8000);
+
     return () => {
       cancelled = true;
+      clearTimeout(bootstrapTimer);
       sub.subscription.unsubscribe();
     };
   }, [applySession]);
@@ -150,6 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string) => {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { error: error.message };
+      rememberSession(data.session);
       if (data.user) {
         setUser(data.user);
         await loadProfile(data.user.id, data.user.email || '');
@@ -161,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    rememberSession(null);
     setUser(null);
     setProfile(null);
   }, []);

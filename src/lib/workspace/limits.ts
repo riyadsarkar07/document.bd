@@ -1,6 +1,6 @@
 'use client';
 
-import { supabase } from '@/lib/supabase/client';
+import { settleWithTimeout, supabaseData, timedOutQuery, WORKSPACE_QUERY_TIMEOUT_MS } from '@/lib/supabase/client';
 import type { UserStatus } from '@/lib/auth/types';
 
 /**
@@ -49,7 +49,11 @@ function toInt(v: unknown): number | null {
 
 /** Fetch the signed-in user's usage + limits via the `my_usage` RPC. */
 export async function fetchMyUsage(): Promise<UsageInfo | null> {
-  const { data, error } = await supabase.rpc('my_usage');
+  const { data, error } = await settleWithTimeout(
+    supabaseData.rpc('my_usage'),
+    timedOutQuery('Usage request timed out.'),
+    WORKSPACE_QUERY_TIMEOUT_MS,
+  );
   if (error || !data) return null;
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return null;

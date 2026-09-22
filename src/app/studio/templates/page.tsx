@@ -35,6 +35,7 @@ export default function TemplatesPage() {
   const [templates, setTemplates] = useState<TemplateRecord[]>([]);
   const [source, setSource] = useState<'supabase' | 'local'>('supabase');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' | 'tin' | 'unhcr' }>({
     open: false,
     kind: 'tm',
@@ -44,13 +45,16 @@ export default function TemplatesPage() {
   const [deleteTarget, setDeleteTarget] = useState<TemplateRecord | null>(null);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await listTemplates();
       setTemplates(res.data);
       setSource(res.source);
-    } catch {
+      setError(res.error);
+    } catch (err) {
       setTemplates([]);
       setSource('local');
+      setError(err instanceof Error ? err.message : 'Could not load templates.');
     } finally {
       setLoading(false);
     }
@@ -134,6 +138,13 @@ export default function TemplatesPage() {
 
       {loading ? (
         <div className="py-16 text-center text-sm text-dimm">Loading templates…</div>
+      ) : error && templates.length === 0 ? (
+        <EmptyState
+          icon={<Shapes className="h-8 w-8" />}
+          title="Templates unavailable"
+          description={error}
+          className="border-danger/30"
+        />
       ) : templates.length === 0 ? (
         <EmptyState
           icon={<Shapes className="h-8 w-8" />}

@@ -1,6 +1,12 @@
 'use client';
 
-import { supabase } from '@/lib/supabase/client';
+import {
+  getCachedSession,
+  settleWithTimeout,
+  supabaseData,
+  timedOutQuery,
+  WORKSPACE_QUERY_TIMEOUT_MS,
+} from '@/lib/supabase/client';
 import { logAudit } from '@/lib/workspace/audit';
 import type { ActivityRecord, ProjectRecord, TemplateRecord } from '@/lib/auth/types';
 
@@ -32,12 +38,8 @@ const LS_ACTIVITY_BASE = 'studio.activity';
  * Falls back to `anon` when no session is available.
  */
 export async function getScopedStorageKey(base: string): Promise<string> {
-  try {
-    const { data } = await supabase.auth.getSession();
-    if (data?.session?.user?.id) return `${base}.${data.session.user.id}`;
-  } catch {
-    // fall through to anon scope
-  }
+  const userId = getCachedSession()?.user?.id;
+  if (userId) return `${base}.${userId}`;
   return `${base}.anon`;
 }
 
@@ -66,12 +68,19 @@ export async function listTemplates(): Promise<StoreResult<TemplateRecord[]>> {
   const key = await getScopedStorageKey(LS_TEMPLATES_BASE);
   const local = readLocal<TemplateRecord[]>(key, []);
   try {
-    const { data, error } = await supabase
-      .from('templates')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (error) return { data: local, source: 'local', error: null };
-    return { data: data as TemplateRecord[], source: 'supabase', error: null };
+    const { data, error } = await settleWithTimeout(
+      supabaseData.from('templates').select('*').order('created_at', { ascending: false }),
+      timedOutQuery('Templates request timed out.'),
+      WORKSPACE_QUERY_TIMEOUT_MS,
+    );
+    if (error) {
+      return {
+        data: local,
+        source: 'local',
+        error: local.length ? null : error.message,
+      };
+    }
+    return { data: (data as TemplateRecord[]) ?? [], source: 'supabase', error: null };
   } catch (err) {
     return {
       data: local,
@@ -93,9 +102,8 @@ function withLocalId<T extends { id?: string }>(record: T): T {
 export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<TemplateRecord | null>> {
   // Templates are always attributed to the current user so RLS ownership holds
   // even if a caller forgets to set owner_id.
-  const { data: authData } = await supabase.auth.getSession();
-  const ownerId = authData?.session?.user?.id ?? tpl.owner_id;
-  const { data, error } = await supabase
+  const ownerId = getCachedSession()?.user?.id ?? tpl.owner_id;
+  const { data, error } = await supabaseData
     .from('templates')
     .upsert({ ...tpl, owner_id: ownerId, updated_at: new Date().toISOString() })
     .select()
@@ -123,7 +131,7 @@ export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<Tem
 }
 
 export async function deleteTemplate(id: string): Promise<StoreResult<null>> {
-  const { data, error } = await supabase.from('templates').delete().eq('id', id).select('name');
+  const { data, error } = await supabaseData.from('templates').delete().eq('id', id).select('name');
   if (error) {
     if (isEnforcementError(error)) {
       return { data: null, source: 'supabase', error: error.message };
@@ -145,12 +153,19 @@ export async function listProjects(): Promise<StoreResult<ProjectRecord[]>> {
   const key = await getScopedStorageKey(LS_PROJECTS_BASE);
   const local = readLocal<ProjectRecord[]>(key, []);
   try {
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .order('updated_at', { ascending: false });
-    if (error) return { data: local, source: 'local', error: null };
-    return { data: data as ProjectRecord[], source: 'supabase', error: null };
+    const { data, error } = await settleWithTimeout(
+      supabaseData.from('projects').select('*').order('updated_at', { ascending: false }),
+      timedOutQuery('Projects request timed out.'),
+      WORKSPACE_QUERY_TIMEOUT_MS,
+    );
+    if (error) {
+      return {
+        data: local,
+        source: 'local',
+        error: local.length ? null : error.message,
+      };
+    }
+    return { data: (data as ProjectRecord[]) ?? [], source: 'supabase', error: null };
   } catch (err) {
     return {
       data: local,
@@ -161,7 +176,7 @@ export async function listProjects(): Promise<StoreResult<ProjectRecord[]>> {
 }
 
 export async function saveProject(proj: ProjectRecord): Promise<StoreResult<ProjectRecord | null>> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseData
     .from('projects')
     .upsert({ ...proj, updated_at: new Date().toISOString() })
     .select()
@@ -189,7 +204,7 @@ export async function saveProject(proj: ProjectRecord): Promise<StoreResult<Proj
 }
 
 export async function deleteProject(id: string): Promise<StoreResult<null>> {
-  const { data, error } = await supabase.from('projects').delete().eq('id', id).select('name');
+  const { data, error } = await supabaseData.from('projects').delete().eq('id', id).select('name');
   if (error) {
     if (isEnforcementError(error)) {
       return { data: null, source: 'supabase', error: error.message };
@@ -208,7 +223,7 @@ export async function deleteProject(id: string): Promise<StoreResult<null>> {
 /* ────────────────────────── Activity ────────────────────────── */
 
 export async function logActivity(record: ActivityRecord): Promise<void> {
-  const { error } = await supabase.from('activity_logs').insert({
+  const { error } = await supabaseData.from('activity_logs').insert({
     user_id: record.user_id,
     email: record.email,
     action: record.action,
@@ -229,11 +244,19 @@ export async function logActivity(record: ActivityRecord): Promise<void> {
 export async function listActivity(opts?: { userId?: string }): Promise<StoreResult<ActivityRecord[]>> {
   const key = await getScopedStorageKey(LS_ACTIVITY_BASE);
   const local = readLocal<ActivityRecord[]>(key, []);
-  let query = supabase.from('activity_logs').select('*');
-  if (opts?.userId) query = query.eq('user_id', opts.userId);
-  const { data, error } = await query.order('created_at', { ascending: false }).limit(200);
-  if (error || !data?.length) {
+  try {
+    let query = supabaseData.from('activity_logs').select('*');
+    if (opts?.userId) query = query.eq('user_id', opts.userId);
+    const { data, error } = await settleWithTimeout(
+      query.order('created_at', { ascending: false }).limit(200),
+      timedOutQuery('Activity request timed out.'),
+      WORKSPACE_QUERY_TIMEOUT_MS,
+    );
+    if (error || !data?.length) {
+      return { data: local.length ? local : [], source: local.length ? 'local' : 'supabase', error: null };
+    }
+    return { data: data as ActivityRecord[], source: 'supabase', error: null };
+  } catch {
     return { data: local.length ? local : [], source: local.length ? 'local' : 'supabase', error: null };
   }
-  return { data: data as ActivityRecord[], source: 'supabase', error: null };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { supabase } from '@/lib/supabase/client';
+import { getCachedAccessToken } from '@/lib/supabase/client';
 import type { PublishStatus } from '@/lib/workspace/vault';
 
 export type PublishAction = 'publish' | 'unpublish';
@@ -29,10 +29,7 @@ export interface PublishResult {
  * reaches this client code.
  */
 export async function apiPublish(request: PublishRequest): Promise<PublishResult> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  const token = getCachedAccessToken();
   if (!token) {
     return { ok: false, error: 'You must be signed in to publish.' };
   }
@@ -90,10 +87,7 @@ export interface PreflightResult {
  * ready before the first real publish. No commits, no writes.
  */
 export async function apiPreflight(): Promise<PreflightResult> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  const token = getCachedAccessToken();
   if (!token) {
     return { ok: false, error: 'You must be signed in to run the preflight check.' };
   }

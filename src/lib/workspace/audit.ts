@@ -1,6 +1,6 @@
 'use client';
 
-import { supabase } from '@/lib/supabase/client';
+import { getCachedSession, settleWithTimeout, supabaseData, timedOutQuery, WORKSPACE_QUERY_TIMEOUT_MS } from '@/lib/supabase/client';
 import { escapePostgrestSearch } from '@/lib/utils';
 
 export interface AuditLog {
@@ -39,17 +39,14 @@ export async function logAudit(entry: {
   let actorId: string | null = null;
   let actorEmail: string | null = null;
   try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
+    const user = getCachedSession()?.user;
     if (!user) return;
     actorId = user.id;
     actorEmail = user.email ?? null;
   } catch {
     return;
   }
-  await supabase.from('audit_logs').insert({
+  await supabaseData.from('audit_logs').insert({
     actor_id: actorId,
     actor_email: actorEmail,
     action: entry.action,
@@ -79,7 +76,7 @@ export async function listAuditLogs(q: AuditQuery = {}): Promise<AuditListResult
   const page = Math.max(1, q.page ?? 1);
   const pageSize = Math.min(200, Math.max(1, q.pageSize ?? 50));
 
-  let query = supabase
+  let query = supabaseData
     .from('audit_logs')
     .select('id, actor_id, actor_email, action, target_type, target_id, metadata, created_at', {
       count: 'exact',
@@ -96,7 +93,11 @@ export async function listAuditLogs(q: AuditQuery = {}): Promise<AuditListResult
   if (q.dateTo) query = query.lte('created_at', new Date(`${q.dateTo}T23:59:59.999`).toISOString());
   query = query.order('created_at', { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1);
 
-  const { data, error, count } = await query;
+  const { data, error, count } = await settleWithTimeout(
+    query,
+    timedOutQuery('Audit request timed out.'),
+    WORKSPACE_QUERY_TIMEOUT_MS,
+  );
 
   if (error) {
     return { rows: [], total: 0, page, pageSize, error: error.message };

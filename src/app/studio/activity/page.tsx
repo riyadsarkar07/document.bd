@@ -65,10 +65,16 @@ export default function ActivityPage() {
   }, []);
 
   const refreshUserLogs = useCallback(async () => {
-    const res = await listActivity(userFilter ? { userId: userFilter } : undefined);
-    setLogs(res.data);
-    setSource(res.source);
-    setLoading(false);
+    try {
+      const res = await listActivity(userFilter ? { userId: userFilter } : undefined);
+      setLogs(res.data);
+      setSource(res.source);
+    } catch {
+      setLogs([]);
+      setSource('local');
+    } finally {
+      setLoading(false);
+    }
   }, [userFilter]);
 
   useEffect(() => {
@@ -78,18 +84,25 @@ export default function ActivityPage() {
 
   const refreshAudit = useCallback(async () => {
     setAuditLoading(true);
-    const res = await listAuditLogs({
-      search: auditSearch,
-      action: auditAction || undefined,
-      dateFrom: auditDateFrom || undefined,
-      dateTo: auditDateTo || undefined,
-      page: auditPage,
-      pageSize: AUDIT_PAGE_SIZE,
-    });
-    setAuditRows(res.rows);
-    setAuditTotal(res.total);
-    setAuditError(res.error);
-    setAuditLoading(false);
+    try {
+      const res = await listAuditLogs({
+        search: auditSearch,
+        action: auditAction || undefined,
+        dateFrom: auditDateFrom || undefined,
+        dateTo: auditDateTo || undefined,
+        page: auditPage,
+        pageSize: AUDIT_PAGE_SIZE,
+      });
+      setAuditRows(res.rows);
+      setAuditTotal(res.total);
+      setAuditError(res.error);
+    } catch (err) {
+      setAuditRows([]);
+      setAuditTotal(0);
+      setAuditError(err instanceof Error ? err.message : 'Could not load audit trail.');
+    } finally {
+      setAuditLoading(false);
+    }
   }, [auditSearch, auditAction, auditDateFrom, auditDateTo, auditPage]);
 
   useEffect(() => {

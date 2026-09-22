@@ -53,17 +53,24 @@ export default function SupportInboxPage() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const res = await listSupportTickets({
-      search: searchTerm,
-      status,
-      category,
-      page,
-      pageSize: PAGE_SIZE,
-    });
-    setTickets(res.tickets);
-    setTotal(res.total);
-    setError(res.error);
-    setLoading(false);
+    try {
+      const res = await listSupportTickets({
+        search: searchTerm,
+        status,
+        category,
+        page,
+        pageSize: PAGE_SIZE,
+      });
+      setTickets(res.tickets);
+      setTotal(res.total);
+      setError(res.error);
+    } catch (err) {
+      setTickets([]);
+      setTotal(0);
+      setError(err instanceof Error ? err.message : 'Could not load tickets.');
+    } finally {
+      setLoading(false);
+    }
   }, [searchTerm, status, category, page]);
 
   useEffect(() => {
