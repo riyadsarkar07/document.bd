@@ -78,6 +78,7 @@ const FONT_FILES: Record<string, string> = {
   'Arial Bold': 'public/assets/arial-regular.ttf',
   'Arial Bold MT': 'public/assets/arial-bold.ttf',
   'Monotype Corsiva Bold Italic': 'public/assets/monotype-corsiva-bold-italic.otf',
+  'Times New Roman Italic': 'public/assets/FontsFree-Net-times-new-roman-italic.ttf',
   Kalpurush: 'public/assets/kalpurush.ttf',
   'Kalpurush Bold': 'public/assets/kalpurush.ttf',
 };
@@ -139,7 +140,7 @@ function originalTmRenderToCanvas(canvas: any, snap: TMSnapshot, bgImg: any, cus
   tk(snap.goodsDesc, 'italic');
   const fontMap: Record<string, string> = {
     normal: `bold ${arialSize}px 'Arial Regular',sans-serif`,
-    italic: `italic bold ${corsivSize}px 'Monotype Corsiva Bold Italic',cursive,serif`,
+    italic: `italic ${corsivSize}px 'Times New Roman Italic','Times New Roman',Times,serif`,
   };
   const linePad: Record<string, number> = { normal: arialSize + 14, italic: corsivSize + 14 };
   const leftBound = W * 0.12;

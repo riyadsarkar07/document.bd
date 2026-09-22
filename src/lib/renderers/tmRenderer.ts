@@ -87,7 +87,7 @@ export function renderTMCertificate(
   tk(snap.goodsDesc, 'italic');
   const fontMap: Record<TokenStyle, string> = {
     normal: `bold ${arialSize}px 'Arial Regular',sans-serif`,
-    italic: `italic bold ${corsivSize}px 'Monotype Corsiva Bold Italic',cursive,serif`,
+    italic: `italic ${corsivSize}px 'Times New Roman Italic','Times New Roman',Times,serif`,
   };
   const linePad: Record<TokenStyle, number> = { normal: arialSize + 14, italic: corsivSize + 14 };
   const leftBound = W * 0.12;
