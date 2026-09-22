@@ -131,7 +131,6 @@ export const FONT_FACES = [
   { family: 'Arial Regular', url: '/assets/arial-regular.ttf' },
   { family: 'Arial Bold', url: '/assets/arial-regular.ttf', weight: 'bold' },
   { family: 'Monotype Corsiva Bold Italic', url: '/assets/monotype-corsiva-bold-italic.otf' },
-  { family: 'Times New Roman Italic', url: '/assets/FontsFree-Net-times-new-roman-italic.ttf' },
   { family: 'Kalpurush', url: '/assets/kalpurush.ttf' },
   { family: 'Kalpurush Bold', url: '/assets/kalpurush.ttf', weight: 'bold' },
 ];

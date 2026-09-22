@@ -10,12 +10,12 @@ let s2FontPromise: Promise<boolean> | null = null;
 const TM_FONT_SPECS = [
   "16px 'Arial Regular'",
   "bold 16px 'Arial Regular'",
-  "italic 16px 'Times New Roman Italic'",
+  "italic bold 16px 'Monotype Corsiva Bold Italic'",
 ] as const;
 
 const TM_FONT_CHECKS = [
   "16px 'Arial Regular'",
-  "16px 'Times New Roman Italic'",
+  "16px 'Monotype Corsiva Bold Italic'",
 ] as const;
 
 async function waitForDocumentFonts(): Promise<void> {
