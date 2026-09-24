@@ -256,6 +256,11 @@ function PdfEditorInner() {
           setStatus('Upload a PDF to begin');
           return;
         }
+        if (res.record.docKind !== 'pdf') {
+          toast.error('This History record is not a PDF document.');
+          setStatus('Upload a PDF to begin');
+          return;
+        }
         const payload = res.record.doc as PdfVaultPayload | undefined;
         const bytes = payload?.sourceDataUrl ? pdfDataUrlToBytes(payload.sourceDataUrl) : null;
         if (!payload || !bytes) {

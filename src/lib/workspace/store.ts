@@ -281,11 +281,19 @@ export async function listActivity(opts?: { userId?: string }): Promise<StoreRes
       timedOutQuery('Activity request timed out.'),
       WORKSPACE_QUERY_TIMEOUT_MS,
     );
-    if (error || !data?.length) {
-      return { data: local.length ? local : [], source: local.length ? 'local' : 'supabase', error: null };
+    if (error) {
+      return {
+        data: local,
+        source: 'local',
+        error: local.length ? null : error.message,
+      };
     }
-    return { data: data as ActivityRecord[], source: 'supabase', error: null };
-  } catch {
-    return { data: local.length ? local : [], source: local.length ? 'local' : 'supabase', error: null };
+    return { data: (data as ActivityRecord[]) ?? [], source: 'supabase', error: null };
+  } catch (err) {
+    return {
+      data: local,
+      source: 'local',
+      error: local.length ? null : err instanceof Error ? err.message : 'Could not load activity.',
+    };
   }
 }

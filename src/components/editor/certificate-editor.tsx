@@ -94,11 +94,17 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
     const projectId = searchParams.get('project');
     const templateName = searchParams.get('template');
     const recordNo = searchParams.get('record');
+    let cancelled = false;
     (async () => {
       if (recordNo) {
         const res = await getVaultRecord(recordNo);
+        if (cancelled) return;
         if (res.error || !res.record) {
           toast.error(res.error ?? 'Could not load vault record');
+          return;
+        }
+        if (res.record.docKind && res.record.docKind !== config.kind) {
+          toast.error(`This History record is not a ${config.kindLabel}.`);
           return;
         }
         const snap: Partial<TMSnapshot> = { ...res.record };
@@ -117,6 +123,7 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
       }
       if (projectId) {
         const res = await listProjects();
+        if (cancelled) return;
         const found = res.data.find((p) => String(p.id) === projectId || p.name === projectId);
         if (found) {
           externalCacheRef.current = { ...config.defaults, ...(found.state as Partial<TMSnapshot>), docKind: config.kind };
@@ -126,6 +133,7 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
         }
       } else if (templateName) {
         const res = await listTemplates();
+        if (cancelled) return;
         const found = res.data.find((t) => String(t.id) === templateName || t.name === templateName);
         if (found) {
           externalCacheRef.current = { ...config.defaults, ...(found.state as Partial<TMSnapshot>), docKind: config.kind };
@@ -135,6 +143,9 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
         }
       }
     })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 

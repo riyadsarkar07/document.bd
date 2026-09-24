@@ -161,6 +161,7 @@ export default function HistoryPage() {
     const canvas = await renderHistoryCertificate(record, TM_EXPORT_SCALE);
     if (!canvas) {
       toast.error('Certificate fonts are not ready. Please try again.');
+      setPreview(null);
       return;
     }
     setPreviewImg(canvas.toDataURL('image/jpeg', 0.96));

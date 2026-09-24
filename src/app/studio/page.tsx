@@ -39,6 +39,7 @@ export default function DashboardPage() {
   });
   const [activity, setActivity] = useState<ActivityRecord[]>([]);
   const [vaultLoading, setVaultLoading] = useState(true);
+  const [vaultError, setVaultError] = useState<string | null>(null);
   const [templatesLoading, setTemplatesLoading] = useState(true);
   const [projectsLoading, setProjectsLoading] = useState(true);
 
@@ -46,12 +47,19 @@ export default function DashboardPage() {
     void (async () => {
       try {
         const vault = await loadVault();
-        setStats((prev) => ({
-          ...prev,
-          records: vault.records.length,
-          lastSync: vault.records[0]?.timestamp ?? null,
-        }));
+        if (vault.error) {
+          setVaultError(vault.error);
+          setStats((prev) => ({ ...prev, records: 0, lastSync: null }));
+        } else {
+          setVaultError(null);
+          setStats((prev) => ({
+            ...prev,
+            records: vault.records.length,
+            lastSync: vault.records[0]?.timestamp ?? null,
+          }));
+        }
       } catch {
+        setVaultError('Could not load vault records.');
         setStats((prev) => ({ ...prev, records: 0, lastSync: null }));
       } finally {
         setVaultLoading(false);
@@ -180,8 +188,8 @@ export default function DashboardPage() {
           <Link href="/studio/history">
             <StatCard
               label="Vault Records"
-              value={stats.records}
-              hint={stats.lastSync ? `Last sync ${timeAgo(stats.lastSync)}` : 'No syncs yet'}
+              value={vaultError ? '—' : stats.records}
+              hint={vaultError ? 'Vault unavailable' : stats.lastSync ? `Last sync ${timeAgo(stats.lastSync)}` : 'No syncs yet'}
               icon={<History className="h-5 w-5" />}
               tone="gold"
               loading={vaultLoading}

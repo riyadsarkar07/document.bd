@@ -45,6 +45,7 @@ export default function ActivityPage() {
   const [logs, setLogs] = useState<ActivityRecord[]>([]);
   const [source, setSource] = useState<'supabase' | 'local'>('supabase');
   const [loading, setLoading] = useState(true);
+  const [userError, setUserError] = useState<string | null>(null);
   const [userFilter, setUserFilter] = useState<string | null>(null);
 
   const [auditRows, setAuditRows] = useState<AuditLog[]>([]);
@@ -69,9 +70,11 @@ export default function ActivityPage() {
       const res = await listActivity(userFilter ? { userId: userFilter } : undefined);
       setLogs(res.data);
       setSource(res.source);
+      setUserError(res.error);
     } catch {
       setLogs([]);
       setSource('local');
+      setUserError('Could not load activity.');
     } finally {
       setLoading(false);
     }
@@ -171,6 +174,13 @@ export default function ActivityPage() {
 
           {loading ? (
             <div className="py-16 text-center text-sm text-dimm">Loading activity…</div>
+          ) : userError && logs.length === 0 ? (
+            <EmptyState
+              icon={<ActivityIcon className="h-8 w-8" />}
+              title="Activity unavailable"
+              description={userError}
+              className="border-danger/30"
+            />
           ) : logs.length === 0 ? (
             <EmptyState
               icon={<ActivityIcon className="h-8 w-8" />}

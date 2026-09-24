@@ -59,6 +59,10 @@ export function ServiceRecordEditor({ config }: { config: ServiceEditorConfig })
         toast.error(res.error ?? 'Could not load History record');
         return;
       }
+      if (res.record.docKind !== config.kind) {
+        toast.error(`This History record is not a ${config.title}.`);
+        return;
+      }
       const next = normalizeServiceSnapshot(config, res.record.doc as Partial<ServiceSnapshot>);
       externalCacheRef.current = next;
       editor.replace(next);

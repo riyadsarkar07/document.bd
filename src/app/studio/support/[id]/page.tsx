@@ -138,7 +138,12 @@ export default function SupportTicketPage() {
       toast.error(res.error ?? 'Could not send reply.');
       return;
     }
-    if (res.error) toast.error(res.error);
+    if (res.error) {
+      toast.error(res.error);
+      setReply('');
+      void load();
+      return;
+    }
     setReply('');
     setFiles([]);
     toast.success('Reply sent');

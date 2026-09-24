@@ -285,7 +285,10 @@ function ComposeTicketModal({
       toast.error(res.error ?? 'Could not create ticket.');
       return;
     }
-    if (res.error) toast.error(res.error);
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
     onCreated(res.ticket);
   };
 

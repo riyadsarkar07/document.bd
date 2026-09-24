@@ -88,6 +88,10 @@ export default function TemplatesPage() {
       owner_id: user?.id,
     };
     const res = await saveTemplate(tpl);
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
     setModal({ open: false, kind: modal.kind });
     toast.success(
       res.source === 'local'

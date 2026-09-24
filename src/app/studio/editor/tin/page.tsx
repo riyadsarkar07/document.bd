@@ -112,11 +112,17 @@ function TINEditorInner() {
     const projectId = searchParams.get('project');
     const templateName = searchParams.get('template');
     const recordNo = searchParams.get('record');
+    let cancelled = false;
     (async () => {
       if (recordNo) {
         const res = await getVaultRecord(recordNo);
+        if (cancelled) return;
         if (res.error || !res.record) {
           toast.error(res.error ?? 'Could not load History record');
+          return;
+        }
+        if (res.record.docKind !== 'tin') {
+          toast.error('This History record is not a TIN record.');
           return;
         }
         const next = normalizeTinSnapshot((res.record.doc as Partial<TINSnapshot>) ?? {});
@@ -129,26 +135,43 @@ function TINEditorInner() {
       }
       if (projectId) {
         const res = await listProjects();
+        if (cancelled) return;
         const found = res.data.find((p) => String(p.id) === projectId || p.name === projectId);
-        if (found) {
-          const next = normalizeTinSnapshot(found.state as Partial<TINSnapshot>);
-          externalCacheRef.current = next;
-          editor.replace(next);
-          setStatus(`Project "${found.name}" loaded`);
-          toast.success(`Project "${found.name}" loaded`);
+        if (!found) {
+          toast.error(res.error ?? 'Project not found');
+          return;
         }
+        if (found.kind !== 'tin') {
+          toast.error('This project is not a TIN record.');
+          return;
+        }
+        const next = normalizeTinSnapshot(found.state as Partial<TINSnapshot>);
+        externalCacheRef.current = next;
+        editor.replace(next);
+        setStatus(`Project "${found.name}" loaded`);
+        toast.success(`Project "${found.name}" loaded`);
       } else if (templateName) {
         const res = await listTemplates();
+        if (cancelled) return;
         const found = res.data.find((t) => String(t.id) === templateName || t.name === templateName);
-        if (found) {
-          const next = normalizeTinSnapshot(found.state as Partial<TINSnapshot>);
-          externalCacheRef.current = next;
-          editor.replace(next);
-          setStatus(`Template "${found.name}" applied`);
-          toast.success(`Template "${found.name}" applied`);
+        if (!found) {
+          toast.error(res.error ?? 'Template not found');
+          return;
         }
+        if (found.kind !== 'tin') {
+          toast.error('This template is not a TIN record.');
+          return;
+        }
+        const next = normalizeTinSnapshot(found.state as Partial<TINSnapshot>);
+        externalCacheRef.current = next;
+        editor.replace(next);
+        setStatus(`Template "${found.name}" applied`);
+        toast.success(`Template "${found.name}" applied`);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -248,8 +271,11 @@ function TINEditorInner() {
 
   const reset = useCallback(() => {
     editor.reset();
+    lastQrPayloadRef.current = null;
     setQrDataUrl(null);
     setQrImg(null);
+    externalCacheRef.current = null;
+    setHistoryRecordId(null);
     setStatus('Defaults applied');
     toast.info('TIN editor reset to defaults');
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -68,11 +68,17 @@ function NIDEditorInner() {
     const projectId = searchParams.get('project');
     const templateName = searchParams.get('template');
     const recordNo = searchParams.get('record');
+    let cancelled = false;
     (async () => {
       if (recordNo) {
         const res = await getVaultRecord(recordNo);
+        if (cancelled) return;
         if (res.error || !res.record) {
           toast.error(res.error ?? 'Could not load History record');
+          return;
+        }
+        if (res.record.docKind !== 'nid') {
+          toast.error('This History record is not an NID card.');
           return;
         }
         const next = { ...NID_DEFAULTS, ...((res.record.doc as Partial<NIDSnapshot>) ?? {}) };
@@ -85,26 +91,43 @@ function NIDEditorInner() {
       }
       if (projectId) {
         const res = await listProjects();
+        if (cancelled) return;
         const found = res.data.find((p) => String(p.id) === projectId || p.name === projectId);
-        if (found) {
-          const next = { ...NID_DEFAULTS, ...(found.state as Partial<NIDSnapshot>) };
-          externalCacheRef.current = next;
-          editor.replace(next);
-          setStatus(`Project "${found.name}" loaded`);
-          toast.success(`Project "${found.name}" loaded`);
+        if (!found) {
+          toast.error(res.error ?? 'Project not found');
+          return;
         }
+        if (found.kind !== 'nid') {
+          toast.error('This project is not an NID card.');
+          return;
+        }
+        const next = { ...NID_DEFAULTS, ...(found.state as Partial<NIDSnapshot>) };
+        externalCacheRef.current = next;
+        editor.replace(next);
+        setStatus(`Project "${found.name}" loaded`);
+        toast.success(`Project "${found.name}" loaded`);
       } else if (templateName) {
         const res = await listTemplates();
+        if (cancelled) return;
         const found = res.data.find((t) => String(t.id) === templateName || t.name === templateName);
-        if (found) {
-          const next = { ...NID_DEFAULTS, ...(found.state as Partial<NIDSnapshot>) };
-          externalCacheRef.current = next;
-          editor.replace(next);
-          setStatus(`Template "${found.name}" applied`);
-          toast.success(`Template "${found.name}" applied`);
+        if (!found) {
+          toast.error(res.error ?? 'Template not found');
+          return;
         }
+        if (found.kind !== 'nid') {
+          toast.error('This template is not an NID card.');
+          return;
+        }
+        const next = { ...NID_DEFAULTS, ...(found.state as Partial<NIDSnapshot>) };
+        externalCacheRef.current = next;
+        editor.replace(next);
+        setStatus(`Template "${found.name}" applied`);
+        toast.success(`Template "${found.name}" applied`);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -163,6 +186,8 @@ function NIDEditorInner() {
     setPhotoImage(null);
     setPhotoName(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    externalCacheRef.current = null;
+    setHistoryRecordId(null);
     editor.reset();
     setStatus('Defaults applied');
     toast.info('NID reset to calibrated defaults');

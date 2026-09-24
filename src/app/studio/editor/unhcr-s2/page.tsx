@@ -187,6 +187,10 @@ function UnhcrEditorInner() {
           toast.error(res.error ?? 'Could not load History record');
           return;
         }
+        if (res.record.docKind !== 'unhcr-s2') {
+          toast.error('This History record is not a UNHCR ID Server 2 document.');
+          return;
+        }
         const next = snapshotFromUnhcrS2VaultDoc(res.record.doc);
         setHistoryRecordId(res.record.trademarkNo);
         applyWorkspace(next, `History record ${recordNo} loaded`);
@@ -298,6 +302,8 @@ function UnhcrEditorInner() {
     setPhotoImage(null);
     setPhotoName(null);
     setActiveField('unhcrNo');
+    externalCacheRef.current = null;
+    setHistoryRecordId(null);
     setStatus('Defaults applied');
     toast.info('ID editor reset — identity fields cleared');
     // eslint-disable-next-line react-hooks/exhaustive-deps

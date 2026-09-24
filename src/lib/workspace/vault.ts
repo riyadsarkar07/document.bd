@@ -143,11 +143,28 @@ async function writeVaultRow(
 ): Promise<{ error: { message: string } | null }> {
   const existing = await supabaseData
     .from('certificates')
-    .select('registration_no, created_by')
+    .select('registration_no, created_by, details')
     .eq('trademark_no', trademarkNo)
     .limit(1);
 
   const existingRow = existing.data?.[0];
+  const existingKindRaw = unpackDetails(
+    typeof existingRow?.details === 'string' ? existingRow.details : null,
+  ).docKind;
+  const existingKind: DocumentKind | undefined = existingRow
+    ? isDocumentKind(existingKindRaw)
+      ? existingKindRaw
+      : 'tm'
+    : undefined;
+  const incomingKindRaw = unpackDetails(typeof payload.details === 'string' ? payload.details : null).docKind;
+  const incomingKind = isDocumentKind(incomingKindRaw) ? incomingKindRaw : undefined;
+  if (existingKind && incomingKind && existingKind !== incomingKind) {
+    return {
+      error: {
+        message: `Record "${trademarkNo}" is already archived as ${DOCUMENT_KINDS[existingKind].label}. Use a different number.`,
+      },
+    };
+  }
 
   // Insert path carries the creator; update path preserves the original one
   // UNLESS the existing (legacy) row has no creator yet — then adopt the
@@ -196,7 +213,10 @@ export async function commitCertificate(
   createdBy?: string | null,
   options?: { docKind?: CertificateDocKind },
 ): Promise<{ error: string | null }> {
-  const trademarkNo = entry.trademarkNo || 'N/A';
+  const trademarkNo = (entry.trademarkNo || '').trim();
+  if (!trademarkNo) {
+    return { error: 'Enter a Trademark No. before saving to the vault.' };
+  }
   const docKind: CertificateDocKind =
     options?.docKind === 'youtube-trademark' || entry.docKind === 'youtube-trademark'
       ? 'youtube-trademark'

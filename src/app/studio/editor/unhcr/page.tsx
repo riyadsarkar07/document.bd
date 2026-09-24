@@ -134,11 +134,17 @@ function UnhcrEditorInner() {
     const projectId = searchParams.get('project');
     const templateName = searchParams.get('template');
     const recordNo = searchParams.get('record');
+    let cancelled = false;
     (async () => {
       if (recordNo && !isUnhcrCurrentRecordId(recordNo)) {
         const res = await getVaultRecord(recordNo);
+        if (cancelled) return;
         if (res.error || !res.record) {
           toast.error(res.error ?? 'Could not load History record');
+          return;
+        }
+        if (res.record.docKind !== 'unhcr') {
+          toast.error('This History record is not a UNHCR ID.');
           return;
         }
         const next = snapshotFromUnhcrVaultDoc(res.record.doc);
@@ -152,6 +158,7 @@ function UnhcrEditorInner() {
       }
       if (projectId) {
         const res = await listProjects();
+        if (cancelled) return;
         const found = res.data.find((p) => String(p.id) === projectId || p.name === projectId);
         if (found) {
           const next = normalizeUnhcrSnapshot(found.state as Partial<UnhcrSnapshot>);
@@ -165,6 +172,7 @@ function UnhcrEditorInner() {
       }
       if (templateName) {
         const res = await listTemplates();
+        if (cancelled) return;
         const found = res.data.find((t) => String(t.id) === templateName || t.name === templateName);
         if (found) {
           const next = normalizeUnhcrSnapshot(found.state as Partial<UnhcrSnapshot>);
@@ -178,6 +186,7 @@ function UnhcrEditorInner() {
       }
       if (!user) return;
       const current = await getUnhcrCurrentState();
+      if (cancelled) return;
       if (current.error || !current.record) return;
       const next = snapshotFromUnhcrVaultDoc(current.record.doc);
       externalCacheRef.current = next;
@@ -185,6 +194,9 @@ function UnhcrEditorInner() {
       setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
       setStatus('Saved editor state loaded');
     })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, user?.id]);
 
@@ -248,6 +260,8 @@ function UnhcrEditorInner() {
     setPhotoImage(null);
     setPhotoName(null);
     setActiveField('unhcrNo');
+    externalCacheRef.current = null;
+    setHistoryRecordId(null);
     setStatus('Defaults applied');
     toast.info('ID editor reset — identity fields cleared');
     // eslint-disable-next-line react-hooks/exhaustive-deps
