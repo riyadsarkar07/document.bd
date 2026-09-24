@@ -15,6 +15,7 @@ const AUTH_CODES = new Set([
   'session_not_found',
   'bad_jwt',
   'PGRST301',
+  'PGRST303',
 ]);
 
 export function classifyKind(input: {
@@ -41,7 +42,12 @@ export function classifyKind(input: {
     }
     return status === 401 ? 'auth' : 'rls';
   }
-  if (endpoint.includes('/auth/v1') || message.includes('jwt') || message.includes('not authenticated')) {
+  if (
+    code === 'PGRST303' ||
+    endpoint.includes('/auth/v1') ||
+    message.includes('jwt') ||
+    message.includes('not authenticated')
+  ) {
     return 'auth';
   }
   if (endpoint.includes('/rest/v1/rpc/') || endpoint.includes('/rpc/')) return 'rpc';

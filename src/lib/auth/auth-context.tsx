@@ -11,8 +11,12 @@ import {
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import {
+  beginLocalSignOut,
   getCachedSession,
+  isAccessTokenFresh,
+  isRefreshingAccessToken,
   rememberSession,
+  shouldIgnoreAuthEvent,
   settleWithTimeout,
   supabase,
   supabaseData,
@@ -110,13 +114,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const applySession = useCallback(
-    (session: Session | null) => {
-      rememberSession(session);
+    (session: Session | null, source: 'bootstrap' | 'auth-event' | 'sign-out' | 'invalid' = 'auth-event') => {
       if (session?.user) {
+        rememberSession(session);
         setUser(session.user);
         void loadProfile(session.user.id, session.user.email || '').finally(() => setLoading(false));
         return;
       }
+      if (source === 'sign-out' || source === 'invalid') {
+        rememberSession(null);
+        setUser(null);
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+      const cached = getCachedSession();
+      if (isRefreshingAccessToken() || isAccessTokenFresh(cached) || cached?.refresh_token) {
+        setLoading(false);
+        return;
+      }
+      rememberSession(null);
       setUser(null);
       setProfile(null);
       setLoading(false);
@@ -125,34 +142,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshProfile = useCallback(async () => {
+    const cached = getCachedSession();
     const {
       data: { session },
     } = await settleWithTimeout(
       supabase.auth.getSession(),
-      { data: { session: null }, error: null },
+      { data: { session: cached }, error: null },
       8000,
     );
-    rememberSession(session);
-    if (session?.user) {
-      setUser(session.user);
-      await loadProfile(session.user.id, session.user.email || '');
+    const next = session ?? cached;
+    if (next?.user) {
+      rememberSession(next);
+      setUser(next.user);
+      await loadProfile(next.user.id, next.user.email || '');
     }
   }, [loadProfile]);
 
   useEffect(() => {
     let cancelled = false;
 
-    const apply = (session: Session | null) => {
+    const apply = (
+      session: Session | null,
+      source: 'bootstrap' | 'auth-event' | 'sign-out' | 'invalid' = 'auth-event',
+    ) => {
       if (cancelled) return;
-      applySession(session);
+      applySession(session, source);
     };
 
     const cached = getCachedSession();
-    if (cached?.user) apply(cached);
+    if (cached?.user) apply(cached, 'bootstrap');
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setTimeout(() => apply(session), 0);
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      setTimeout(() => {
+        if (shouldIgnoreAuthEvent(event)) return;
+        if (event === 'SIGNED_OUT') {
+          if (isRefreshingAccessToken() || isAccessTokenFresh(getCachedSession())) return;
+          apply(null, 'sign-out');
+          return;
+        }
+        if (!session && isRefreshingAccessToken()) return;
+        apply(session, 'auth-event');
+      }, 0);
     });
+
+    const onSessionInvalid = () => apply(null, 'invalid');
+    if (typeof window !== 'undefined') {
+      window.addEventListener('studio:session-invalid', onSessionInvalid);
+    }
 
     void supabase.auth
       .getSession()
@@ -169,6 +205,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       clearTimeout(bootstrapTimer);
       sub.subscription.unsubscribe();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('studio:session-invalid', onSessionInvalid);
+      }
     };
   }, [applySession]);
 
@@ -187,10 +226,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
-    rememberSession(null);
+    beginLocalSignOut();
     setUser(null);
     setProfile(null);
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // local cache is already cleared
+    }
   }, []);
 
   const value = useMemo<AuthState>(

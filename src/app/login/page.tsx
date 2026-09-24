@@ -12,6 +12,7 @@ import {
   TerminalSquare,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
+import { SESSION_EXPIRED_FLAG } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { FieldLabel, Input } from '@/components/ui/input';
 import { ThemeSwitcher } from '@/components/layout/theme-switcher';
@@ -138,6 +139,17 @@ export default function LoginPage() {
   useEffect(() => {
     if (user) router.replace('/studio');
   }, [user, router]);
+
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(SESSION_EXPIRED_FLAG)) {
+        window.sessionStorage.removeItem(SESSION_EXPIRED_FLAG);
+        setError('Your session has expired. Please sign in again.');
+      }
+    } catch {
+      // ignore private-mode storage
+    }
+  }, []);
 
   useEffect(() => {
     const reducedMq = window.matchMedia('(prefers-reduced-motion: reduce)');

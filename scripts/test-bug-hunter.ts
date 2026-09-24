@@ -157,7 +157,13 @@ function main() {
   assert(!ingest.includes('p_user_id') && !ingest.includes('user_id:'), 'ingest never accepts client user_id');
   assert(capture.includes('unhandledrejection') && capture.includes("addEventListener('error'"), 'runtime + promise capture');
   assert(capture.includes('window.fetch') && capture.includes('FLUSH_MS'), 'fetch capture + batching');
+  assert(capture.includes('ensureFreshAccessToken'), 'ingest flush uses a refreshed JWT, not a known-expired cache');
   assert(capture.includes('shouldDrop') && capture.includes('fingerprint'), 'session-level dedup');
+  const clientSrc = readFileSync(join(ROOT, 'src/lib/supabase/client.ts'), 'utf8');
+  assert(clientSrc.includes('ensureFreshAccessToken'), 'data client refreshes before PostgREST Authorization');
+  assert(clientSrc.includes('isAccessTokenFresh'), 'known-expired JWTs are never returned as bearer tokens');
+  assert(classifyKind({ kind: 'api', httpStatus: 401, supabaseCode: 'PGRST303', endpoint: '/rest/v1/templates' }) === 'auth', 'PGRST303 JWT-expired still classified as auth');
+  assert(classifySeverity({ kind: 'auth', httpStatus: 401, supabaseCode: 'PGRST303' }) === 'critical', 'genuine JWT-expired reports stay critical');
   assert(hunterApi.includes("rpc('update_bug_report_status'") && hunterApi.includes("rpc('clear_resolved_bug_reports'"), 'admin RPCs used');
   assert(hunterApi.includes('bug_reports') && hunterApi.includes('subscribeBugHunter'), 'admin list + realtime');
   assert(!access.includes("'bug-hunter'") && !access.includes("'bug_hunter'"), 'not gated by allowed_tools');

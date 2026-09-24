@@ -1,6 +1,6 @@
 'use client';
 
-import { getCachedAccessToken } from '@/lib/supabase/client';
+import { ensureFreshAccessToken } from '@/lib/supabase/client';
 import { enrichDraft } from '@/lib/bug-hunter/classify';
 import { bugFingerprint } from '@/lib/bug-hunter/fingerprint';
 import { sanitizeDraft, sanitizeUrl } from '@/lib/bug-hunter/sanitize';
@@ -89,7 +89,7 @@ function scheduleFlush(): void {
 async function flushQueue(): Promise<void> {
   if (!queued.length) return;
   const batch = queued.splice(0, queued.length);
-  const token = getCachedAccessToken();
+  const token = await ensureFreshAccessToken();
   if (!token) return;
   try {
     const controller = new AbortController();
