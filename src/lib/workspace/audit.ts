@@ -137,4 +137,8 @@ export const AUDIT_ACTIONS: { value: string; label: string }[] = [
   { value: 'support.ticket.updated', label: 'Support · ticket updated' },
   { value: 'support.ticket.escalated', label: 'Support · ticket escalated' },
   { value: 'support.note.added', label: 'Support · internal note' },
+  { value: 'bug.investigating', label: 'Bug Hunter · investigating' },
+  { value: 'bug.resolved', label: 'Bug Hunter · resolved' },
+  { value: 'bug.ignored', label: 'Bug Hunter · ignored' },
+  { value: 'bug.cleared', label: 'Bug Hunter · cleared resolved' },
 ];

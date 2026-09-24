@@ -8,6 +8,7 @@ import {
   WORKSPACE_QUERY_TIMEOUT_MS,
 } from '@/lib/supabase/client';
 import { logAudit } from '@/lib/workspace/audit';
+import { reportCapturedError } from '@/lib/bug-hunter/capture';
 import type { ActivityRecord, ProjectRecord, TemplateRecord } from '@/lib/auth/types';
 
 export type DataSource = 'supabase' | 'local';
@@ -110,8 +111,22 @@ export async function saveTemplate(tpl: TemplateRecord): Promise<StoreResult<Tem
     .maybeSingle();
   if (error) {
     if (isEnforcementError(error)) {
+      reportCapturedError({
+        kind: 'rls',
+        message: error.message,
+        supabaseCode: error.code,
+        component: 'store.saveTemplate',
+        endpoint: 'templates',
+      });
       return { data: null, source: 'supabase', error: error.message };
     }
+    reportCapturedError({
+      kind: 'save',
+      message: error.message,
+      supabaseCode: error.code,
+      component: 'store.saveTemplate',
+      endpoint: 'templates',
+    });
     const saved = withLocalId({ ...tpl, updated_at: new Date().toISOString() });
     const key = await getScopedStorageKey(LS_TEMPLATES_BASE);
     const local = readLocal<TemplateRecord[]>(key, []);
@@ -183,8 +198,22 @@ export async function saveProject(proj: ProjectRecord): Promise<StoreResult<Proj
     .maybeSingle();
   if (error) {
     if (isEnforcementError(error)) {
+      reportCapturedError({
+        kind: 'rls',
+        message: error.message,
+        supabaseCode: error.code,
+        component: 'store.saveProject',
+        endpoint: 'projects',
+      });
       return { data: null, source: 'supabase', error: error.message };
     }
+    reportCapturedError({
+      kind: 'save',
+      message: error.message,
+      supabaseCode: error.code,
+      component: 'store.saveProject',
+      endpoint: 'projects',
+    });
     const saved = withLocalId({ ...proj, updated_at: new Date().toISOString() });
     const key = await getScopedStorageKey(LS_PROJECTS_BASE);
     const local = readLocal<ProjectRecord[]>(key, []);

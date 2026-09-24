@@ -1531,6 +1531,349 @@ begin
   end;
 end $$;
 
+-- ────────────────────────── Bug Hunter ──────────────────────────
+-- Admin-only application error log. Clients cannot INSERT/UPDATE/DELETE
+-- rows directly. Authenticated sessions submit sanitized payloads through
+-- ingest_bug_report(), which locks user_id to auth.uid(), recomputes the
+-- fingerprint, and upserts so identical errors increment occurrence_count
+-- instead of creating thousands of duplicate rows. Stack traces and
+-- internal details are never selectable except by is_admin().
+
+create table if not exists public.bug_report_counters (
+  day date primary key,
+  last_n int not null default 0
+);
+
+create table if not exists public.bug_reports (
+  id uuid primary key default gen_random_uuid(),
+  bug_no text not null unique,
+  fingerprint text not null unique,
+  status text not null default 'new' check (status in ('new', 'investigating', 'resolved', 'ignored')),
+  severity text not null check (severity in ('critical', 'high', 'medium', 'low')),
+  kind text not null check (kind in (
+    'javascript',
+    'promise',
+    'api',
+    'supabase',
+    'auth',
+    'rls',
+    'rpc',
+    'network',
+    'load',
+    'pdf',
+    'save',
+    'exception'
+  )),
+  title text not null,
+  message text not null,
+  reason text not null,
+  route text,
+  component text,
+  endpoint text,
+  http_status int,
+  supabase_code text,
+  user_id uuid references auth.users (id) on delete set null,
+  user_email text,
+  user_role text,
+  occurrence_count int not null default 1 check (occurrence_count > 0),
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  browser text,
+  device text,
+  stack text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.bug_reports enable row level security;
+alter table public.bug_report_counters enable row level security;
+
+create index if not exists bug_reports_status_idx on public.bug_reports (status, last_seen_at desc);
+create index if not exists bug_reports_severity_idx on public.bug_reports (severity, last_seen_at desc);
+create index if not exists bug_reports_route_idx on public.bug_reports (route);
+create index if not exists bug_reports_last_seen_idx on public.bug_reports (last_seen_at desc);
+create index if not exists bug_reports_user_idx on public.bug_reports (user_id);
+
+create or replace function public.next_bug_no()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  today date := (now() at time zone 'utc')::date;
+  n int;
+  stamp text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  insert into public.bug_report_counters (day, last_n)
+  values (today, 1)
+  on conflict (day) do update
+    set last_n = public.bug_report_counters.last_n + 1
+  returning last_n into n;
+  stamp := to_char(today, 'YYYYMMDD');
+  return 'BUG-' || stamp || '-' || lpad(n::text, 4, '0');
+end;
+$$;
+
+revoke all on function public.next_bug_no() from public;
+grant execute on function public.next_bug_no() to authenticated;
+
+-- Server-side ingest. Recomputes fingerprint, locks the actor to auth.uid(),
+-- and never trusts client-supplied user_id / status / bug_no.
+create or replace function public.ingest_bug_report(
+  p_fingerprint text,
+  p_kind text,
+  p_severity text,
+  p_title text,
+  p_message text,
+  p_reason text,
+  p_route text default null,
+  p_component text default null,
+  p_endpoint text default null,
+  p_http_status int default null,
+  p_supabase_code text default null,
+  p_browser text default null,
+  p_device text default null,
+  p_stack text default null,
+  p_occurrences int default 1
+)
+returns public.bug_reports
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  email text;
+  role_label text;
+  occ int := greatest(1, least(coalesce(p_occurrences, 1), 50));
+  msg text := left(trim(coalesce(p_message, '')), 2000);
+  title text := left(trim(coalesce(p_title, '')), 160);
+  reason text := left(trim(coalesce(p_reason, '')), 400);
+  kind text := coalesce(p_kind, 'exception');
+  severity text := coalesce(p_severity, 'medium');
+  fp text := left(trim(coalesce(p_fingerprint, '')), 32);
+  row public.bug_reports;
+begin
+  if uid is null then
+    raise exception 'not authenticated';
+  end if;
+  if not public.is_active_user(uid) then
+    raise exception 'account is not active';
+  end if;
+  if char_length(msg) < 1 then
+    raise exception 'message required';
+  end if;
+  if kind not in (
+    'javascript','promise','api','supabase','auth','rls','rpc','network','load','pdf','save','exception'
+  ) then
+    kind := 'exception';
+  end if;
+  if severity not in ('critical', 'high', 'medium', 'low') then
+    severity := 'medium';
+  end if;
+  if char_length(fp) < 4 then
+    raise exception 'invalid fingerprint';
+  end if;
+  if char_length(title) < 1 then
+    title := left(kind || ': ' || msg, 160);
+  end if;
+  if char_length(reason) < 1 then
+    reason := 'An unexpected application exception was captured by Bug Hunter.';
+  end if;
+
+  select p.email, p.role into email, role_label from public.profiles p where p.id = uid;
+
+  insert into public.bug_reports (
+    bug_no, fingerprint, status, severity, kind, title, message, reason,
+    route, component, endpoint, http_status, supabase_code,
+    user_id, user_email, user_role, occurrence_count,
+    first_seen_at, last_seen_at, browser, device, stack
+  ) values (
+    public.next_bug_no(), fp, 'new', severity, kind, title, msg, reason,
+    nullif(left(trim(coalesce(p_route, '')), 300), ''),
+    nullif(left(trim(coalesce(p_component, '')), 200), ''),
+    nullif(left(trim(coalesce(p_endpoint, '')), 400), ''),
+    case when p_http_status between 100 and 599 then p_http_status else null end,
+    nullif(left(trim(coalesce(p_supabase_code, '')), 64), ''),
+    uid, email, role_label, occ,
+    now(), now(),
+    nullif(left(trim(coalesce(p_browser, '')), 240), ''),
+    nullif(left(trim(coalesce(p_device, '')), 80), ''),
+    nullif(left(trim(coalesce(p_stack, '')), 8000), '')
+  )
+  on conflict (fingerprint) do update
+    set occurrence_count = public.bug_reports.occurrence_count + occ,
+        last_seen_at = now(),
+        updated_at = now(),
+        message = excluded.message,
+        reason = excluded.reason,
+        title = excluded.title,
+        severity = excluded.severity,
+        kind = excluded.kind,
+        route = excluded.route,
+        component = excluded.component,
+        endpoint = excluded.endpoint,
+        http_status = excluded.http_status,
+        supabase_code = excluded.supabase_code,
+        browser = excluded.browser,
+        device = excluded.device,
+        stack = excluded.stack,
+        user_id = excluded.user_id,
+        user_email = excluded.user_email,
+        user_role = excluded.user_role
+  returning * into row;
+
+  return row;
+end;
+$$;
+
+revoke all on function public.ingest_bug_report(
+  text, text, text, text, text, text, text, text, text, int, text, text, text, text, int
+) from public;
+grant execute on function public.ingest_bug_report(
+  text, text, text, text, text, text, text, text, text, int, text, text, text, text, int
+) to authenticated;
+
+create or replace function public.update_bug_report_status(p_id uuid, p_status text)
+returns public.bug_reports
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  row public.bug_reports;
+begin
+  if not public.is_admin() then
+    raise exception 'admin required';
+  end if;
+  if p_status not in ('new', 'investigating', 'resolved', 'ignored') then
+    raise exception 'invalid status';
+  end if;
+  update public.bug_reports
+     set status = p_status,
+         updated_at = now()
+   where id = p_id
+  returning * into row;
+  if row.id is null then
+    raise exception 'bug not found';
+  end if;
+  return row;
+end;
+$$;
+
+revoke all on function public.update_bug_report_status(uuid, text) from public;
+grant execute on function public.update_bug_report_status(uuid, text) to authenticated;
+
+create or replace function public.clear_resolved_bug_reports()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  n int;
+begin
+  if not public.is_admin() then
+    raise exception 'admin required';
+  end if;
+  delete from public.bug_reports
+   where status in ('resolved', 'ignored')
+  returning 1 into n;
+  get diagnostics n = row_count;
+  return coalesce(n, 0);
+end;
+$$;
+
+revoke all on function public.clear_resolved_bug_reports() from public;
+grant execute on function public.clear_resolved_bug_reports() to authenticated;
+
+drop function if exists public.bug_hunter_summary();
+
+create or replace function public.bug_hunter_summary()
+returns table (
+  critical bigint,
+  high bigint,
+  medium bigint,
+  low bigint,
+  open_count bigint,
+  resolved_count bigint,
+  ignored_count bigint,
+  total bigint,
+  frequent jsonb
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    (select count(*) from public.bug_reports b where b.severity = 'critical' and b.status in ('new', 'investigating')),
+    (select count(*) from public.bug_reports b where b.severity = 'high' and b.status in ('new', 'investigating')),
+    (select count(*) from public.bug_reports b where b.severity = 'medium' and b.status in ('new', 'investigating')),
+    (select count(*) from public.bug_reports b where b.severity = 'low' and b.status in ('new', 'investigating')),
+    (select count(*) from public.bug_reports b where b.status in ('new', 'investigating')),
+    (select count(*) from public.bug_reports b where b.status = 'resolved'),
+    (select count(*) from public.bug_reports b where b.status = 'ignored'),
+    (select count(*) from public.bug_reports),
+    coalesce((
+      select jsonb_agg(item)
+      from (
+        select jsonb_build_object(
+          'id', b.id,
+          'bug_no', b.bug_no,
+          'title', b.title,
+          'severity', b.severity,
+          'occurrence_count', b.occurrence_count,
+          'route', b.route
+        ) as item
+        from public.bug_reports b
+        where public.is_admin()
+        order by b.occurrence_count desc, b.last_seen_at desc
+        limit 5
+      ) ranked
+    ), '[]'::jsonb)
+  where public.is_admin();
+$$;
+
+revoke all on function public.bug_hunter_summary() from public;
+grant execute on function public.bug_hunter_summary() to authenticated;
+
+revoke all on table public.bug_reports from anon, public;
+revoke all on table public.bug_report_counters from anon, public, authenticated;
+grant select on table public.bug_reports to authenticated;
+
+drop policy if exists "bug_reports_admin_select" on public.bug_reports;
+create policy "bug_reports_admin_select" on public.bug_reports
+  for select using (public.is_admin());
+
+drop policy if exists "bug_reports_deny_insert" on public.bug_reports;
+create policy "bug_reports_deny_insert" on public.bug_reports
+  for insert with check (false);
+drop policy if exists "bug_reports_deny_update" on public.bug_reports;
+create policy "bug_reports_deny_update" on public.bug_reports
+  for update using (false);
+drop policy if exists "bug_reports_deny_delete" on public.bug_reports;
+create policy "bug_reports_deny_delete" on public.bug_reports
+  for delete using (false);
+
+drop policy if exists "bug_counters_deny" on public.bug_report_counters;
+create policy "bug_counters_deny" on public.bug_report_counters
+  for all using (false) with check (false);
+
+alter table public.bug_reports replica identity full;
+
+do $$
+begin
+  begin
+    alter publication supabase_realtime add table public.bug_reports;
+  exception when duplicate_object then null;
+  end;
+end $$;
+
 -- Recognize the authorized admin account (UUID allowlist).
 -- If the auth user already has a profile, promote it to admin/active.
 -- If the auth user does not exist yet, the profile is created as admin on

@@ -10,7 +10,7 @@ import { isUnhcrS2EditorPath, resolveUnhcrS2StudioMount } from '@/lib/unhcrS2Cur
 import { StudioShell } from '@/components/layout/studio-shell';
 import { Button } from '@/components/ui/button';
 
-const ADMIN_ROUTES = ['/studio/users', '/studio/activity'];
+const ADMIN_ROUTES = ['/studio/users', '/studio/activity', '/studio/bug-hunter'];
 
 /** Route prefix -> tool scope. Users without the scope are redirected. */
 const TOOL_ROUTES: { prefix: string; scope: ToolScope }[] = [

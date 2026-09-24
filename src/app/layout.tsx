@@ -4,6 +4,7 @@ import './globals.css';
 import { ThemeProvider } from '@/lib/theme/theme-provider';
 import { ToastProvider } from '@/lib/toast/toast-provider';
 import { AuthProvider } from '@/lib/auth/auth-context';
+import { BugHunterProvider } from '@/components/layout/bug-hunter-provider';
 
 const playfair = Playfair_Display({
   subsets: ['latin'],
@@ -47,7 +48,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`grain ${playfair.variable} ${dmSans.variable} ${dmMono.variable}`}>
         <ThemeProvider>
           <ToastProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              <BugHunterProvider>{children}</BugHunterProvider>
+            </AuthProvider>
           </ToastProvider>
         </ThemeProvider>
       </body>

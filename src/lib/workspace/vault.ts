@@ -4,6 +4,7 @@ import { settleWithTimeout, supabaseData, timedOutQuery, WORKSPACE_QUERY_TIMEOUT
 import { TM_DEFAULTS } from '@/lib/constants/tm';
 import { escapePostgrestSearch, formatTimestamp } from '@/lib/utils';
 import { logAudit } from '@/lib/workspace/audit';
+import { reportCapturedError } from '@/lib/bug-hunter/capture';
 import { VERIFY_BASE_URL } from '@/lib/verify-base';
 import { sealedTextFromVault } from '@/lib/publish/sealed-text';
 import { layoutFromSnapshot, layoutFromVaultSources, packDetails, unpackDetails } from '@/lib/publish/layout';
@@ -253,6 +254,13 @@ export async function commitCertificate(
       targetId: trademarkNo,
       metadata: { name: entry.companyName || '', owner: entry.ownerName || '' },
     });
+  } else {
+    reportCapturedError({
+      kind: 'save',
+      message: result.error.message,
+      component: 'vault.commitCertificate',
+      endpoint: 'certificates',
+    });
   }
 
   return { error: result.error ? result.error.message : null };
@@ -323,6 +331,13 @@ export async function commitDocument(
       targetType: input.docKind,
       targetId: recordId,
       metadata: { name: input.title || '', kind: input.docKind },
+    });
+  } else {
+    reportCapturedError({
+      kind: 'save',
+      message: result.error.message,
+      component: 'vault.commitDocument',
+      endpoint: 'certificates',
     });
   }
 

@@ -12,7 +12,8 @@
     "verify:render": "tsx scripts/verify-render.ts",
     "test:publish": "tsx scripts/test-publish.ts",
     "test:pdf-editor": "tsx scripts/test-pdf-editor.ts",
-    "test:support": "tsx scripts/test-support.ts"
+    "test:support": "tsx scripts/test-support.ts",
+    "test:bug-hunter": "tsx scripts/test-bug-hunter.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   Activity,
   Briefcase,
+  Bug,
   Contact,
   CreditCard,
   FilePen,
@@ -59,6 +60,7 @@ const NAV: NavItem[] = [
   { href: '/studio/assets', label: 'Assets', icon: Package, scope: 'assets', section: 'Workspace' },
   { href: '/studio/users', label: 'Users', icon: Users, admin: true },
   { href: '/studio/activity', label: 'Activity Logs', icon: Activity, admin: true },
+  { href: '/studio/bug-hunter', label: 'Bug Hunter', icon: Bug, admin: true, section: 'ADMIN TOOLS' },
 ];
 
 function groupBy<T>(items: T[], key: (item: T) => string | undefined) {

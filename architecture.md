@@ -30,8 +30,9 @@ src/
 │   │   ├── history/
 │   │   ├── templates/
 │   │   ├── projects/
-│   │   ├── settings/
-│   │   └── support/
+    │   │   ├── settings/
+    │   │   ├── support/
+    │   │   └── bug-hunter/
 │
 ├── components/
 │   ├── editor/
@@ -217,7 +218,19 @@ Do not introduce a new deployment architecture without explicit approval.
 
 ---
 
-# 14. Testing
+# 14. Bug Hunter
+
+Admin-only error console at `/studio/bug-hunter`.
+
+- Clients report sanitized payloads to `POST /api/bug-hunter/ingest`.
+- Server re-validates, redacts secrets, and upserts via `ingest_bug_report` RPC.
+- Identical errors share a fingerprint and increment `occurrence_count`.
+- `bug_reports` is readable only by `is_admin()`; clients cannot insert fake rows.
+- Stack traces never render for non-admin users.
+
+---
+
+# 15. Testing
 
 Relevant tests should exist for:
 - Typecheck
@@ -226,6 +239,7 @@ Relevant tests should exist for:
 - Publish
 - PDF editor
 - Support
+- Bug Hunter
 - Rendering
 - History
 - Editor-specific workflows

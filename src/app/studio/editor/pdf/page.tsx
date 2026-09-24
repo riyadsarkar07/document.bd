@@ -71,6 +71,7 @@ import {
   updateAnnotation,
 } from '@/lib/pdf-editor/document';
 import { downloadPdfBytes, exportEditedPdf } from '@/lib/pdf-editor/export';
+import { reportCapturedError } from '@/lib/bug-hunter/capture';
 import { extractNativeTextRuns, hitTestNativeRun, visibleNativeRuns } from '@/lib/pdf-editor/native-text';
 import { loadPdfDocument, readPdfPages } from '@/lib/pdf-editor/pdfjs';
 import {
@@ -650,7 +651,14 @@ function PdfEditorInner() {
       setStatus(`Exported ${present.pages.length} page${present.pages.length === 1 ? '' : 's'}`);
       const savedId = await persistToHistory();
       toast.success(savedId ? 'Edited PDF downloaded · secured in History' : 'Edited PDF downloaded');
-    } catch {
+    } catch (err) {
+      reportCapturedError({
+        kind: 'pdf',
+        message: err instanceof Error ? err.message : 'PDF export failed',
+        stack: err instanceof Error ? err.stack : null,
+        component: 'pdf-editor.export',
+        route: '/studio/editor/pdf',
+      });
       toast.error('Export failed');
       setStatus('Export failed');
     } finally {
