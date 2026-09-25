@@ -81,6 +81,17 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (containsSensitive(draft.message) || (draft.stack && containsSensitive(draft.stack))) {
       continue;
     }
+    const endpoint = (draft.endpoint ?? '').toLowerCase();
+    if (
+      endpoint.includes('/api/bug-hunter') ||
+      endpoint.includes('ingest_bug_report') ||
+      endpoint.includes('bug_hunter_summary') ||
+      endpoint.includes('update_bug_report_status') ||
+      endpoint.includes('clear_resolved_bug_reports') ||
+      /\/rest\/v1\/bug_reports(?:\?|$)/.test(endpoint)
+    ) {
+      continue;
+    }
     const enriched = enrichDraft(draft);
     const fingerprint = bugFingerprint(enriched);
     payloads.push({

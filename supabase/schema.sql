@@ -1623,6 +1623,9 @@ grant execute on function public.next_bug_no() to authenticated;
 
 -- Server-side ingest. Recomputes fingerprint, locks the actor to auth.uid(),
 -- and never trusts client-supplied user_id / status / bug_no.
+-- Resolved fingerprints stay historical until the same error recurs, then
+-- reopen as new. Ignored fingerprints stay ignored. Occurrence count and
+-- first_seen_at are preserved for audit.
 create or replace function public.ingest_bug_report(
   p_fingerprint text,
   p_kind text,
@@ -1709,6 +1712,11 @@ begin
     set occurrence_count = public.bug_reports.occurrence_count + occ,
         last_seen_at = now(),
         updated_at = now(),
+        status = case
+          when public.bug_reports.status = 'ignored' then 'ignored'
+          when public.bug_reports.status = 'resolved' then 'new'
+          else public.bug_reports.status
+        end,
         message = excluded.message,
         reason = excluded.reason,
         title = excluded.title,
@@ -1832,6 +1840,7 @@ as $$
         ) as item
         from public.bug_reports b
         where public.is_admin()
+          and b.status in ('new', 'investigating')
         order by b.occurrence_count desc, b.last_seen_at desc
         limit 5
       ) ranked

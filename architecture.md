@@ -225,6 +225,9 @@ Admin-only error console at `/studio/bug-hunter`.
 - Clients report sanitized payloads to `POST /api/bug-hunter/ingest`.
 - Server re-validates, redacts secrets, and upserts via `ingest_bug_report` RPC.
 - Identical errors share a fingerprint and increment `occurrence_count`.
+- Resolved fingerprints stay historical until the same error recurs, then reopen as `new`. Ignored fingerprints stay ignored.
+- Dashboard open/severity counters and "Most frequent" only include `new` and `investigating` rows. Resolved/ignored rows remain for audit.
+- Ingest and Bug Hunter monitoring requests are not captured as application errors.
 - `bug_reports` is readable only by `is_admin()`; clients cannot insert fake rows.
 - Stack traces never render for non-admin users.
 

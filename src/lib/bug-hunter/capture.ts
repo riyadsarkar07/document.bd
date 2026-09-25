@@ -53,8 +53,16 @@ function shouldDrop(fingerprint: string): boolean {
   return false;
 }
 
+function isSelfNoise(raw: Partial<BugReportDraft>): boolean {
+  const endpoint = raw.endpoint ?? '';
+  if (endpoint && isIgnoredUrl(endpoint)) return true;
+  const message = raw.message ?? '';
+  return /\/api\/bug-hunter|ingest_bug_report|bug_hunter_summary/i.test(message);
+}
+
 function enqueue(raw: Partial<BugReportDraft>): void {
   try {
+    if (isSelfNoise(raw)) return;
     const draft = sanitizeDraft({
       ...raw,
       route: raw.route ?? currentRoute(),
@@ -133,7 +141,17 @@ function stackFromUnknown(value: unknown): string | null {
 }
 
 function isIgnoredUrl(url: string): boolean {
-  return url.includes('/api/bug-hunter/') || url.includes('/bug-hunter');
+  const u = url.toLowerCase();
+  return (
+    u.includes('/api/bug-hunter') ||
+    u.includes('/rest/v1/rpc/ingest_bug_report') ||
+    u.includes('/rpc/ingest_bug_report') ||
+    u.includes('/rest/v1/rpc/bug_hunter_summary') ||
+    u.includes('/rpc/bug_hunter_summary') ||
+    u.includes('/rest/v1/rpc/update_bug_report_status') ||
+    u.includes('/rest/v1/rpc/clear_resolved_bug_reports') ||
+    /\/rest\/v1\/bug_reports(?:\?|$)/.test(u)
+  );
 }
 
 function kindFromFailedRequest(url: string, status: number, bodySnippet: string): BugKind {

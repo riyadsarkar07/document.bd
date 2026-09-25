@@ -117,6 +117,11 @@ function main() {
   assert(schema.includes('occurrence_count int not null default 1'), 'occurrence count stored');
   assert(schema.includes('on conflict (fingerprint) do update'), 'identical errors upsert');
   assert(schema.includes('set occurrence_count = public.bug_reports.occurrence_count + occ'), 'occurrence increments');
+  assert(schema.includes("when public.bug_reports.status = 'resolved' then 'new'"), 'resolved fingerprints reopen on recurrence');
+  assert(schema.includes("when public.bug_reports.status = 'ignored' then 'ignored'"), 'ignored fingerprints stay ignored');
+  assert(schema.includes("and b.status in ('new', 'investigating')"), 'frequent list counts only open bugs');
+  assert(/limit 5\s*\) ranked/.test(schema), 'frequent subquery aliases as ranked after limit 5');
+  assert(!/limit 5\)/.test(schema), 'frequent subquery has no extra paren after limit 5');
   assert(schema.includes('uid := auth.uid()'), 'ingest locks actor to auth.uid()');
   assert(!/ingest_bug_report[\s\S]{0,400}p_user_id/.test(schema), 'ingest RPC has no client user_id argument');
   assert(schema.includes("create policy \"bug_reports_admin_select\"") && schema.includes('for select using (public.is_admin())'), 'select is admin-only');
@@ -159,6 +164,10 @@ function main() {
   assert(capture.includes('window.fetch') && capture.includes('FLUSH_MS'), 'fetch capture + batching');
   assert(capture.includes('ensureFreshAccessToken'), 'ingest flush uses a refreshed JWT, not a known-expired cache');
   assert(capture.includes('shouldDrop') && capture.includes('fingerprint'), 'session-level dedup');
+  assert(capture.includes("u.includes('/api/bug-hunter')") && capture.includes('isIgnoredUrl'), 'ingest URLs are not captured');
+  assert(capture.includes('isSelfNoise'), 'Bug Hunter does not self-report ingest/monitoring noise');
+  assert(ingest.includes("endpoint.includes('/api/bug-hunter')") && ingest.includes('bug_hunter_summary'), 'ingest API drops self-referential reports');
+  assert(page.includes('Open bugs') && page.includes('Resolved'), 'Active/Open vs Resolved counters exist');
   const clientSrc = readFileSync(join(ROOT, 'src/lib/supabase/client.ts'), 'utf8');
   assert(clientSrc.includes('ensureFreshAccessToken'), 'data client refreshes before PostgREST Authorization');
   assert(clientSrc.includes('isAccessTokenFresh'), 'known-expired JWTs are never returned as bearer tokens');
