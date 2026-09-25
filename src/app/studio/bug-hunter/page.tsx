@@ -267,7 +267,7 @@ function BugHunterPanel() {
               value={status}
               onChange={(e) => setStatus(e.target.value as BugStatus | '')}
               options={[
-                { value: '', label: 'All statuses' },
+                { value: '', label: 'Open' },
                 ...BUG_STATUSES.map((s) => ({ value: s, label: BUG_STATUS_LABEL[s] })),
               ]}
             />

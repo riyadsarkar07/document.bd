@@ -12,6 +12,7 @@ import {
   isBugKind,
   isBugSeverity,
   isBugStatus,
+  OPEN_BUG_STATUSES,
   type BugHunterList,
   type BugHunterQuery,
   type BugHunterSummary,
@@ -97,6 +98,7 @@ export async function listBugReports(q: BugHunterQuery = {}): Promise<BugHunterL
     );
   }
   if (q.status) query = query.eq('status', q.status);
+  else query = query.in('status', OPEN_BUG_STATUSES);
   if (q.severity) query = query.eq('severity', q.severity);
   if (q.route) query = query.ilike('route', `${escapePostgrestSearch(q.route)}%`);
   if (q.dateFrom) query = query.gte('last_seen_at', new Date(`${q.dateFrom}T00:00:00`).toISOString());

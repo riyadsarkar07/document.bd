@@ -122,6 +122,9 @@ function main() {
   assert(schema.includes("and b.status in ('new', 'investigating')"), 'frequent list counts only open bugs');
   assert(/limit 5\s*\) ranked/.test(schema), 'frequent subquery aliases as ranked after limit 5');
   assert(!/limit 5\)/.test(schema), 'frequent subquery has no extra paren after limit 5');
+  assert(schema.includes("'BUG-20260924-0001'") && schema.includes("set status = 'resolved'"), 'historical JWT/network rows marked resolved');
+  assert(schema.includes("and status in ('new', 'investigating')"), 'historical resolve does not rewrite already-closed rows');
+  assert(schema.includes("last_seen_at < timestamptz '2026-09-26 00:00:00+00'"), 'historical resolve does not close later recurrences');
   assert(schema.includes('uid := auth.uid()'), 'ingest locks actor to auth.uid()');
   assert(!/ingest_bug_report[\s\S]{0,400}p_user_id/.test(schema), 'ingest RPC has no client user_id argument');
   assert(schema.includes("create policy \"bug_reports_admin_select\"") && schema.includes('for select using (public.is_admin())'), 'select is admin-only');
@@ -166,8 +169,13 @@ function main() {
   assert(capture.includes('shouldDrop') && capture.includes('fingerprint'), 'session-level dedup');
   assert(capture.includes("u.includes('/api/bug-hunter')") && capture.includes('isIgnoredUrl'), 'ingest URLs are not captured');
   assert(capture.includes('isSelfNoise'), 'Bug Hunter does not self-report ingest/monitoring noise');
+  assert(capture.includes('isAbortError') && capture.includes('isOrphanFetchNoise'), 'abort and endpoint-less fetch noise is dropped');
+  assert(!capture.includes('signal: controller.signal'), 'ingest flush does not abort its own keepalive request');
   assert(ingest.includes("endpoint.includes('/api/bug-hunter')") && ingest.includes('bug_hunter_summary'), 'ingest API drops self-referential reports');
+  assert(ingest.includes('failed to fetch') && ingest.includes('networkerror'), 'ingest drops endpoint-less Failed to fetch / NetworkError');
+  assert(hunterApi.includes('OPEN_BUG_STATUSES'), 'default list is open bugs only');
   assert(page.includes('Open bugs') && page.includes('Resolved'), 'Active/Open vs Resolved counters exist');
+  assert(page.includes("label: 'Open'"), 'status filter defaults to open bugs');
   const clientSrc = readFileSync(join(ROOT, 'src/lib/supabase/client.ts'), 'utf8');
   assert(clientSrc.includes('ensureFreshAccessToken'), 'data client refreshes before PostgREST Authorization');
   assert(clientSrc.includes('isAccessTokenFresh'), 'known-expired JWTs are never returned as bearer tokens');

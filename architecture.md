@@ -228,6 +228,8 @@ Admin-only error console at `/studio/bug-hunter`.
 - Resolved fingerprints stay historical until the same error recurs, then reopen as `new`. Ignored fingerprints stay ignored.
 - Dashboard open/severity counters and "Most frequent" only include `new` and `investigating` rows. Resolved/ignored rows remain for audit.
 - Ingest and Bug Hunter monitoring requests are not captured as application errors.
+- Abort/console duplicates of ingest (`NetworkError` / `Failed to fetch` with no endpoint) are dropped. Genuine fetch failures still include the URL and remain reported.
+- Historical PGRST303 JWT-expired rows from before token refresh stay resolved until the same fingerprint recurs.
 - `bug_reports` is readable only by `is_admin()`; clients cannot insert fake rows.
 - Stack traces never render for non-admin users.
 

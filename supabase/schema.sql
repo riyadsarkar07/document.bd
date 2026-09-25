@@ -1873,6 +1873,23 @@ drop policy if exists "bug_counters_deny" on public.bug_report_counters;
 create policy "bug_counters_deny" on public.bug_report_counters
   for all using (false) with check (false);
 
+-- Historical rows from the pre-refresh JWT window and Bug Hunter ingest
+-- abort/console duplicates. Occurrence counts and timestamps are kept.
+-- Recurrence of the same fingerprint still reopens as new via ingest_bug_report.
+update public.bug_reports
+   set status = 'resolved',
+       updated_at = now()
+ where bug_no in (
+     'BUG-20260924-0001',
+     'BUG-20260924-0002',
+     'BUG-20260924-0003',
+     'BUG-20260924-0004',
+     'BUG-20260924-0005',
+     'BUG-20260924-0006'
+   )
+   and status in ('new', 'investigating')
+   and last_seen_at < timestamptz '2026-09-26 00:00:00+00';
+
 alter table public.bug_reports replica identity full;
 
 do $$

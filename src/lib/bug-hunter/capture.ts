@@ -53,9 +53,25 @@ function shouldDrop(fingerprint: string): boolean {
   return false;
 }
 
+function isAbortError(err: unknown): boolean {
+  if (!err) return false;
+  if (typeof err === 'object' && err && 'name' in err && (err as { name: string }).name === 'AbortError') {
+    return true;
+  }
+  const msg = messageFromUnknown(err).toLowerCase();
+  return msg.includes('the operation was aborted') || msg.includes('aborterror') || msg.includes('signal is aborted');
+}
+
+function isOrphanFetchNoise(raw: Partial<BugReportDraft>): boolean {
+  if (raw.endpoint) return false;
+  const msg = (raw.message ?? '').toLowerCase();
+  return /failed to fetch|networkerror|load failed|the operation was aborted|aborterror/.test(msg);
+}
+
 function isSelfNoise(raw: Partial<BugReportDraft>): boolean {
   const endpoint = raw.endpoint ?? '';
   if (endpoint && isIgnoredUrl(endpoint)) return true;
+  if (isOrphanFetchNoise(raw)) return true;
   const message = raw.message ?? '';
   return /\/api\/bug-hunter|ingest_bug_report|bug_hunter_summary/i.test(message);
 }
@@ -100,8 +116,6 @@ async function flushQueue(): Promise<void> {
   const token = await ensureFreshAccessToken();
   if (!token) return;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
     await fetch('/api/bug-hunter/ingest', {
       method: 'POST',
       headers: {
@@ -110,9 +124,7 @@ async function flushQueue(): Promise<void> {
       },
       body: JSON.stringify({ reports: batch }),
       keepalive: true,
-      signal: controller.signal,
     }).catch(() => null);
-    clearTimeout(timer);
   } catch {
     // Best-effort. Drop the batch rather than retry forever.
   }
@@ -207,7 +219,7 @@ function patchFetch(): void {
       if (!res.ok) void inspectFailedResponse(res, url);
       return res;
     } catch (err) {
-      if (!isIgnoredUrl(url)) {
+      if (!isIgnoredUrl(url) && !isAbortError(err)) {
         reportCapturedError({
           kind: 'network',
           message: messageFromUnknown(err),
@@ -257,6 +269,7 @@ function patchConsoleError(): void {
     const text = args.map((arg) => messageFromUnknown(arg)).join(' ').slice(0, 500);
     if (!text) return;
     if (/bug hunter|bug-hunter/i.test(text)) return;
+    if (/failed to fetch|networkerror|the operation was aborted|aborterror/i.test(text)) return;
     reportCapturedError({
       kind: 'exception',
       message: text,

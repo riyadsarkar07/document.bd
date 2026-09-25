@@ -92,6 +92,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     ) {
       continue;
     }
+    if (
+      !endpoint &&
+      /failed to fetch|networkerror|load failed|the operation was aborted|aborterror/i.test(draft.message)
+    ) {
+      continue;
+    }
     const enriched = enrichDraft(draft);
     const fingerprint = bugFingerprint(enriched);
     payloads.push({
