@@ -28,7 +28,8 @@ import type {
   DubaiLicenseSnapshot,
 } from '@/lib/editor/types';
 import { renderDubaiLicense } from '@/lib/renderers/dubaiLicenseRenderer';
-import { loadDataUrlImage, loadImage } from '@/lib/images';
+import { fileToOrientedDataUrl, loadDataUrlImage, loadImage, loadImageToCanvas, preloadImage } from '@/lib/images';
+import { englishNameToArabic } from '@/lib/dubaiArabicName';
 import { validateImageFile } from '@/lib/uploads';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
@@ -47,6 +48,13 @@ import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { clamp, cn } from '@/lib/utils';
+
+if (typeof document !== 'undefined') preloadImage(DUBAI_TEMPLATE_SRC);
+
+const dubaiTemplateCanvasPromise =
+  typeof document !== 'undefined'
+    ? loadImageToCanvas(DUBAI_TEMPLATE_SRC, DUBAI_DOC_WIDTH, DUBAI_DOC_HEIGHT)
+    : Promise.resolve(null);
 
 function MoveButton({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
   return (
@@ -78,7 +86,7 @@ function DubaiLicenseEditorInner() {
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
-  const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
+  const [bgImg, setBgImg] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
   const [activeField, setActiveField] = useState<DubaiOverlayKey>('licenseNo');
   const [moveStep, setMoveStep] = useState(1);
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
@@ -208,8 +216,15 @@ function DubaiLicenseEditorInner() {
 
   useEffect(() => {
     let alive = true;
-    void loadImage(DUBAI_TEMPLATE_SRC).then((img) => {
-      if (alive && img) setBgImg(img);
+    void dubaiTemplateCanvasPromise.then((canvas) => {
+      if (!alive) return;
+      if (canvas) {
+        setBgImg(canvas);
+        return;
+      }
+      void loadImage(DUBAI_TEMPLATE_SRC).then((img) => {
+        if (alive && img) setBgImg(img);
+      });
     });
     return () => {
       alive = false;
@@ -309,9 +324,19 @@ function DubaiLicenseEditorInner() {
 
   const setIdentityField = useCallback(
     (key: DubaiFieldKey, value: string) => {
-      setField(key, value);
+      if (key !== 'nameEn') {
+        setField(key, value);
+        return;
+      }
+      const arabic = englishNameToArabic(value);
+      setSnapshot((prev) => ({
+        ...prev,
+        nameEn: value,
+        nameAr: arabic,
+        authorityText: arabic,
+      }));
     },
-    [setField],
+    [setField, setSnapshot],
   );
 
   const moveField = useCallback(
@@ -510,20 +535,21 @@ function DubaiLicenseEditorInner() {
         toast.error(invalid);
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = String(e.target?.result);
-        const img = new Image();
-        img.onload = () => {
-          setPhotoImage(img);
-          setPhotoName(file.name);
-          setPhoto({ photoDataUrl: dataUrl });
-          setActiveField('photo');
-          toast.success('Photo loaded');
-        };
-        img.src = dataUrl;
-      };
-      reader.readAsDataURL(file);
+      const dataUrl = await fileToOrientedDataUrl(file);
+      if (!dataUrl) {
+        toast.error('Could not read the photo');
+        return;
+      }
+      const img = await loadDataUrlImage(dataUrl);
+      if (!img) {
+        toast.error('Could not decode the photo');
+        return;
+      }
+      setPhotoImage(img);
+      setPhotoName(file.name);
+      setPhoto({ photoDataUrl: dataUrl });
+      setActiveField('photo');
+      toast.success('Photo loaded');
     },
     [toast, setPhoto],
   );

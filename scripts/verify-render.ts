@@ -105,6 +105,7 @@ import {
   isDubaiWarningText,
   normalizeDubaiLicenseSnapshot,
 } from '../src/lib/constants/dubai-license';
+import { englishNameToArabic } from '../src/lib/dubaiArabicName';
 import type { DrivingLicenseSnapshot, NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
 
 const ROOT = process.cwd();
@@ -1383,10 +1384,15 @@ async function main() {
   renderDubaiLicense(dubaiScaled as unknown as HTMLCanvasElement, { ...DUBAI_DEFAULTS }, dubaiBg as unknown as HTMLImageElement, 0.5);
   assert(dubaiScaled.width === 1600 && dubaiScaled.height === 999, `Dubai scaled canvas 1600×999 (got ${dubaiScaled.width}×${dubaiScaled.height})`);
 
-  assert(DUBAI_DEFAULT_LAYOUTS.licenseNo.x === 1680 && DUBAI_DEFAULT_LAYOUTS.licenseNo.y === 730, 'Dubai License No at 1680,730');
-  assert(DUBAI_DEFAULT_LAYOUTS.nameEn.x === 1680 && DUBAI_DEFAULT_LAYOUTS.nameEn.y === 1055, 'Dubai English name at 1680,1055');
+  assert(DUBAI_DEFAULT_LAYOUTS.licenseNo.x === 1638 && DUBAI_DEFAULT_LAYOUTS.licenseNo.y === 753, 'Dubai License No at 1638,753');
+  assert(DUBAI_DEFAULT_LAYOUTS.licenseNo.fontSize === 84 && DUBAI_DEFAULT_LAYOUTS.licenseNo.fontFamily === 'arial', 'Dubai License No is 84px Arial Regular');
+  assert(DUBAI_DEFAULT_LAYOUTS.nameEn.x === 1320 && DUBAI_DEFAULT_LAYOUTS.nameEn.y === 1058, 'Dubai English name at 1320,1058');
+  assert(DUBAI_DEFAULT_LAYOUTS.nameEn.fontSize === 84 && DUBAI_DEFAULT_LAYOUTS.nameEn.fontFamily === 'arial', 'Dubai English name is 84px Arial Regular');
+  assert(DUBAI_DEFAULT_LAYOUTS.nameAr.x === 2781 && DUBAI_DEFAULT_LAYOUTS.nameAr.y === 891, 'Dubai Arabic name at 2781,891');
+  assert(DUBAI_DEFAULT_LAYOUTS.nameAr.fontSize === 84 && DUBAI_DEFAULT_LAYOUTS.nameAr.fontFamily === 'arial', 'Dubai Arabic name is 84px Arial Regular');
   assert(DUBAI_DEFAULT_LAYOUTS.nameAr.align === 'right', 'Dubai Arabic name is right-aligned');
-  assert(DUBAI_DEFAULT_LAYOUTS.authorityText.y === 1820, 'Dubai authority text sits in the bottom box');
+  assert(DUBAI_DEFAULT_LAYOUTS.authorityText.x === 369 && DUBAI_DEFAULT_LAYOUTS.authorityText.y === 1705, 'Dubai authority text at 369,1705');
+  assert(DUBAI_DEFAULT_LAYOUTS.authorityText.fontSize === 64 && DUBAI_DEFAULT_LAYOUTS.authorityText.fontFamily === 'arial', 'Dubai authority text is 64px Arial Regular');
   assert(isDubaiWarningText(DUBAI_DEMO_NOTE), 'DUBAI_DEMO_NOTE is classified as warning text');
   assert(!isDubaiWarningText('ALEX MORGAN'), 'fictional holder name is not warning text');
   assert(isDubaiOverlayArtifact('{{placeholder}}'), 'mustache placeholders are canvas artifacts');
@@ -1432,15 +1438,23 @@ async function main() {
   assert(dubaiEditorSrc.includes('getVaultRecord'), 'Dubai editor reopens History records');
   assert(dubaiEditorSrc.includes('onSaveHistory'), 'Dubai editor Save → History button is wired');
   assert(dubaiEditorSrc.includes('loadImage(DUBAI_TEMPLATE_SRC)'), 'Dubai editor loads the default template on open');
+  assert(dubaiEditorSrc.includes('loadImageToCanvas'), 'Dubai editor decodes the template to the working canvas immediately');
+  assert(dubaiEditorSrc.includes('englishNameToArabic'), 'Dubai English name auto-fills Arabic');
   assert(dubaiEditorSrc.includes('kindLabel="Dubai License DEMO"'), 'Dubai editor is labelled DEMO');
   assert(dubaiEditorSrc.includes('DEMO / SAMPLE'), 'Dubai editor keeps DEMO/SAMPLE marking');
   assert(dubaiEditorSrc.includes('dir={f.rtl ? \'rtl\' : \'ltr\'}') || dubaiEditorSrc.includes('dir={f.rtl'), 'Dubai Arabic input uses RTL');
   assert(dubaiRendererSrc.includes('isDubaiOverlayArtifact'), 'Dubai renderer filters overlay artifacts');
+  assert(dubaiRendererSrc.includes('drawPhotoCover'), 'Dubai photo is cover-fitted inside the frame');
   assert(!dubaiRendererSrc.includes('DUBAI_DEMO_NOTE'), 'Dubai renderer does not stamp extra DEMO note over the template');
   assert(dubaiRendererSrc.includes("ctx.direction = 'rtl'"), 'Dubai renderer sets RTL for Arabic');
   assert(!dubaiDlSrc.includes('dubai.jpg'), 'existing Driving License editor is unchanged vs Dubai template');
   assert(DUBAI_PHOTO_DEFAULT.w > 0 && DUBAI_PHOTO_DEFAULT.h > 0, 'Dubai photo defaults are present');
   assert(DUBAI_FIELD_ORDER.length === 9, 'Dubai has 9 editable text fields');
+  assert(englishNameToArabic('RIYAD') === 'الرياض', 'RIYAD transliterates to الرياض');
+  assert(englishNameToArabic('SABBIR') === 'صابر', 'SABBIR transliterates to صابر');
+  assert(englishNameToArabic('ALEX MORGAN') === 'أليكس مورغان', 'ALEX MORGAN transliterates to أليكس مورغان');
+  assert(englishNameToArabic('') === '', 'empty English name maps to empty Arabic');
+  assert(DUBAI_DEFAULTS.authorityText === DUBAI_DEFAULTS.nameAr, 'bottom reference mirrors Arabic name by default');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);

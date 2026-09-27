@@ -11,6 +11,54 @@ const INK = '#111111';
 const ARIAL = "'Arial Regular',Arial,sans-serif";
 const ARIAL_BOLD = "'Arial Bold MT','Arial Bold',Arial,sans-serif";
 
+export type DubaiImageSource = CanvasImageSource | HTMLImageElement | HTMLCanvasElement | null;
+
+function sourceSize(src: DubaiImageSource): { w: number; h: number } | null {
+  if (!src) return null;
+  if (typeof HTMLImageElement !== 'undefined' && src instanceof HTMLImageElement) {
+    if (!src.complete) return null;
+    const w = src.naturalWidth || src.width;
+    const h = src.naturalHeight || src.height;
+    return w > 0 && h > 0 ? { w, h } : null;
+  }
+  if (typeof HTMLCanvasElement !== 'undefined' && src instanceof HTMLCanvasElement) {
+    return src.width > 0 && src.height > 0 ? { w: src.width, h: src.height } : null;
+  }
+  const anySrc = src as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number; complete?: boolean };
+  if (anySrc.complete === false) return null;
+  const w = Number(anySrc.naturalWidth || anySrc.width || 0);
+  const h = Number(anySrc.naturalHeight || anySrc.height || 0);
+  return w > 0 && h > 0 ? { w, h } : null;
+}
+
+function isDrawableSource(src: DubaiImageSource): src is NonNullable<DubaiImageSource> {
+  return sourceSize(src) !== null;
+}
+
+/** Cover-fit the photo into the frame, top-aligned so faces stay in view. */
+export function drawPhotoCover(
+  ctx: CanvasRenderingContext2D,
+  photo: NonNullable<DubaiImageSource>,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const size = sourceSize(photo);
+  if (!size) return;
+  const scale = Math.max(w / size.w, h / size.h);
+  const dw = size.w * scale;
+  const dh = size.h * scale;
+  const dx = x - (dw - w) / 2;
+  const dy = y;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.drawImage(photo as CanvasImageSource, dx, dy, dw, dh);
+  ctx.restore();
+}
+
 function fontFor(layout: DubaiLayout): string {
   const family = layout.fontFamily === 'arial-bold' ? ARIAL_BOLD : ARIAL;
   return `${layout.fontSize}px ${family}`;
@@ -61,10 +109,10 @@ function strokeBox(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 export function renderDubaiLicense(
   canvas: HTMLCanvasElement,
   snap: DubaiLicenseSnapshot,
-  bgImg: HTMLImageElement | null,
+  bgImg: DubaiImageSource,
   scale = 1,
   highlight?: DubaiOverlayKey,
-  photoImg: HTMLImageElement | null = null,
+  photoImg: DubaiImageSource = null,
 ): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -81,16 +129,16 @@ export function renderDubaiLicense(
 
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, W, H);
-  if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
-    ctx.drawImage(bgImg, 0, 0, W, H);
+  if (isDrawableSource(bgImg)) {
+    ctx.drawImage(bgImg as CanvasImageSource, 0, 0, W, H);
   }
 
   const photoW = Math.min(Math.max(snap.photoW || 40, 40), W);
   const photoH = Math.min(Math.max(snap.photoH || 40, 40), H);
   const photoX = Number.isFinite(snap.photoX) ? snap.photoX : 0;
   const photoY = Number.isFinite(snap.photoY) ? snap.photoY : 0;
-  if (photoImg && photoImg.complete && photoImg.naturalWidth > 0) {
-    ctx.drawImage(photoImg, photoX, photoY, photoW, photoH);
+  if (isDrawableSource(photoImg)) {
+    drawPhotoCover(ctx, photoImg, photoX, photoY, photoW, photoH);
   }
 
   for (const key of DUBAI_FIELD_ORDER) {

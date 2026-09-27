@@ -73,7 +73,7 @@ const layout = (
   fontSize,
   x,
   y,
-  fontFamily: 'arial-bold',
+  fontFamily: 'arial',
   ...extra,
 });
 
@@ -82,15 +82,15 @@ const layout = (
  * blank gaps next to the printed English / Arabic labels.
  */
 export const DUBAI_DEFAULT_LAYOUTS: Record<DubaiFieldKey, DubaiLayout> = {
-  licenseNo: layout(1680, 730, 48),
-  nameAr: layout(2520, 870, 48, { align: 'right' }),
-  nameEn: layout(1680, 1055, 48),
-  nationality: layout(1680, 1225, 48),
-  dob: layout(1680, 1395, 48),
-  issueDate: layout(1680, 1548, 48),
-  expiryDate: layout(1680, 1718, 48),
-  placeOfIssue: layout(1680, 1872, 48),
-  authorityText: layout(504, 1820, 28, { fontFamily: 'arial', align: 'left' }),
+  licenseNo: layout(1638, 753, 84),
+  nameAr: layout(2781, 891, 84, { align: 'right' }),
+  nameEn: layout(1320, 1058, 84),
+  nationality: layout(1680, 1225, 48, { fontFamily: 'arial-bold' }),
+  dob: layout(1680, 1395, 48, { fontFamily: 'arial-bold' }),
+  issueDate: layout(1680, 1548, 48, { fontFamily: 'arial-bold' }),
+  expiryDate: layout(1680, 1718, 48, { fontFamily: 'arial-bold' }),
+  placeOfIssue: layout(1680, 1872, 48, { fontFamily: 'arial-bold' }),
+  authorityText: layout(369, 1705, 64, { align: 'left' }),
 };
 
 export const DUBAI_PHOTO_DEFAULT = {
@@ -108,9 +108,9 @@ export const DUBAI_PHOTO_RANGES: Record<'x' | 'y' | 'w' | 'h', Omit<SliderSpec, 
 };
 
 export const DUBAI_LAYOUT_RANGES: Record<'fontSize' | 'x' | 'y', Omit<SliderSpec, 'key'>> = {
-  fontSize: { label: 'Font Size', min: 8, max: 120, default: 48, mono: true },
-  x: { label: 'X', min: 0, max: DUBAI_DOC_WIDTH, default: 1680, mono: true },
-  y: { label: 'Y', min: 0, max: DUBAI_DOC_HEIGHT, default: 730, mono: true },
+  fontSize: { label: 'Font Size', min: 8, max: 120, default: 84, mono: true },
+  x: { label: 'X', min: 0, max: DUBAI_DOC_WIDTH, default: 1638, mono: true },
+  y: { label: 'Y', min: 0, max: DUBAI_DOC_HEIGHT, default: 753, mono: true },
 };
 
 function finiteNumber(value: unknown, fallback: number, min: number, max: number): number {
@@ -128,7 +128,7 @@ export const DUBAI_DEFAULTS: DubaiLicenseSnapshot = {
   issueDate: '01 JAN 2024',
   expiryDate: '01 JAN 2028',
   placeOfIssue: '',
-  authorityText: '',
+  authorityText: 'أليكس مورغان',
   layouts: DUBAI_DEFAULT_LAYOUTS,
   photoX: DUBAI_PHOTO_DEFAULT.x,
   photoY: DUBAI_PHOTO_DEFAULT.y,
