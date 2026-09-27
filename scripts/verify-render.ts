@@ -1176,7 +1176,13 @@ async function main() {
   assert(DL_DOC_WIDTH === 3264 && DL_DOC_HEIGHT === 1998, 'DL canvas matches template pixels');
   assert(DL_DEFAULTS.refNo === 'DM347547NP501', 'DL default reference number is DM347547NP501');
   assert(DL_DEFAULT_REF_NO === 'DM347547NP501', 'DL_DEFAULT_REF_NO is DM347547NP501');
-  assert(DL_DEFAULTS.name === '' && DL_DEFAULTS.fatherHusband === '', 'DL default identity overlays are blank (template artwork only)');
+  assert(DL_DEFAULTS.name === 'TEST HOLDER', 'DL default Name is TEST HOLDER');
+  assert(DL_DEFAULTS.dob === '01 Jan 1990', 'DL default Date of Birth is 01 Jan 1990');
+  assert(DL_DEFAULTS.bloodGroup === 'O+', 'DL default Blood Group is O+');
+  assert(DL_DEFAULTS.fatherHusband === 'TEST FATHER', 'DL default Father/Husband is TEST FATHER');
+  assert(DL_DEFAULTS.issueDate === '01 Jan 2024', 'DL default Issue/Renewal Date is 01 Jan 2024');
+  assert(DL_DEFAULTS.validityDate === '31 Dec 2028', 'DL default Validity Date is 31 Dec 2028');
+  assert(DL_DEFAULTS.issuingAuthority === 'TEST BRTA', 'DL default Issuing Authority is TEST BRTA');
 
   const dlCanvas = createCanvas(1, 1);
   renderDrivingLicense(dlCanvas as unknown as HTMLCanvasElement, { ...DL_DEFAULTS }, dlBg as unknown as HTMLImageElement, 1);
@@ -1193,25 +1199,31 @@ async function main() {
   assert(!dlPayload.includes('DEMO HOLDER'), 'DL QR payload excludes DEMO HOLDER');
   assert(!dlPayload.includes('DL-TEST'), 'DL QR payload excludes stale DL-TEST seed');
   assert(dlPayload.includes(`Reference Number : ${DL_DEFAULT_REF_NO}`), 'DL QR payload → Reference Number');
-  assert(!dlPayload.includes('Name :'), 'DL default QR omits empty Name');
+  assert(dlPayload.includes('Name : TEST HOLDER'), 'DL default QR encodes Name');
+  assert(dlPayload.includes('Date of Birth : 01 Jan 1990'), 'DL default QR encodes Date of Birth');
+  assert(dlPayload.includes('Blood Group : O+'), 'DL default QR encodes Blood Group');
+  assert(dlPayload.includes('Father / Husband : TEST FATHER'), 'DL default QR encodes Father / Husband');
+  assert(dlPayload.includes('Issue / Renewal Date : 01 Jan 2024'), 'DL default QR encodes Issue / Renewal Date');
+  assert(dlPayload.includes('Validity Date : 31 Dec 2028'), 'DL default QR encodes Validity Date');
+  assert(dlPayload.includes('Issuing Authority : TEST BRTA'), 'DL default QR encodes Issuing Authority');
   const filledDlPayload = buildDrivingLicenseQrPayload({
     ...DL_DEFAULTS,
-    name: 'TEST HOLDER',
-    dob: '01 Jan 1990',
-    bloodGroup: 'O+',
-    fatherHusband: 'TEST FATHER',
-    issueDate: '01 Jan 2024',
-    validityDate: '31 Dec 2028',
-    issuingAuthority: 'TEST BRTA',
+    name: 'MOVED HOLDER',
+    dob: '02 Feb 1991',
+    bloodGroup: 'A+',
+    fatherHusband: 'MOVED FATHER',
+    issueDate: '02 Feb 2024',
+    validityDate: '31 Dec 2029',
+    issuingAuthority: 'MOVED BRTA',
   });
-  assert(filledDlPayload.includes('Name : TEST HOLDER'), 'DL QR payload → Name');
-  assert(filledDlPayload.includes('Date of Birth : 01 Jan 1990'), 'DL QR payload → Date of Birth');
-  assert(filledDlPayload.includes('Blood Group : O+'), 'DL QR payload → Blood Group');
-  assert(filledDlPayload.includes('Father / Husband : TEST FATHER'), 'DL QR payload → Father / Husband');
-  assert(filledDlPayload.includes('Issue / Renewal Date : 01 Jan 2024'), 'DL QR payload → Issue / Renewal Date');
-  assert(filledDlPayload.includes('Validity Date : 31 Dec 2028'), 'DL QR payload → Validity Date');
+  assert(filledDlPayload.includes('Name : MOVED HOLDER'), 'DL QR payload → Name');
+  assert(filledDlPayload.includes('Date of Birth : 02 Feb 1991'), 'DL QR payload → Date of Birth');
+  assert(filledDlPayload.includes('Blood Group : A+'), 'DL QR payload → Blood Group');
+  assert(filledDlPayload.includes('Father / Husband : MOVED FATHER'), 'DL QR payload → Father / Husband');
+  assert(filledDlPayload.includes('Issue / Renewal Date : 02 Feb 2024'), 'DL QR payload → Issue / Renewal Date');
+  assert(filledDlPayload.includes('Validity Date : 31 Dec 2029'), 'DL QR payload → Validity Date');
   assert(filledDlPayload.includes(`Reference Number : ${DL_DEFAULT_REF_NO}`), 'DL filled QR keeps default Ref No');
-  assert(filledDlPayload.includes('Issuing Authority : TEST BRTA'), 'DL QR payload → Issuing Authority');
+  assert(filledDlPayload.includes('Issuing Authority : MOVED BRTA'), 'DL QR payload → Issuing Authority');
   assert(!dlPayload.includes('bloodGroup') && !dlPayload.includes('fatherHusband'), 'DL QR omits internal unused keys');
   const warnedPayload = buildDrivingLicenseQrPayload({ ...DL_DEFAULTS, name: DL_DEMO_NOTE });
   assert(!warnedPayload.includes(DL_DEMO_NOTE), 'DL QR drops warning text even if pasted into a field');
@@ -1237,8 +1249,9 @@ async function main() {
   assert(!isDlWarningText('TEST HOLDER'), 'fictional holder name is not warning text');
   assert(isDlOverlayArtifact('{{placeholder}}'), 'mustache placeholders are canvas artifacts');
   assert(isDlOverlayArtifact('undefined'), 'undefined token is a canvas artifact');
-  assert(isDlOverlayArtifact(DL_DEFAULTS.name), 'blank default name is not painted over the template');
+  assert(!isDlOverlayArtifact(DL_DEFAULTS.name), 'default DEMO name is painted on the template');
   assert(!isDlOverlayArtifact('TEST HOLDER'), 'holder name is paintable');
+  assert(isDlOverlayArtifact(''), 'blank overlay text is not painted');
   assert(isDrivingLicenseFreshOpen({}), 'direct editor open is a fresh open');
   assert(isDrivingLicenseFreshOpen({ recordNo: '  ', projectId: '', templateName: null }), 'whitespace query params still count as fresh open');
   assert(!isDrivingLicenseFreshOpen({ recordNo: 'DL-1' }), 'History record is not a fresh open');
@@ -1249,7 +1262,10 @@ async function main() {
   assert(!isDlStaleFactorySeed({ name: 'TEST USER', refNo: DL_DEFAULT_REF_NO }), 'current default ref is not a stale seed');
   const freshOpen = drivingLicenseFreshOpenSnapshot();
   assert(freshOpen.refNo === DL_DEFAULT_REF_NO, 'fresh open snapshot uses DM347547NP501');
-  assert(freshOpen.name === '' && freshOpen.dob === '', 'fresh open snapshot does not overlay DEMO HOLDER');
+  assert(freshOpen.name === 'TEST HOLDER' && freshOpen.dob === '01 Jan 1990', 'fresh open snapshot seeds DEMO identity values');
+  assert(freshOpen.bloodGroup === 'O+' && freshOpen.fatherHusband === 'TEST FATHER', 'fresh open snapshot seeds blood group and father/husband');
+  assert(freshOpen.issueDate === '01 Jan 2024' && freshOpen.validityDate === '31 Dec 2028', 'fresh open snapshot seeds issue and validity dates');
+  assert(freshOpen.issuingAuthority === 'TEST BRTA', 'fresh open snapshot seeds issuing authority');
   assert(DL_AUTOSAVE_KEY_PREFIX === 'studio.autosave.driving-license.', 'DL autosave keys are namespaced per editor');
 
   const restored = normalizeDrivingLicenseSnapshot({
@@ -1276,6 +1292,19 @@ async function main() {
     assert(restored.layouts[key].x === DL_DEFAULT_LAYOUTS[key].x, `DL ${key} X untouched by others`);
   }
   assert(restored.dob === DL_DEFAULTS.dob, 'DL missing fields restore defaults');
+  const savedBlank = normalizeDrivingLicenseSnapshot({
+    name: '',
+    dob: '',
+    bloodGroup: '',
+    fatherHusband: '',
+    issueDate: '',
+    validityDate: '',
+    refNo: 'SAVED-REF-1',
+    issuingAuthority: '',
+  });
+  assert(savedBlank.name === '' && savedBlank.dob === '', 'saved blank identity fields are not overwritten by DEMO defaults');
+  assert(savedBlank.refNo === 'SAVED-REF-1', 'saved reference number is preserved on reopen');
+  assert(savedBlank.issuingAuthority === '', 'saved blank issuing authority is preserved on reopen');
 
   const dlDefaultCanvas = createCanvas(1, 1);
   renderDrivingLicense(dlDefaultCanvas as unknown as HTMLCanvasElement, { ...DL_DEFAULTS }, null, 1);

@@ -135,14 +135,14 @@ function finiteNumber(value: unknown, fallback: number, min: number, max: number
 }
 
 export const DL_DEFAULTS: DrivingLicenseSnapshot = {
-  name: '',
-  dob: '',
-  bloodGroup: '',
-  fatherHusband: '',
-  issueDate: '',
-  validityDate: '',
+  name: 'TEST HOLDER',
+  dob: '01 Jan 1990',
+  bloodGroup: 'O+',
+  fatherHusband: 'TEST FATHER',
+  issueDate: '01 Jan 2024',
+  validityDate: '31 Dec 2028',
   refNo: DL_DEFAULT_REF_NO,
-  issuingAuthority: '',
+  issuingAuthority: 'TEST BRTA',
   layouts: DL_DEFAULT_LAYOUTS,
   photoX: DL_PHOTO_DEFAULT.x,
   photoY: DL_PHOTO_DEFAULT.y,
@@ -220,7 +220,7 @@ export function isDlStaleFactorySeed(s: Partial<DrivingLicenseSnapshot> | null |
 }
 
 export function drivingLicenseFreshOpenSnapshot(): DrivingLicenseSnapshot {
-  return normalizeDrivingLicenseSnapshot({ refNo: DL_DEFAULT_REF_NO });
+  return normalizeDrivingLicenseSnapshot({ ...DL_DEFAULTS });
 }
 
 /** Drop per-user / anon autosave so a fresh open cannot restore DEMO HOLDER / DL-TEST-* seeds. */
