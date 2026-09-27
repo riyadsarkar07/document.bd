@@ -156,6 +156,17 @@ export default function DashboardPage() {
                 TIN Record
               </Button>
             )}
+            {hasToolAccess(profile, 'driving-license') ? (
+              <Link href="/studio/editor/driving-license">
+                <Button variant="outline" icon={<CreditCard className="h-4 w-4" />}>
+                  Driving License
+                </Button>
+              </Link>
+            ) : (
+              <Button variant="outline" icon={<Lock className="h-4 w-4" />} onClick={denyAccess}>
+                Driving License
+              </Button>
+            )}
             {hasToolAccess(profile, 'unhcr') ? (
               <Link href="/studio/editor/unhcr">
                 <Button variant="outline" icon={<Contact className="h-4 w-4" />}>
@@ -296,6 +307,15 @@ export default function DashboardPage() {
               tone: 'from-success to-emerald-500 text-white',
               meta: '2480 × 3508 px',
               scope: 'tin',
+            },
+            {
+              href: '/studio/editor/driving-license',
+              title: 'Driving License Editor',
+              desc: 'DEMO overlay on the uploaded license template — Arial fields, photo, and QR. Not an official licence.',
+              icon: CreditCard,
+              tone: 'from-emerald-500 to-teal-600 text-white',
+              meta: '3264 × 1998 px',
+              scope: 'driving-license',
             },
             {
               href: '/studio/editor/unhcr',

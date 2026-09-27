@@ -18,6 +18,7 @@ const TOOL_ROUTES: { prefix: string; scope: ToolScope }[] = [
   { prefix: '/studio/editor/pdf', scope: 'pdf' },
   { prefix: '/studio/editor/nid', scope: 'nid' },
   { prefix: '/studio/editor/tin', scope: 'tin' },
+  { prefix: '/studio/editor/driving-license', scope: 'driving-license' },
   { prefix: '/studio/editor/unhcr-s2', scope: 'unhcr' },
   { prefix: '/studio/editor/unhcr', scope: 'unhcr' },
   { prefix: '/studio/editor/page-recover', scope: 'page-recover' },

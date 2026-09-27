@@ -2,13 +2,14 @@ export type Role = 'admin' | 'editor' | 'viewer';
 
 export type UserStatus = 'active' | 'disabled';
 
-export type DocKind = 'tm' | 'nid' | 'tin' | 'unhcr';
+export type DocKind = 'tm' | 'nid' | 'tin' | 'unhcr' | 'driving-license';
 
 export const DOC_KIND_LABEL: Record<DocKind, string> = {
   tm: 'Trademark Certificate',
   nid: 'NID Card',
   tin: 'TIN Record',
   unhcr: 'UNHCR ID',
+  'driving-license': 'Driving License',
 };
 
 export interface Profile {

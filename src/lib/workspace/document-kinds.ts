@@ -18,7 +18,8 @@ export type DocumentKind =
   | 'unhcr-s2'
   | 'pdf'
   | 'page-recover'
-  | 'business-manager';
+  | 'business-manager'
+  | 'driving-license';
 
 /** Mirrors the `Badge` component tones without importing UI into the data layer. */
 export type DocumentBadgeTone = 'gold' | 'blue' | 'red' | 'green' | 'violet' | 'muted' | 'warning';
@@ -120,6 +121,15 @@ export const DOCUMENT_KINDS: Record<DocumentKind, DocumentKindMeta> = {
     recordPrefix: 'BM',
     certificate: false,
   },
+  'driving-license': {
+    kind: 'driving-license',
+    label: 'Driving License',
+    short: 'DL',
+    editorPath: '/studio/editor/driving-license',
+    badgeTone: 'green',
+    recordPrefix: 'DL',
+    certificate: false,
+  },
 };
 
 /** Stable display order for filters / menus. */
@@ -133,6 +143,7 @@ export const DOCUMENT_KIND_ORDER: DocumentKind[] = [
   'pdf',
   'page-recover',
   'business-manager',
+  'driving-license',
 ];
 
 export function isDocumentKind(value: unknown): value is DocumentKind {

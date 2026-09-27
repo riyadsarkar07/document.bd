@@ -1,6 +1,6 @@
 import type { DocumentKind } from '@/lib/workspace/document-kinds';
 
-export type DocKind = 'tm' | 'nid' | 'tin' | 'unhcr';
+export type DocKind = 'tm' | 'nid' | 'tin' | 'unhcr' | 'driving-license';
 
 export type TinAlign = 'left' | 'center' | 'right' | 'justify';
 export type TinWeight = 'normal' | 'bold';
@@ -203,6 +203,50 @@ export type UnhcrTestOverlayKey = (typeof UNHCR_TEST_OVERLAY_KEYS)[number];
 export type UnhcrTextOrientation = 'horizontal' | 'vertical';
 
 export type UnhcrS2OverlayKey = UnhcrOverlayKey | UnhcrTestOverlayKey;
+
+export type DlFontFamily = 'arial' | 'arial-bold';
+
+export interface DlLayout {
+  fontSize: number;
+  x: number;
+  y: number;
+  fontFamily: DlFontFamily;
+}
+
+export const DL_FIELD_KEYS = [
+  'name',
+  'dob',
+  'bloodGroup',
+  'fatherHusband',
+  'issueDate',
+  'validityDate',
+  'refNo',
+  'issuingAuthority',
+] as const;
+
+export type DlFieldKey = (typeof DL_FIELD_KEYS)[number];
+
+export type DlOverlayKey = DlFieldKey | 'photo' | 'qr';
+
+export interface DrivingLicenseSnapshot {
+  name: string;
+  dob: string;
+  bloodGroup: string;
+  fatherHusband: string;
+  issueDate: string;
+  validityDate: string;
+  refNo: string;
+  issuingAuthority: string;
+  layouts: Record<DlFieldKey, DlLayout>;
+  photoX: number;
+  photoY: number;
+  photoW: number;
+  photoH: number;
+  photoDataUrl?: string | null;
+  qrX: number;
+  qrY: number;
+  qrSize: number;
+}
 
 export interface UnhcrS2Snapshot extends UnhcrSnapshot {
   testBarcodeText: string;

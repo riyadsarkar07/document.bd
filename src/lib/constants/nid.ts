@@ -137,6 +137,7 @@ export const FONT_FACES = [
 
 export const ASSET_LIST = [
   { name: 'cert-bangladesh.png', type: 'image', desc: 'Trademark certificate background', path: '/assets/cert-bangladesh.png' },
+  { name: 'Driving License.png', type: 'image', desc: 'Driving license DEMO template', path: '/assets/Driving License.png' },
   { name: 'nid-bg.png', type: 'image', desc: 'NID card background', path: '/assets/nid-bg.png' },
   { name: 'Unchar.png', type: 'image', desc: 'UNHCR ID card background', path: '/assets/Unchar.png' },
   { name: 'sign remove.png', type: 'image', desc: 'Signature overlay', path: '/assets/sign remove.png' },

@@ -525,7 +525,7 @@ export default function HistoryPage() {
             description={
               view === 'trashed'
                 ? 'Records you move to the trash appear here until restored or permanently deleted.'
-                : 'Save a document from any Studio editor (TM, YouTube, PDF, NID, TIN, or a service record) to secure it in the Cloud Vault.'
+                : 'Save a document from any Studio editor (TM, YouTube, PDF, NID, TIN, Driving License, or a service record) to secure it in the Cloud Vault.'
             }
           />
         )

@@ -67,7 +67,20 @@ import {
   unhcrQrPayload,
 } from '../src/lib/unhcrCodes';
 import { buildTinQrPayload, encodeDemoQr } from '../src/lib/tinQr';
-import type { NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
+import { buildDrivingLicenseQrPayload, encodeDrivingLicenseQr } from '../src/lib/drivingLicenseQr';
+import { renderDrivingLicense } from '../src/lib/renderers/drivingLicenseRenderer';
+import {
+  DL_DEFAULTS,
+  DL_DEFAULT_LAYOUTS,
+  DL_DOC_HEIGHT,
+  DL_DOC_WIDTH,
+  DL_FIELD_ORDER,
+  DL_PHOTO_DEFAULT,
+  DL_QR_DEFAULT,
+  DL_TEMPLATE_SRC,
+  normalizeDrivingLicenseSnapshot,
+} from '../src/lib/constants/driving-license';
+import type { DrivingLicenseSnapshot, NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
 
 const ROOT = process.cwd();
 const legacyHtml = readFileSync(join(ROOT, 'legacy/index.html'), 'utf-8');
@@ -1145,6 +1158,82 @@ async function main() {
   renderUnhcrS2Card(verticalCanvas as unknown as HTMLCanvasElement, verticalRef, null, 1);
   const verticalPx = Buffer.from(verticalCanvas.getContext('2d')!.getImageData(0, 0, verticalCanvas.width, verticalCanvas.height).data.buffer);
   assert(!verticalPx.equals(movedTestPx), 'S2 vertical reference orientation paints different pixels than horizontal');
+
+  console.log('\n[DL] Driving License DEMO editor\n');
+  const dlBg = await loadImage('public/assets/Driving License.png');
+  assert(dlBg !== null, 'Driving License template image loads');
+  assert(dlBg!.width === 3264 && dlBg!.height === 1998, `DL template 3264×1998 (got ${dlBg!.width}×${dlBg!.height})`);
+  assert(DL_TEMPLATE_SRC === '/assets/Driving License.png', 'DL uses the uploaded template path');
+  assert(DL_DOC_WIDTH === 3264 && DL_DOC_HEIGHT === 1998, 'DL canvas matches template pixels');
+
+  const dlCanvas = createCanvas(1, 1);
+  renderDrivingLicense(dlCanvas as unknown as HTMLCanvasElement, { ...DL_DEFAULTS }, dlBg as unknown as HTMLImageElement, 1);
+  assert(dlCanvas.width === 3264 && dlCanvas.height === 1998, `DL canvas 3264×1998 (got ${dlCanvas.width}×${dlCanvas.height})`);
+
+  const dlScaled = createCanvas(1, 1);
+  renderDrivingLicense(dlScaled as unknown as HTMLCanvasElement, { ...DL_DEFAULTS }, dlBg as unknown as HTMLImageElement, 0.5);
+  assert(dlScaled.width === 1632 && dlScaled.height === 999, `DL scaled canvas 1632×999 (got ${dlScaled.width}×${dlScaled.height})`);
+
+  const dlPayload = buildDrivingLicenseQrPayload(DL_DEFAULTS);
+  assert(dlPayload.includes('DEMO / SAMPLE'), 'DL QR payload is marked DEMO/SAMPLE');
+  assert(dlPayload.includes(`Name : ${DL_DEFAULTS.name}`), 'DL QR payload → Name');
+  assert(dlPayload.includes(`Date of Birth : ${DL_DEFAULTS.dob}`), 'DL QR payload → Date of Birth');
+  assert(dlPayload.includes(`Issue / Renewal Date : ${DL_DEFAULTS.issueDate}`), 'DL QR payload → Issue / Renewal Date');
+  assert(dlPayload.includes(`Validity Date : ${DL_DEFAULTS.validityDate}`), 'DL QR payload → Validity Date');
+  assert(dlPayload.includes(`Reference Number : ${DL_DEFAULTS.refNo}`), 'DL QR payload → Reference Number');
+  assert(!dlPayload.includes('bloodGroup') && !dlPayload.includes('fatherHusband'), 'DL QR omits internal unused keys');
+  const dlQrDataUrl = await encodeDrivingLicenseQr(DL_DEFAULTS, 256);
+  assert(typeof dlQrDataUrl === 'string' && dlQrDataUrl.startsWith('data:image/png'), 'DL DEMO QR encodes to PNG data URL');
+
+  const restored = normalizeDrivingLicenseSnapshot({
+    name: 'MOVED HOLDER',
+    layouts: {
+      ...DL_DEFAULT_LAYOUTS,
+      name: { ...DL_DEFAULT_LAYOUTS.name, x: 1100, y: 700, fontSize: 50, fontFamily: 'arial-bold' },
+    },
+    photoX: 80,
+    photoY: 640,
+    photoW: 700,
+    photoH: 800,
+    qrX: 2500,
+    qrY: 1400,
+    qrSize: 220,
+  });
+  assert(restored.name === 'MOVED HOLDER', 'DL name persists through normalize');
+  assert(restored.layouts.name.x === 1100 && restored.layouts.name.y === 700, 'DL name X/Y persist through normalize');
+  assert(restored.layouts.name.fontSize === 50 && restored.layouts.name.fontFamily === 'arial-bold', 'DL font settings persist through normalize');
+  assert(restored.photoX === 80 && restored.photoY === 640 && restored.photoW === 700 && restored.photoH === 800, 'DL photo settings persist through normalize');
+  assert(restored.qrX === 2500 && restored.qrY === 1400 && restored.qrSize === 220, 'DL QR X/Y/size persist through normalize');
+  for (const key of DL_FIELD_ORDER) {
+    if (key === 'name') continue;
+    assert(restored.layouts[key].x === DL_DEFAULT_LAYOUTS[key].x, `DL ${key} X untouched by others`);
+  }
+  assert(restored.dob === DL_DEFAULTS.dob, 'DL missing fields restore defaults');
+
+  const dlDefaultCanvas = createCanvas(1, 1);
+  renderDrivingLicense(dlDefaultCanvas as unknown as HTMLCanvasElement, { ...DL_DEFAULTS }, null, 1);
+  const dlMovedCanvas = createCanvas(1, 1);
+  renderDrivingLicense(dlMovedCanvas as unknown as HTMLCanvasElement, restored, null, 1);
+  const dlDefaultPx = Buffer.from(dlDefaultCanvas.getContext('2d')!.getImageData(0, 0, dlDefaultCanvas.width, dlDefaultCanvas.height).data.buffer);
+  const dlMovedPx = Buffer.from(dlMovedCanvas.getContext('2d')!.getImageData(0, 0, dlMovedCanvas.width, dlMovedCanvas.height).data.buffer);
+  assert(!dlMovedPx.equals(dlDefaultPx), 'DL moved fields paint different pixels');
+
+  const dlBold = normalizeDrivingLicenseSnapshot({
+    layouts: { ...DL_DEFAULT_LAYOUTS, name: { ...DL_DEFAULT_LAYOUTS.name, fontFamily: 'arial-bold' } },
+  });
+  const dlRegular = normalizeDrivingLicenseSnapshot({
+    layouts: { ...DL_DEFAULT_LAYOUTS, name: { ...DL_DEFAULT_LAYOUTS.name, fontFamily: 'arial' } },
+  });
+  assert(dlBold.layouts.name.fontFamily === 'arial-bold', 'DL Arial Bold option stored');
+  assert(dlRegular.layouts.name.fontFamily === 'arial', 'DL Arial Regular option stored');
+
+  const dlEditorSrc = readFileSync(join(ROOT, 'src/app/studio/editor/driving-license/page.tsx'), 'utf8');
+  const dlHistorySrc = readFileSync(join(ROOT, 'src/app/studio/history/page.tsx'), 'utf8');
+  assert(dlEditorSrc.includes("docKind: 'driving-license'"), 'DL editor commits with driving-license kind');
+  assert(dlEditorSrc.includes('getVaultRecord'), 'DL editor reopens History records');
+  assert(dlEditorSrc.includes('onSaveHistory'), 'DL editor Save → History button is wired');
+  assert(dlHistorySrc.includes('Driving License'), 'History empty-state mentions Driving License');
+  assert(DL_PHOTO_DEFAULT.w > 0 && DL_QR_DEFAULT.size > 0, 'DL photo and QR defaults are present');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);

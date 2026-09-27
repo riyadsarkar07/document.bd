@@ -24,9 +24,10 @@ src/
 │   │   │   ├── hacked-page-recover/
 │   │   │   ├── youtube-trademark/
 │   │   │   ├── business-manager/
-│   │   │   ├── nid/
-│   │   │   ├── tin/
-│   │   │   └── unhcr/
+  │   │   │   ├── nid/
+  │   │   │   ├── tin/
+  │   │   │   ├── unhcr/
+  │   │   │   └── driving-license/
 │   │   ├── history/
 │   │   ├── templates/
 │   │   ├── projects/
@@ -80,6 +81,7 @@ nid
 tin
 unhcr-server-1
 unhcr-server-2
+driving-license
 
 Never use one generic document type when two editors require independent state.
 

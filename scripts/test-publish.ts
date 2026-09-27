@@ -221,6 +221,9 @@ function main() {
   assert(hasToolAccess({ role: 'viewer', allowed_tools: ['pdf'] }, 'pdf') === true, 'PDF Editor granted');
   assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tm'] }, 'pdf') === false, 'TM Certificate does not grant PDF Editor');
   assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'pdf') === true, 'null allowlist grants PDF Editor');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['driving-license'] }, 'driving-license') === true, 'Driving License granted');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tin'] }, 'driving-license') === false, 'TIN does not grant Driving License');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'driving-license') === true, 'null allowlist grants Driving License');
 
   console.log('\n[7] user self-publish eligibility (mirrors profiles.can_self_publish)\n');
   assert(canSelfPublish({ role: 'viewer', can_self_publish: true }) === true, 'purchased viewer can self-publish');
@@ -331,7 +334,7 @@ function main() {
   assert(unpackedLegacyKind.docKind === undefined, 'legacy TM rows without docKind stay untagged');
 
   console.log('\n[14] Unified History document-kind registry\n');
-  assert(DOCUMENT_KIND_ORDER.length === 9, 'registry lists all 9 Studio editors');
+  assert(DOCUMENT_KIND_ORDER.length === 10, 'registry lists all 10 Studio editors');
   assert(DOCUMENT_KIND_ORDER.every(isDocumentKind), 'every ordered kind is a valid DocumentKind');
   assert(documentKindMeta('tm').certificate === true, 'TM is a certificate kind');
   assert(documentKindMeta('youtube-trademark').certificate === true, 'YouTube Trademark is a certificate kind');
@@ -342,6 +345,7 @@ function main() {
   assert(documentKindMeta('pdf').certificate === false, 'PDF is not a certificate kind');
   assert(documentKindMeta('page-recover').certificate === false, 'Hacked Page Recover is not a certificate kind');
   assert(documentKindMeta('business-manager').certificate === false, 'Business Manager is not a certificate kind');
+  assert(documentKindMeta('driving-license').certificate === false, 'Driving License is not a certificate kind');
   assert(documentKindMeta(undefined).kind === 'tm', 'unknown kinds fall back to TM');
   assert(documentKindMeta('not-a-kind' as never).kind === 'tm', 'invalid kinds fall back to TM');
   assert(documentKindMeta('nid').editorPath === '/studio/editor/nid', 'NID reopens in the NID editor');
@@ -352,6 +356,8 @@ function main() {
   assert(documentKindMeta('pdf').editorPath === '/studio/editor/pdf', 'PDF reopens in the PDF editor');
   assert(documentKindMeta('page-recover').editorPath === '/studio/editor/page-recover', 'Recover reopens in its editor');
   assert(documentKindMeta('business-manager').editorPath === '/studio/editor/business-manager', 'Business Manager reopens in its editor');
+  assert(documentKindMeta('driving-license').editorPath === '/studio/editor/driving-license', 'Driving License reopens in its editor');
+  assert(documentKindMeta('driving-license').recordPrefix === 'DL', 'Driving License History ids use the DL prefix');
   assert(isDocumentKind('nid') && !isDocumentKind('certificate'), 'isDocumentKind accepts only registered kinds');
   const generated = newRecordId('pdf');
   assert(generated.startsWith(`${DOCUMENT_KINDS.pdf.recordPrefix}-`), 'generated PDF ids use the PDF prefix');
@@ -370,6 +376,31 @@ function main() {
   const unpackedTin = unpackDetails(packedTin);
   assert(unpackedTin.docKind === 'tin', 'TIN pack stores docKind');
   assert((unpackedTin.doc as { tinNo: string }).tinNo === '123456789012', 'TIN pack restores tinNo');
+
+  const dlDoc = {
+    name: 'DEMO HOLDER',
+    dob: '01 Jan 1990',
+    bloodGroup: 'O+',
+    fatherHusband: 'DEMO FATHER',
+    issueDate: '01 Jan 2024',
+    validityDate: '31 Dec 2028',
+    refNo: 'DL-TEST-0001',
+    issuingAuthority: 'DEMO BRTA',
+    layouts: { name: { fontSize: 42, x: 940, y: 660, fontFamily: 'arial-bold' } },
+    photoX: 35,
+    photoY: 607,
+    photoW: 840,
+    photoH: 928,
+    qrX: 2860,
+    qrY: 1480,
+    qrSize: 280,
+  };
+  const packedDl = packDetails('', stored, { docKind: 'driving-license', doc: dlDoc });
+  const unpackedDl = unpackDetails(packedDl);
+  assert(unpackedDl.docKind === 'driving-license', 'Driving License pack stores docKind');
+  assert((unpackedDl.doc as { refNo: string }).refNo === 'DL-TEST-0001', 'Driving License pack restores refNo');
+  assert((unpackedDl.doc as { name: string }).name === 'DEMO HOLDER', 'Driving License pack restores name');
+  assert((unpackedDl.doc as { qrX: number }).qrX === 2860, 'Driving License pack restores QR X');
 
   const unhcrDoc = {
     unhcrNo: 'MY-1001',
