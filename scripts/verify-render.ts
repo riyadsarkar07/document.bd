@@ -1267,6 +1267,11 @@ async function main() {
   assert(dlHistorySrc.includes('Driving License'), 'History empty-state mentions Driving License');
   assert(!dlRendererSrc.includes('DL_DEMO_NOTE'), 'DL renderer does not stamp extra DEMO note over the template');
   assert(dlRendererSrc.includes('isDlOverlayArtifact'), 'DL renderer filters overlay artifacts');
+  assert(!dlEditorSrc.includes('Driving License Inspector'), 'DL inspector omits Driving License Inspector heading');
+  assert(!dlEditorSrc.includes('DEMO · Driving License Editor'), 'DL inspector omits DEMO editor description heading');
+  assert(!dlEditorSrc.includes('DL_DEMO_NOTE'), 'DL inspector does not render DL_DEMO_NOTE');
+  assert(!dlEditorSrc.includes('Fictional TEST data only'), 'DL inspector omits fictional TEST warning box');
+  assert(!dlEditorSrc.includes('The uploaded template is preserved'), 'DL inspector omits helper description paragraph');
   assert(DL_PHOTO_DEFAULT.w > 0 && DL_QR_DEFAULT.size > 0, 'DL photo and QR defaults are present');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);

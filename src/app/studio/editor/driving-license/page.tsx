@@ -8,7 +8,6 @@ import { useDocumentEditor } from '@/lib/editor/use-document-editor';
 import {
   DL_DEFAULT_LAYOUTS,
   DL_DEFAULTS,
-  DL_DEMO_NOTE,
   DL_DOC_HEIGHT,
   DL_DOC_WIDTH,
   DL_FIELDS,
@@ -807,8 +806,7 @@ function DrivingLicenseEditorInner() {
       </div>
 
       <InspectorPanel
-        title="Driving License Inspector"
-        subtitle="DEMO · 3264×1998 · uploaded template"
+        title="Fields"
         open={editor.inspectorOpen}
         onToggle={editor.toggleInspector}
         sheetBodyClassName="max-h-[58vh] min-h-[38vh]"
@@ -828,12 +826,6 @@ function DrivingLicenseEditorInner() {
             <Button variant="outline" icon={<Camera className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>
               {photoName ? `Replace: ${photoName}` : 'Upload Photo'}
             </Button>
-            <div className="flex items-start gap-2 rounded-xl border border-danger/25 bg-danger/5 px-3 py-2.5">
-              <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-danger" />
-              <p className="text-[10.5px] font-medium leading-relaxed text-danger">
-                {DL_DEMO_NOTE}. Fictional TEST data only.
-              </p>
-            </div>
             <div className="flex items-center gap-2 font-mono text-[10.5px] text-dimm">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
               {editor.status}
@@ -841,13 +833,6 @@ function DrivingLicenseEditorInner() {
           </div>
         }
       >
-        <div className="border-b border-line bg-surface-raised px-4 py-3">
-          <p className="text-[10.5px] font-bold uppercase tracking-wide text-danger">DEMO · Driving License Editor</p>
-          <p className="mt-1 text-xs text-muted">
-            The uploaded template is preserved. Edit fields independently, switch Arial Regular / Bold, resize, and drag. Settings restore from History.
-          </p>
-        </div>
-
         <CollapsibleSection title="License Fields" icon={<Type className="h-3.5 w-3.5" />}>
           {DL_FIELDS.map((f) => (
             <PropertyInput
@@ -879,12 +864,6 @@ function DrivingLicenseEditorInner() {
               onChange={(e) => setActiveField(e.target.value as DlOverlayKey)}
               options={fieldOptions}
             />
-
-            {isQr && (
-              <p className="rounded-xl border border-line bg-surface-raised px-3 py-2 text-[10.5px] leading-relaxed text-muted">
-                The QR auto-generates from Name, Date of Birth, Blood Group, Father / Husband, Issue / Renewal, Validity, Reference Number, and Issuing Authority. Scanning shows those profile fields only — no DEMO warning text.
-              </p>
-            )}
 
             {!isPhoto && !isQr && (
               <>
@@ -1110,44 +1089,25 @@ function DrivingLicenseEditorInner() {
                   <span />
                 </div>
               </div>
-              <p className="text-[10px] leading-relaxed text-muted">
-                Drag the selected field on the card, or use the pad / X-Y sliders for precise placement.
-              </p>
             </div>
           </div>
         </CollapsibleSection>
 
         <CollapsibleSection
-          title="DEMO QR Code"
+          title="QR Code"
           accent="gold"
           icon={<QrCode className="h-3.5 w-3.5" />}
-          badge={
-            <span className="rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 font-mono text-[9.5px] normal-case tracking-normal text-danger">
-              auto-regenerates
-            </span>
-          }
         >
           <div className="flex items-start gap-3 rounded-xl border border-line bg-surface-raised p-3">
             {qrDataUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={qrDataUrl} alt="DEMO QR preview" className="h-24 w-24 rounded-md bg-white" />
+              <img src={qrDataUrl} alt="QR preview" className="h-24 w-24 rounded-md bg-white" />
             ) : (
               <div className="flex h-24 w-24 items-center justify-center rounded-md border border-dashed border-line-strong text-[10px] text-dimm">
                 QR
-                <br />
-                ready
               </div>
             )}
-            <div className="flex-1">
-              <p className="text-[11.5px] font-semibold text-primary">Scan with any QR reader</p>
-              <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted">
-                Shows Name, DOB, Blood Group, Father / Husband, dates, Reference Number, and Issuing Authority as structured test attributes.
-              </p>
-            </div>
           </div>
-          <pre className="mt-2 max-h-32 overflow-auto rounded-lg border border-line bg-surface-raised p-3 font-mono text-[10px] leading-relaxed text-muted">
-            {qrPayload}
-          </pre>
         </CollapsibleSection>
       </InspectorPanel>
 
