@@ -1,29 +1,33 @@
 'use client';
 
 import QRCode from 'qrcode';
+import { isDlWarningText } from './constants/driving-license';
 import type { DrivingLicenseSnapshot } from './editor/types';
-import { DL_DEMO_NOTE } from './constants/driving-license';
 
-/** Readable labels encoded into the DEMO QR — never internal field keys. */
+/** Readable labels encoded into the QR — never internal field keys or warning copy. */
 const QR_LABELS: { key: keyof DrivingLicenseSnapshot; label: string }[] = [
   { key: 'name', label: 'Name' },
   { key: 'dob', label: 'Date of Birth' },
+  { key: 'bloodGroup', label: 'Blood Group' },
+  { key: 'fatherHusband', label: 'Father / Husband' },
   { key: 'issueDate', label: 'Issue / Renewal Date' },
   { key: 'validityDate', label: 'Validity Date' },
   { key: 'refNo', label: 'Reference Number' },
+  { key: 'issuingAuthority', label: 'Issuing Authority' },
 ];
 
 /**
- * Builds the DEMO QR payload as human-readable plain text.
- * Empty fields are omitted. This is NOT an official verification code.
+ * Builds the QR payload as structured profile text only.
+ * Empty fields and explicit DEMO/SAMPLE warning lines are omitted.
  */
 export function buildDrivingLicenseQrPayload(snap: DrivingLicenseSnapshot): string {
-  const lines: string[] = [DL_DEMO_NOTE, ''];
+  const lines: string[] = [];
   for (const { key, label } of QR_LABELS) {
     const value = String(snap[key] ?? '').trim();
-    if (value) lines.push(`${label} : ${value}`);
+    if (!value || isDlWarningText(value)) continue;
+    lines.push(`${label} : ${value}`);
   }
-  return lines.join('\n').trimEnd();
+  return lines.join('\n');
 }
 
 /** Renders the current DEMO record as a QR code data URL. */

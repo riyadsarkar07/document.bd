@@ -14,6 +14,27 @@ export const DL_DOC_HEIGHT = 1998;
 export const DL_TEMPLATE_SRC = '/assets/Driving License.png';
 export const DL_DEMO_NOTE = 'DEMO / SAMPLE — NOT AN OFFICIAL DRIVING LICENCE';
 
+const DL_WARNING_RE =
+  /DEMO\s*\/\s*SAMPLE|NOT AN OFFICIAL DRIVING LICEN[CS]E/i;
+const DL_ARTIFACT_RE =
+  /^(undefined|null|NaN|\[object Object\])$|lorem ipsum|^\{\{[^{}]+\}\}$/i;
+
+/** True when a value is explicit DEMO/SAMPLE warning copy that must not be encoded or painted as a field. */
+export function isDlWarningText(value: string): boolean {
+  const t = value.trim();
+  return t === DL_DEMO_NOTE || DL_WARNING_RE.test(t);
+}
+
+/** True for debug/placeholder/metadata blobs that must not appear on the card canvas. */
+export function isDlOverlayArtifact(value: string): boolean {
+  const t = value.trim();
+  if (!t) return true;
+  if (isDlWarningText(t)) return true;
+  if (DL_ARTIFACT_RE.test(t)) return true;
+  if (/^\s*[\{\[][\s\S]*[\}\]]\s*$/.test(t) && t.includes(':')) return true;
+  return false;
+}
+
 export const DL_FONT_FACES = [
   { family: 'Arial Regular', url: '/assets/arial-regular.ttf' },
   { family: 'Arial Bold MT', url: '/assets/arial-bold.ttf' },
@@ -60,14 +81,14 @@ const layout = (
  * labels so DEMO values sit in the blank gaps.
  */
 export const DL_DEFAULT_LAYOUTS: Record<DlFieldKey, DlLayout> = {
-  name: layout(940, 660, 42, { fontFamily: 'arial-bold' }),
-  dob: layout(940, 870, 36),
-  bloodGroup: layout(940, 1090, 36, { fontFamily: 'arial-bold' }),
-  fatherHusband: layout(940, 1290, 36),
-  issueDate: layout(940, 1510, 32),
-  validityDate: layout(2060, 1510, 32),
-  refNo: layout(940, 1835, 32, { fontFamily: 'arial-bold' }),
-  issuingAuthority: layout(2060, 1835, 32),
+  name: layout(924, 664, 62, { fontFamily: 'arial-bold' }),
+  dob: layout(945, 886, 62, { fontFamily: 'arial-bold' }),
+  bloodGroup: layout(942, 1097, 62, { fontFamily: 'arial-bold' }),
+  fatherHusband: layout(942, 1298, 62, { fontFamily: 'arial-bold' }),
+  issueDate: layout(943, 1511, 62, { fontFamily: 'arial-bold' }),
+  validityDate: layout(2060, 1513, 62, { fontFamily: 'arial-bold' }),
+  refNo: layout(944, 1835, 62, { fontFamily: 'arial-bold' }),
+  issuingAuthority: layout(2064, 1835, 62, { fontFamily: 'arial-bold' }),
 };
 
 export const DL_PHOTO_DEFAULT = {
@@ -85,21 +106,21 @@ export const DL_PHOTO_RANGES: Record<'x' | 'y' | 'w' | 'h', Omit<SliderSpec, 'ke
 };
 
 export const DL_QR_DEFAULT = {
-  x: 2860,
-  y: 1480,
-  size: 280,
+  x: 2510,
+  y: 486,
+  size: 615,
 };
 
 export const DL_QR_RANGES: Record<'x' | 'y' | 'size', Omit<SliderSpec, 'key'>> = {
   x: { label: 'X', min: 0, max: DL_DOC_WIDTH, default: DL_QR_DEFAULT.x, mono: true },
   y: { label: 'Y', min: 0, max: DL_DOC_HEIGHT, default: DL_QR_DEFAULT.y, mono: true },
-  size: { label: 'Size', min: 80, max: 720, default: DL_QR_DEFAULT.size, mono: true },
+  size: { label: 'Size', min: 80, max: 900, default: DL_QR_DEFAULT.size, mono: true },
 };
 
 export const DL_LAYOUT_RANGES: Record<'fontSize' | 'x' | 'y', Omit<SliderSpec, 'key'>> = {
-  fontSize: { label: 'Font Size', min: 8, max: 120, default: 36, mono: true },
-  x: { label: 'X', min: 0, max: DL_DOC_WIDTH, default: 940, mono: true },
-  y: { label: 'Y', min: 0, max: DL_DOC_HEIGHT, default: 660, mono: true },
+  fontSize: { label: 'Font Size', min: 8, max: 120, default: 62, mono: true },
+  x: { label: 'X', min: 0, max: DL_DOC_WIDTH, default: 924, mono: true },
+  y: { label: 'Y', min: 0, max: DL_DOC_HEIGHT, default: 664, mono: true },
 };
 
 function finiteNumber(value: unknown, fallback: number, min: number, max: number): number {

@@ -882,7 +882,7 @@ function DrivingLicenseEditorInner() {
 
             {isQr && (
               <p className="rounded-xl border border-line bg-surface-raised px-3 py-2 text-[10.5px] leading-relaxed text-muted">
-                The QR auto-generates from Name, Date of Birth, Issue / Renewal, Validity, and Reference Number. Scanning shows those fields as readable DEMO text — not an official verification code.
+                The QR auto-generates from Name, Date of Birth, Blood Group, Father / Husband, Issue / Renewal, Validity, Reference Number, and Issuing Authority. Scanning shows those profile fields only — no DEMO warning text.
               </p>
             )}
 
@@ -1141,7 +1141,7 @@ function DrivingLicenseEditorInner() {
             <div className="flex-1">
               <p className="text-[11.5px] font-semibold text-primary">Scan with any QR reader</p>
               <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted">
-                Shows Name, Date of Birth, Issue / Renewal, Validity, and Reference Number as readable DEMO text.
+                Shows Name, DOB, Blood Group, Father / Husband, dates, Reference Number, and Issuing Authority as structured test attributes.
               </p>
             </div>
           </div>

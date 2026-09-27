@@ -1,10 +1,10 @@
 import type { DlLayout, DlOverlayKey, DrivingLicenseSnapshot } from '../editor/types';
 import {
   DL_DEFAULT_LAYOUTS,
-  DL_DEMO_NOTE,
   DL_DOC_HEIGHT,
   DL_DOC_WIDTH,
   DL_FIELD_ORDER,
+  isDlOverlayArtifact,
 } from '../constants/driving-license';
 
 const INK = '#111111';
@@ -21,7 +21,7 @@ export function renderDlValue(
   text: string,
   layout: DlLayout,
 ): void {
-  if (!text) return;
+  if (!text || isDlOverlayArtifact(text)) return;
   ctx.save();
   ctx.font = fontFor(layout);
   ctx.textBaseline = 'alphabetic';
@@ -45,13 +45,8 @@ function drawQr(
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(qrImg, snap.qrX, snap.qrY, size, size);
   } else {
-    ctx.fillStyle = '#f1f4f3';
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(snap.qrX, snap.qrY, size, size);
-    ctx.fillStyle = '#5b6b66';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = "bold 22px 'Arial Regular',Arial,sans-serif";
-    ctx.fillText('QR', snap.qrX + size / 2, snap.qrY + size / 2);
   }
   ctx.restore();
 }
@@ -111,14 +106,6 @@ export function renderDrivingLicense(
   }
 
   drawQr(ctx, snap, qrImg);
-
-  ctx.save();
-  ctx.fillStyle = 'rgba(185, 28, 28, 0.92)';
-  ctx.font = "bold 22px 'Arial Regular',Arial,sans-serif";
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillText(DL_DEMO_NOTE, 36, 48);
-  ctx.restore();
 
   if (highlight === 'photo') {
     strokeBox(ctx, photoX, photoY, photoW, photoH);

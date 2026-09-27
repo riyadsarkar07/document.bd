@@ -72,12 +72,15 @@ import { renderDrivingLicense } from '../src/lib/renderers/drivingLicenseRendere
 import {
   DL_DEFAULTS,
   DL_DEFAULT_LAYOUTS,
+  DL_DEMO_NOTE,
   DL_DOC_HEIGHT,
   DL_DOC_WIDTH,
   DL_FIELD_ORDER,
   DL_PHOTO_DEFAULT,
   DL_QR_DEFAULT,
   DL_TEMPLATE_SRC,
+  isDlOverlayArtifact,
+  isDlWarningText,
   normalizeDrivingLicenseSnapshot,
 } from '../src/lib/constants/driving-license';
 import type { DrivingLicenseSnapshot, NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
@@ -1175,15 +1178,43 @@ async function main() {
   assert(dlScaled.width === 1632 && dlScaled.height === 999, `DL scaled canvas 1632×999 (got ${dlScaled.width}×${dlScaled.height})`);
 
   const dlPayload = buildDrivingLicenseQrPayload(DL_DEFAULTS);
-  assert(dlPayload.includes('DEMO / SAMPLE'), 'DL QR payload is marked DEMO/SAMPLE');
+  assert(!dlPayload.includes('DEMO / SAMPLE'), 'DL QR payload excludes DEMO/SAMPLE warning');
+  assert(!dlPayload.includes('NOT AN OFFICIAL'), 'DL QR payload excludes official-licence warning');
+  assert(!dlPayload.includes(DL_DEMO_NOTE), 'DL QR payload excludes DL_DEMO_NOTE');
   assert(dlPayload.includes(`Name : ${DL_DEFAULTS.name}`), 'DL QR payload → Name');
   assert(dlPayload.includes(`Date of Birth : ${DL_DEFAULTS.dob}`), 'DL QR payload → Date of Birth');
+  assert(dlPayload.includes(`Blood Group : ${DL_DEFAULTS.bloodGroup}`), 'DL QR payload → Blood Group');
+  assert(dlPayload.includes(`Father / Husband : ${DL_DEFAULTS.fatherHusband}`), 'DL QR payload → Father / Husband');
   assert(dlPayload.includes(`Issue / Renewal Date : ${DL_DEFAULTS.issueDate}`), 'DL QR payload → Issue / Renewal Date');
   assert(dlPayload.includes(`Validity Date : ${DL_DEFAULTS.validityDate}`), 'DL QR payload → Validity Date');
   assert(dlPayload.includes(`Reference Number : ${DL_DEFAULTS.refNo}`), 'DL QR payload → Reference Number');
+  assert(dlPayload.includes(`Issuing Authority : ${DL_DEFAULTS.issuingAuthority}`), 'DL QR payload → Issuing Authority');
   assert(!dlPayload.includes('bloodGroup') && !dlPayload.includes('fatherHusband'), 'DL QR omits internal unused keys');
+  const warnedPayload = buildDrivingLicenseQrPayload({ ...DL_DEFAULTS, name: DL_DEMO_NOTE });
+  assert(!warnedPayload.includes(DL_DEMO_NOTE), 'DL QR drops warning text even if pasted into a field');
+  assert(!warnedPayload.includes('Name :'), 'DL QR omits a field whose value is only the DEMO warning');
   const dlQrDataUrl = await encodeDrivingLicenseQr(DL_DEFAULTS, 256);
   assert(typeof dlQrDataUrl === 'string' && dlQrDataUrl.startsWith('data:image/png'), 'DL DEMO QR encodes to PNG data URL');
+
+  assert(DL_DEFAULT_LAYOUTS.name.x === 924 && DL_DEFAULT_LAYOUTS.name.y === 664 && DL_DEFAULT_LAYOUTS.name.fontSize === 62, 'DL Name at 924,664 size 62');
+  assert(DL_DEFAULT_LAYOUTS.dob.x === 945 && DL_DEFAULT_LAYOUTS.dob.y === 886 && DL_DEFAULT_LAYOUTS.dob.fontSize === 62, 'DL DOB at 945,886 size 62');
+  assert(DL_DEFAULT_LAYOUTS.bloodGroup.x === 942 && DL_DEFAULT_LAYOUTS.bloodGroup.y === 1097 && DL_DEFAULT_LAYOUTS.bloodGroup.fontSize === 62, 'DL Blood Group at 942,1097 size 62');
+  assert(DL_DEFAULT_LAYOUTS.fatherHusband.x === 942 && DL_DEFAULT_LAYOUTS.fatherHusband.y === 1298 && DL_DEFAULT_LAYOUTS.fatherHusband.fontSize === 62, 'DL Father/Husband at 942,1298 size 62');
+  assert(DL_DEFAULT_LAYOUTS.issueDate.x === 943 && DL_DEFAULT_LAYOUTS.issueDate.y === 1511 && DL_DEFAULT_LAYOUTS.issueDate.fontSize === 62, 'DL Issue Date at 943,1511 size 62');
+  assert(DL_DEFAULT_LAYOUTS.validityDate.x === 2060 && DL_DEFAULT_LAYOUTS.validityDate.y === 1513 && DL_DEFAULT_LAYOUTS.validityDate.fontSize === 62, 'DL Validity at 2060,1513 size 62');
+  assert(DL_DEFAULT_LAYOUTS.refNo.x === 944 && DL_DEFAULT_LAYOUTS.refNo.y === 1835 && DL_DEFAULT_LAYOUTS.refNo.fontSize === 62, 'DL Ref No at 944,1835 size 62');
+  assert(DL_DEFAULT_LAYOUTS.issuingAuthority.x === 2064 && DL_DEFAULT_LAYOUTS.issuingAuthority.y === 1835 && DL_DEFAULT_LAYOUTS.issuingAuthority.fontSize === 62, 'DL Issuing Authority at 2064,1835 size 62');
+  for (const key of DL_FIELD_ORDER) {
+    assert(DL_DEFAULT_LAYOUTS[key].fontFamily === 'arial-bold', `DL ${key} defaults to Arial Bold`);
+    assert(DL_DEFAULT_LAYOUTS[key].fontSize === 62, `DL ${key} default font size 62`);
+  }
+  assert(DL_QR_DEFAULT.x === 2510 && DL_QR_DEFAULT.y === 486 && DL_QR_DEFAULT.size === 615, 'DL QR at 2510,486 size 615');
+  assert(DL_DEFAULTS.qrX === 2510 && DL_DEFAULTS.qrY === 486 && DL_DEFAULTS.qrSize === 615, 'DL defaults carry QR box');
+  assert(isDlWarningText(DL_DEMO_NOTE), 'DL_DEMO_NOTE is classified as warning text');
+  assert(!isDlWarningText(DL_DEFAULTS.name), 'fictional holder name is not warning text');
+  assert(isDlOverlayArtifact('{{placeholder}}'), 'mustache placeholders are canvas artifacts');
+  assert(isDlOverlayArtifact('undefined'), 'undefined token is a canvas artifact');
+  assert(!isDlOverlayArtifact(DL_DEFAULTS.name), 'holder name is paintable');
 
   const restored = normalizeDrivingLicenseSnapshot({
     name: 'MOVED HOLDER',
@@ -1229,10 +1260,13 @@ async function main() {
 
   const dlEditorSrc = readFileSync(join(ROOT, 'src/app/studio/editor/driving-license/page.tsx'), 'utf8');
   const dlHistorySrc = readFileSync(join(ROOT, 'src/app/studio/history/page.tsx'), 'utf8');
+  const dlRendererSrc = readFileSync(join(ROOT, 'src/lib/renderers/drivingLicenseRenderer.ts'), 'utf8');
   assert(dlEditorSrc.includes("docKind: 'driving-license'"), 'DL editor commits with driving-license kind');
   assert(dlEditorSrc.includes('getVaultRecord'), 'DL editor reopens History records');
   assert(dlEditorSrc.includes('onSaveHistory'), 'DL editor Save → History button is wired');
   assert(dlHistorySrc.includes('Driving License'), 'History empty-state mentions Driving License');
+  assert(!dlRendererSrc.includes('DL_DEMO_NOTE'), 'DL renderer does not stamp extra DEMO note over the template');
+  assert(dlRendererSrc.includes('isDlOverlayArtifact'), 'DL renderer filters overlay artifacts');
   assert(DL_PHOTO_DEFAULT.w > 0 && DL_QR_DEFAULT.size > 0, 'DL photo and QR defaults are present');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
