@@ -86,9 +86,9 @@ export const DUBAI_DEFAULT_LAYOUTS: Record<DubaiFieldKey, DubaiLayout> = {
   nameAr: layout(2781, 891, 84, { align: 'right' }),
   nameEn: layout(1320, 1058, 84),
   nationality: layout(1680, 1225, 48, { fontFamily: 'arial-bold' }),
-  dob: layout(1680, 1395, 48, { fontFamily: 'arial-bold' }),
-  issueDate: layout(1680, 1548, 48, { fontFamily: 'arial-bold' }),
-  expiryDate: layout(1680, 1718, 48, { fontFamily: 'arial-bold' }),
+  dob: layout(1622, 1389, 86),
+  issueDate: layout(1601, 1548, 86),
+  expiryDate: layout(1601, 1718, 86),
   placeOfIssue: layout(1680, 1872, 48, { fontFamily: 'arial-bold' }),
   authorityText: layout(369, 1705, 64, { align: 'left' }),
 };

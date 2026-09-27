@@ -129,20 +129,36 @@ export function loadImageToCanvas(
   return promise;
 }
 
+function fileKeepsAlpha(file: File): boolean {
+  const type = (file.type || '').toLowerCase();
+  const name = (file.name || '').toLowerCase();
+  return (
+    type.includes('png') ||
+    type.includes('webp') ||
+    type.includes('gif') ||
+    name.endsWith('.png') ||
+    name.endsWith('.webp') ||
+    name.endsWith('.gif')
+  );
+}
+
 export async function fileToOrientedDataUrl(file: File): Promise<string | null> {
+  const preserveAlpha = fileKeepsAlpha(file);
   try {
     if (typeof createImageBitmap === 'function') {
       const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
       const canvas = document.createElement('canvas');
       canvas.width = bitmap.width;
       canvas.height = bitmap.height;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { alpha: true });
       if (!ctx) {
         bitmap.close();
         return null;
       }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(bitmap, 0, 0);
       bitmap.close();
+      if (preserveAlpha) return canvas.toDataURL('image/png');
       return canvas.toDataURL('image/jpeg', 0.92);
     }
   } catch {

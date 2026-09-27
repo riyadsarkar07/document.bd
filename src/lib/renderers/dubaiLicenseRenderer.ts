@@ -35,7 +35,7 @@ function isDrawableSource(src: DubaiImageSource): src is NonNullable<DubaiImageS
   return sourceSize(src) !== null;
 }
 
-/** Cover-fit the photo into the frame, top-aligned so faces stay in view. */
+/** Cover-fit the photo into the frame (object-fit: cover), centered and clipped. */
 export function drawPhotoCover(
   ctx: CanvasRenderingContext2D,
   photo: NonNullable<DubaiImageSource>,
@@ -45,17 +45,32 @@ export function drawPhotoCover(
   h: number,
 ): void {
   const size = sourceSize(photo);
-  if (!size) return;
-  const scale = Math.max(w / size.w, h / size.h);
-  const dw = size.w * scale;
-  const dh = size.h * scale;
-  const dx = x - (dw - w) / 2;
-  const dy = y;
+  if (!size || w <= 0 || h <= 0) return;
+  const destX = Math.round(x);
+  const destY = Math.round(y);
+  const destW = Math.max(1, Math.round(w));
+  const destH = Math.max(1, Math.round(h));
+  const scale = Math.max(destW / size.w, destH / size.h);
+  const srcW = destW / scale;
+  const srcH = destH / scale;
+  const srcX = (size.w - srcW) / 2;
+  const srcY = (size.h - srcH) / 2;
   ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
   ctx.beginPath();
-  ctx.rect(x, y, w, h);
+  ctx.rect(destX, destY, destW, destH);
   ctx.clip();
-  ctx.drawImage(photo as CanvasImageSource, dx, dy, dw, dh);
+  ctx.drawImage(
+    photo as CanvasImageSource,
+    srcX,
+    srcY,
+    srcW,
+    srcH,
+    destX,
+    destY,
+    destW,
+    destH,
+  );
   ctx.restore();
 }
 

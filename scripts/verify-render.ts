@@ -69,7 +69,7 @@ import {
 import { buildTinQrPayload, encodeDemoQr } from '../src/lib/tinQr';
 import { buildDrivingLicenseQrPayload, encodeDrivingLicenseQr } from '../src/lib/drivingLicenseQr';
 import { renderDrivingLicense } from '../src/lib/renderers/drivingLicenseRenderer';
-import { renderDubaiLicense } from '../src/lib/renderers/dubaiLicenseRenderer';
+import { drawPhotoCover, renderDubaiLicense } from '../src/lib/renderers/dubaiLicenseRenderer';
 import {
   DL_AUTOSAVE_KEY_PREFIX,
   DL_DEFAULTS,
@@ -1393,6 +1393,12 @@ async function main() {
   assert(DUBAI_DEFAULT_LAYOUTS.nameAr.align === 'right', 'Dubai Arabic name is right-aligned');
   assert(DUBAI_DEFAULT_LAYOUTS.authorityText.x === 369 && DUBAI_DEFAULT_LAYOUTS.authorityText.y === 1705, 'Dubai authority text at 369,1705');
   assert(DUBAI_DEFAULT_LAYOUTS.authorityText.fontSize === 64 && DUBAI_DEFAULT_LAYOUTS.authorityText.fontFamily === 'arial', 'Dubai authority text is 64px Arial Regular');
+  assert(DUBAI_DEFAULT_LAYOUTS.dob.x === 1622 && DUBAI_DEFAULT_LAYOUTS.dob.y === 1389, 'Dubai Date of Birth at 1622,1389');
+  assert(DUBAI_DEFAULT_LAYOUTS.dob.fontSize === 86 && DUBAI_DEFAULT_LAYOUTS.dob.fontFamily === 'arial', 'Dubai Date of Birth is 86px Arial Regular');
+  assert(DUBAI_DEFAULT_LAYOUTS.issueDate.x === 1601 && DUBAI_DEFAULT_LAYOUTS.issueDate.y === 1548, 'Dubai Issue Date at 1601,1548');
+  assert(DUBAI_DEFAULT_LAYOUTS.issueDate.fontSize === 86 && DUBAI_DEFAULT_LAYOUTS.issueDate.fontFamily === 'arial', 'Dubai Issue Date is 86px Arial Regular');
+  assert(DUBAI_DEFAULT_LAYOUTS.expiryDate.x === 1601 && DUBAI_DEFAULT_LAYOUTS.expiryDate.y === 1718, 'Dubai Expiry Date at 1601,1718');
+  assert(DUBAI_DEFAULT_LAYOUTS.expiryDate.fontSize === 86 && DUBAI_DEFAULT_LAYOUTS.expiryDate.fontFamily === 'arial', 'Dubai Expiry Date is 86px Arial Regular');
   assert(isDubaiWarningText(DUBAI_DEMO_NOTE), 'DUBAI_DEMO_NOTE is classified as warning text');
   assert(!isDubaiWarningText('ALEX MORGAN'), 'fictional holder name is not warning text');
   assert(isDubaiOverlayArtifact('{{placeholder}}'), 'mustache placeholders are canvas artifacts');
@@ -1455,6 +1461,57 @@ async function main() {
   assert(englishNameToArabic('ALEX MORGAN') === 'أليكس مورغان', 'ALEX MORGAN transliterates to أليكس مورغان');
   assert(englishNameToArabic('') === '', 'empty English name maps to empty Arabic');
   assert(DUBAI_DEFAULTS.authorityText === DUBAI_DEFAULTS.nameAr, 'bottom reference mirrors Arabic name by default');
+
+  const dubaiPhotoSrc = createCanvas(400, 800);
+  const dubaiPhotoCtx = dubaiPhotoSrc.getContext('2d');
+  dubaiPhotoCtx.fillStyle = '#ff0000';
+  dubaiPhotoCtx.fillRect(0, 0, 400, 800);
+  const dubaiClipCanvas = createCanvas(400, 400);
+  const dubaiClipCtx = dubaiClipCanvas.getContext('2d');
+  dubaiClipCtx.fillStyle = '#00ff00';
+  dubaiClipCtx.fillRect(0, 0, 400, 400);
+  drawPhotoCover(
+    dubaiClipCtx as unknown as CanvasRenderingContext2D,
+    dubaiPhotoSrc as unknown as HTMLCanvasElement,
+    100,
+    100,
+    80,
+    120,
+  );
+  const outside = dubaiClipCtx.getImageData(50, 50, 1, 1).data;
+  const inside = dubaiClipCtx.getImageData(140, 160, 1, 1).data;
+  const below = dubaiClipCtx.getImageData(140, 230, 1, 1).data;
+  assert(outside[0] === 0 && outside[1] === 255 && outside[2] === 0, 'Dubai photo cover does not paint outside the frame');
+  assert(inside[0] === 255 && inside[1] === 0 && inside[2] === 0, 'Dubai photo cover fills the frame');
+  assert(below[0] === 0 && below[1] === 255 && below[2] === 0, 'Dubai photo cover is clipped at the frame bottom');
+
+  const dubaiAlphaPhoto = createCanvas(80, 80);
+  const dubaiAlphaCtx = dubaiAlphaPhoto.getContext('2d');
+  dubaiAlphaCtx.clearRect(0, 0, 80, 80);
+  dubaiAlphaCtx.fillStyle = '#2244ff';
+  dubaiAlphaCtx.fillRect(20, 20, 40, 40);
+  const dubaiAlphaCard = createCanvas(200, 200);
+  const dubaiAlphaCardCtx = dubaiAlphaCard.getContext('2d');
+  dubaiAlphaCardCtx.fillStyle = '#c8e6f0';
+  dubaiAlphaCardCtx.fillRect(0, 0, 200, 200);
+  drawPhotoCover(
+    dubaiAlphaCardCtx as unknown as CanvasRenderingContext2D,
+    dubaiAlphaPhoto as unknown as HTMLCanvasElement,
+    0,
+    0,
+    80,
+    80,
+  );
+  const keptBg = dubaiAlphaCardCtx.getImageData(5, 5, 1, 1).data;
+  const painted = dubaiAlphaCardCtx.getImageData(40, 40, 1, 1).data;
+  assert(keptBg[0] === 200 && keptBg[1] === 230 && keptBg[2] === 240, 'transparent photo pixels keep the template background');
+  assert(!(keptBg[0] === 0 && keptBg[1] === 0 && keptBg[2] === 0), 'transparent photo pixels are not filled black');
+  assert(painted[2] > 200 && painted[0] < 80, 'opaque photo pixels still paint inside the frame');
+  assert(dubaiEditorSrc.includes('fileToOrientedDataUrl'), 'Dubai photo upload preserves orientation and alpha');
+  assert(
+    readFileSync(join(ROOT, 'src/lib/images.ts'), 'utf8').includes("canvas.toDataURL('image/png')"),
+    'alpha photos are stored as PNG instead of JPEG',
+  );
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
