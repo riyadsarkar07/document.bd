@@ -13,6 +13,11 @@ export const DL_DOC_WIDTH = 3264;
 export const DL_DOC_HEIGHT = 1998;
 export const DL_TEMPLATE_SRC = '/assets/Driving License.png';
 export const DL_DEMO_NOTE = 'DEMO / SAMPLE — NOT AN OFFICIAL DRIVING LICENCE';
+export const DL_DEFAULT_REF_NO = 'DM347547NP501';
+export const DL_AUTOSAVE_KEY_PREFIX = 'studio.autosave.driving-license.';
+
+const DL_STALE_REF_RE = /^DL-TEST-\d+$/i;
+const DL_STALE_NAMES = new Set(['DEMO HOLDER', 'DEMO FATHER', 'DEMO BRTA']);
 
 const DL_WARNING_RE =
   /DEMO\s*\/\s*SAMPLE|NOT AN OFFICIAL DRIVING LICEN[CS]E/i;
@@ -130,14 +135,14 @@ function finiteNumber(value: unknown, fallback: number, min: number, max: number
 }
 
 export const DL_DEFAULTS: DrivingLicenseSnapshot = {
-  name: 'DEMO HOLDER',
-  dob: '01 Jan 1990',
-  bloodGroup: 'O+',
-  fatherHusband: 'DEMO FATHER',
-  issueDate: '01 Jan 2024',
-  validityDate: '31 Dec 2028',
-  refNo: 'DM347547NP501',
-  issuingAuthority: 'DEMO BRTA',
+  name: '',
+  dob: '',
+  bloodGroup: '',
+  fatherHusband: '',
+  issueDate: '',
+  validityDate: '',
+  refNo: DL_DEFAULT_REF_NO,
+  issuingAuthority: '',
   layouts: DL_DEFAULT_LAYOUTS,
   photoX: DL_PHOTO_DEFAULT.x,
   photoY: DL_PHOTO_DEFAULT.y,
@@ -196,6 +201,41 @@ export function normalizeDrivingLicenseSnapshot(
 
 export function isDlFieldKey(value: string): value is DlFieldKey {
   return (DL_FIELD_KEYS as readonly string[]).includes(value);
+}
+
+export function isDrivingLicenseFreshOpen(params: {
+  recordNo?: string | null;
+  projectId?: string | null;
+  templateName?: string | null;
+}): boolean {
+  return !(params.recordNo ?? '').trim() && !(params.projectId ?? '').trim() && !(params.templateName ?? '').trim();
+}
+
+/** Old factory seed from before the uploaded template became the default. */
+export function isDlStaleFactorySeed(s: Partial<DrivingLicenseSnapshot> | null | undefined): boolean {
+  if (!s) return false;
+  const ref = String(s.refNo ?? '').trim();
+  const name = String(s.name ?? '').trim();
+  return DL_STALE_REF_RE.test(ref) || DL_STALE_NAMES.has(name);
+}
+
+export function drivingLicenseFreshOpenSnapshot(): DrivingLicenseSnapshot {
+  return normalizeDrivingLicenseSnapshot({ refNo: DL_DEFAULT_REF_NO });
+}
+
+/** Drop per-user / anon autosave so a fresh open cannot restore DEMO HOLDER / DL-TEST-* seeds. */
+export function purgeDrivingLicenseAutosave(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const toRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(DL_AUTOSAVE_KEY_PREFIX)) toRemove.push(key);
+    }
+    for (const key of toRemove) window.localStorage.removeItem(key);
+  } catch {
+    // ignore quota / private mode
+  }
 }
 
 export function dlQrBox(snap: DrivingLicenseSnapshot): { x: number; y: number; w: number; h: number } {

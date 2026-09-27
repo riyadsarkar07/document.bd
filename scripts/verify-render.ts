@@ -70,8 +70,10 @@ import { buildTinQrPayload, encodeDemoQr } from '../src/lib/tinQr';
 import { buildDrivingLicenseQrPayload, encodeDrivingLicenseQr } from '../src/lib/drivingLicenseQr';
 import { renderDrivingLicense } from '../src/lib/renderers/drivingLicenseRenderer';
 import {
+  DL_AUTOSAVE_KEY_PREFIX,
   DL_DEFAULTS,
   DL_DEFAULT_LAYOUTS,
+  DL_DEFAULT_REF_NO,
   DL_DEMO_NOTE,
   DL_DOC_HEIGHT,
   DL_DOC_WIDTH,
@@ -79,8 +81,11 @@ import {
   DL_PHOTO_DEFAULT,
   DL_QR_DEFAULT,
   DL_TEMPLATE_SRC,
+  drivingLicenseFreshOpenSnapshot,
   isDlOverlayArtifact,
+  isDlStaleFactorySeed,
   isDlWarningText,
+  isDrivingLicenseFreshOpen,
   normalizeDrivingLicenseSnapshot,
 } from '../src/lib/constants/driving-license';
 import type { DrivingLicenseSnapshot, NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
@@ -1170,6 +1175,8 @@ async function main() {
   assert(existsSync(join(ROOT, 'public/assets/Driving License.png')), 'DL default template file is present for user and admin editors');
   assert(DL_DOC_WIDTH === 3264 && DL_DOC_HEIGHT === 1998, 'DL canvas matches template pixels');
   assert(DL_DEFAULTS.refNo === 'DM347547NP501', 'DL default reference number is DM347547NP501');
+  assert(DL_DEFAULT_REF_NO === 'DM347547NP501', 'DL_DEFAULT_REF_NO is DM347547NP501');
+  assert(DL_DEFAULTS.name === '' && DL_DEFAULTS.fatherHusband === '', 'DL default identity overlays are blank (template artwork only)');
 
   const dlCanvas = createCanvas(1, 1);
   renderDrivingLicense(dlCanvas as unknown as HTMLCanvasElement, { ...DL_DEFAULTS }, dlBg as unknown as HTMLImageElement, 1);
@@ -1183,14 +1190,28 @@ async function main() {
   assert(!dlPayload.includes('DEMO / SAMPLE'), 'DL QR payload excludes DEMO/SAMPLE warning');
   assert(!dlPayload.includes('NOT AN OFFICIAL'), 'DL QR payload excludes official-licence warning');
   assert(!dlPayload.includes(DL_DEMO_NOTE), 'DL QR payload excludes DL_DEMO_NOTE');
-  assert(dlPayload.includes(`Name : ${DL_DEFAULTS.name}`), 'DL QR payload → Name');
-  assert(dlPayload.includes(`Date of Birth : ${DL_DEFAULTS.dob}`), 'DL QR payload → Date of Birth');
-  assert(dlPayload.includes(`Blood Group : ${DL_DEFAULTS.bloodGroup}`), 'DL QR payload → Blood Group');
-  assert(dlPayload.includes(`Father / Husband : ${DL_DEFAULTS.fatherHusband}`), 'DL QR payload → Father / Husband');
-  assert(dlPayload.includes(`Issue / Renewal Date : ${DL_DEFAULTS.issueDate}`), 'DL QR payload → Issue / Renewal Date');
-  assert(dlPayload.includes(`Validity Date : ${DL_DEFAULTS.validityDate}`), 'DL QR payload → Validity Date');
-  assert(dlPayload.includes(`Reference Number : ${DL_DEFAULTS.refNo}`), 'DL QR payload → Reference Number');
-  assert(dlPayload.includes(`Issuing Authority : ${DL_DEFAULTS.issuingAuthority}`), 'DL QR payload → Issuing Authority');
+  assert(!dlPayload.includes('DEMO HOLDER'), 'DL QR payload excludes DEMO HOLDER');
+  assert(!dlPayload.includes('DL-TEST'), 'DL QR payload excludes stale DL-TEST seed');
+  assert(dlPayload.includes(`Reference Number : ${DL_DEFAULT_REF_NO}`), 'DL QR payload → Reference Number');
+  assert(!dlPayload.includes('Name :'), 'DL default QR omits empty Name');
+  const filledDlPayload = buildDrivingLicenseQrPayload({
+    ...DL_DEFAULTS,
+    name: 'TEST HOLDER',
+    dob: '01 Jan 1990',
+    bloodGroup: 'O+',
+    fatherHusband: 'TEST FATHER',
+    issueDate: '01 Jan 2024',
+    validityDate: '31 Dec 2028',
+    issuingAuthority: 'TEST BRTA',
+  });
+  assert(filledDlPayload.includes('Name : TEST HOLDER'), 'DL QR payload → Name');
+  assert(filledDlPayload.includes('Date of Birth : 01 Jan 1990'), 'DL QR payload → Date of Birth');
+  assert(filledDlPayload.includes('Blood Group : O+'), 'DL QR payload → Blood Group');
+  assert(filledDlPayload.includes('Father / Husband : TEST FATHER'), 'DL QR payload → Father / Husband');
+  assert(filledDlPayload.includes('Issue / Renewal Date : 01 Jan 2024'), 'DL QR payload → Issue / Renewal Date');
+  assert(filledDlPayload.includes('Validity Date : 31 Dec 2028'), 'DL QR payload → Validity Date');
+  assert(filledDlPayload.includes(`Reference Number : ${DL_DEFAULT_REF_NO}`), 'DL filled QR keeps default Ref No');
+  assert(filledDlPayload.includes('Issuing Authority : TEST BRTA'), 'DL QR payload → Issuing Authority');
   assert(!dlPayload.includes('bloodGroup') && !dlPayload.includes('fatherHusband'), 'DL QR omits internal unused keys');
   const warnedPayload = buildDrivingLicenseQrPayload({ ...DL_DEFAULTS, name: DL_DEMO_NOTE });
   assert(!warnedPayload.includes(DL_DEMO_NOTE), 'DL QR drops warning text even if pasted into a field');
@@ -1213,10 +1234,23 @@ async function main() {
   assert(DL_QR_DEFAULT.x === 2510 && DL_QR_DEFAULT.y === 486 && DL_QR_DEFAULT.size === 615, 'DL QR at 2510,486 size 615');
   assert(DL_DEFAULTS.qrX === 2510 && DL_DEFAULTS.qrY === 486 && DL_DEFAULTS.qrSize === 615, 'DL defaults carry QR box');
   assert(isDlWarningText(DL_DEMO_NOTE), 'DL_DEMO_NOTE is classified as warning text');
-  assert(!isDlWarningText(DL_DEFAULTS.name), 'fictional holder name is not warning text');
+  assert(!isDlWarningText('TEST HOLDER'), 'fictional holder name is not warning text');
   assert(isDlOverlayArtifact('{{placeholder}}'), 'mustache placeholders are canvas artifacts');
   assert(isDlOverlayArtifact('undefined'), 'undefined token is a canvas artifact');
-  assert(!isDlOverlayArtifact(DL_DEFAULTS.name), 'holder name is paintable');
+  assert(isDlOverlayArtifact(DL_DEFAULTS.name), 'blank default name is not painted over the template');
+  assert(!isDlOverlayArtifact('TEST HOLDER'), 'holder name is paintable');
+  assert(isDrivingLicenseFreshOpen({}), 'direct editor open is a fresh open');
+  assert(isDrivingLicenseFreshOpen({ recordNo: '  ', projectId: '', templateName: null }), 'whitespace query params still count as fresh open');
+  assert(!isDrivingLicenseFreshOpen({ recordNo: 'DL-1' }), 'History record is not a fresh open');
+  assert(!isDrivingLicenseFreshOpen({ projectId: 'p1' }), 'project open is not a fresh open');
+  assert(!isDrivingLicenseFreshOpen({ templateName: 't1' }), 'saved-template open is not a fresh open');
+  assert(isDlStaleFactorySeed({ name: 'DEMO HOLDER', refNo: 'DL-TEST-0001' }), 'DEMO HOLDER + DL-TEST-0001 is a stale factory seed');
+  assert(isDlStaleFactorySeed({ name: 'TEST USER', refNo: 'DL-TEST-001' }), 'DL-TEST-001 is a stale factory seed');
+  assert(!isDlStaleFactorySeed({ name: 'TEST USER', refNo: DL_DEFAULT_REF_NO }), 'current default ref is not a stale seed');
+  const freshOpen = drivingLicenseFreshOpenSnapshot();
+  assert(freshOpen.refNo === DL_DEFAULT_REF_NO, 'fresh open snapshot uses DM347547NP501');
+  assert(freshOpen.name === '' && freshOpen.dob === '', 'fresh open snapshot does not overlay DEMO HOLDER');
+  assert(DL_AUTOSAVE_KEY_PREFIX === 'studio.autosave.driving-license.', 'DL autosave keys are namespaced per editor');
 
   const restored = normalizeDrivingLicenseSnapshot({
     name: 'MOVED HOLDER',
@@ -1268,8 +1302,12 @@ async function main() {
   assert(dlEditorSrc.includes('onSaveHistory'), 'DL editor Save → History button is wired');
   assert(dlEditorSrc.includes('loadImage(DL_TEMPLATE_SRC)'), 'DL editor loads the default template on open');
   assert(dlEditorSrc.includes('restoreAutosave: false'), 'DL editor opens the default template on refresh instead of stale autosave');
+  assert(dlEditorSrc.includes('purgeDrivingLicenseAutosave'), 'DL editor purges stale User-side autosave on fresh open');
+  assert(dlEditorSrc.includes('drivingLicenseFreshOpenSnapshot'), 'DL editor replaces present state with the default template snapshot');
   assert(dlEditorSrc.includes('kindLabel="Driving License DEMO"'), 'DL editor remains labelled DEMO/SAMPLE');
   assert(dlEditorSrc.includes('DEMO / SAMPLE'), 'DL editor keeps DEMO/SAMPLE marking');
+  assert(!dlEditorSrc.includes('DEMO HOLDER'), 'DL editor source no longer seeds DEMO HOLDER');
+  assert(!dlEditorSrc.includes('DL-TEST-'), 'DL editor source no longer seeds DL-TEST reference numbers');
   assert(dlHistorySrc.includes('Driving License'), 'History empty-state mentions Driving License');
   assert(!dlRendererSrc.includes('DL_DEMO_NOTE'), 'DL renderer does not stamp extra DEMO note over the template');
   assert(dlRendererSrc.includes('isDlOverlayArtifact'), 'DL renderer filters overlay artifacts');

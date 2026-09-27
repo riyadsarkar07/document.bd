@@ -16,9 +16,12 @@ import {
   DL_PHOTO_RANGES,
   DL_QR_RANGES,
   DL_TEMPLATE_SRC,
+  drivingLicenseFreshOpenSnapshot,
   dlQrBox,
   isDlFieldKey,
+  isDrivingLicenseFreshOpen,
   normalizeDrivingLicenseSnapshot,
+  purgeDrivingLicenseAutosave,
 } from '@/lib/constants/driving-license';
 import type {
   DlFieldKey,
@@ -126,6 +129,16 @@ function DrivingLicenseEditorInner() {
     const recordNo = searchParams.get('record');
     let cancelled = false;
     (async () => {
+      if (isDrivingLicenseFreshOpen({ recordNo, projectId, templateName })) {
+        purgeDrivingLicenseAutosave();
+        const next = drivingLicenseFreshOpenSnapshot();
+        externalCacheRef.current = next;
+        editor.replace(next);
+        setPhotoName(null);
+        setHistoryRecordId(null);
+        setStatus('Default DEMO template loaded');
+        return;
+      }
       if (recordNo) {
         const res = await getVaultRecord(recordNo);
         if (cancelled) return;
@@ -282,14 +295,16 @@ function DrivingLicenseEditorInner() {
   }, [draw, setBusy, setStatus]);
 
   const reset = useCallback(() => {
-    editor.reset();
+    purgeDrivingLicenseAutosave();
+    const next = drivingLicenseFreshOpenSnapshot();
+    editor.replace(next);
     setPhotoImage(null);
     setPhotoName(null);
     lastQrPayloadRef.current = null;
     setQrDataUrl(null);
     setQrImg(null);
     setActiveField('name');
-    externalCacheRef.current = null;
+    externalCacheRef.current = next;
     setHistoryRecordId(null);
     setStatus('Defaults applied');
     toast.info('Driving License editor reset to DEMO defaults');
