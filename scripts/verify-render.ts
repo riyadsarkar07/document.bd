@@ -11,7 +11,7 @@
  *  - every text default from the legacy JS matches the new constants module
  *  - canvas dimensions equal the background image natural size
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCanvas, GlobalFonts, Image } from '@napi-rs/canvas';
 import {
@@ -1167,7 +1167,9 @@ async function main() {
   assert(dlBg !== null, 'Driving License template image loads');
   assert(dlBg!.width === 3264 && dlBg!.height === 1998, `DL template 3264×1998 (got ${dlBg!.width}×${dlBg!.height})`);
   assert(DL_TEMPLATE_SRC === '/assets/Driving License.png', 'DL uses the uploaded template path');
+  assert(existsSync(join(ROOT, 'public/assets/Driving License.png')), 'DL default template file is present for user and admin editors');
   assert(DL_DOC_WIDTH === 3264 && DL_DOC_HEIGHT === 1998, 'DL canvas matches template pixels');
+  assert(DL_DEFAULTS.refNo === 'DM347547NP501', 'DL default reference number is DM347547NP501');
 
   const dlCanvas = createCanvas(1, 1);
   renderDrivingLicense(dlCanvas as unknown as HTMLCanvasElement, { ...DL_DEFAULTS }, dlBg as unknown as HTMLImageElement, 1);
@@ -1264,6 +1266,10 @@ async function main() {
   assert(dlEditorSrc.includes("docKind: 'driving-license'"), 'DL editor commits with driving-license kind');
   assert(dlEditorSrc.includes('getVaultRecord'), 'DL editor reopens History records');
   assert(dlEditorSrc.includes('onSaveHistory'), 'DL editor Save → History button is wired');
+  assert(dlEditorSrc.includes('loadImage(DL_TEMPLATE_SRC)'), 'DL editor loads the default template on open');
+  assert(dlEditorSrc.includes('restoreAutosave: false'), 'DL editor opens the default template on refresh instead of stale autosave');
+  assert(dlEditorSrc.includes('kindLabel="Driving License DEMO"'), 'DL editor remains labelled DEMO/SAMPLE');
+  assert(dlEditorSrc.includes('DEMO / SAMPLE'), 'DL editor keeps DEMO/SAMPLE marking');
   assert(dlHistorySrc.includes('Driving License'), 'History empty-state mentions Driving License');
   assert(!dlRendererSrc.includes('DL_DEMO_NOTE'), 'DL renderer does not stamp extra DEMO note over the template');
   assert(dlRendererSrc.includes('isDlOverlayArtifact'), 'DL renderer filters overlay artifacts');

@@ -136,7 +136,7 @@ export const DL_DEFAULTS: DrivingLicenseSnapshot = {
   fatherHusband: 'DEMO FATHER',
   issueDate: '01 Jan 2024',
   validityDate: '31 Dec 2028',
-  refNo: 'DL-TEST-0001',
+  refNo: 'DM347547NP501',
   issuingAuthority: 'DEMO BRTA',
   layouts: DL_DEFAULT_LAYOUTS,
   photoX: DL_PHOTO_DEFAULT.x,

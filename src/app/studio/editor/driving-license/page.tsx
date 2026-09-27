@@ -97,6 +97,7 @@ function DrivingLicenseEditorInner() {
     autosaveKey: `studio.autosave.driving-license.${user?.id ?? 'anon'}`,
     loadExternal: () => externalCacheRef.current,
     normalize: (s) => normalizeDrivingLicenseSnapshot(s as Partial<DrivingLicenseSnapshot>),
+    restoreAutosave: false,
   });
 
   const { present, zoom, setField, setStatus, setBusy, setRendered, setDims, dims, set: setSnapshot } = editor;
