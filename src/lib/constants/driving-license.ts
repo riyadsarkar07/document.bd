@@ -142,7 +142,7 @@ export const DL_DEFAULTS: DrivingLicenseSnapshot = {
   issueDate: '01 Jan 2024',
   validityDate: '31 Dec 2028',
   refNo: DL_DEFAULT_REF_NO,
-  issuingAuthority: 'TEST BRTA',
+  issuingAuthority: 'DEMO ISSUING AUTHORITY',
   layouts: DL_DEFAULT_LAYOUTS,
   photoX: DL_PHOTO_DEFAULT.x,
   photoY: DL_PHOTO_DEFAULT.y,

@@ -1182,7 +1182,7 @@ async function main() {
   assert(DL_DEFAULTS.fatherHusband === 'TEST FATHER', 'DL default Father/Husband is TEST FATHER');
   assert(DL_DEFAULTS.issueDate === '01 Jan 2024', 'DL default Issue/Renewal Date is 01 Jan 2024');
   assert(DL_DEFAULTS.validityDate === '31 Dec 2028', 'DL default Validity Date is 31 Dec 2028');
-  assert(DL_DEFAULTS.issuingAuthority === 'TEST BRTA', 'DL default Issuing Authority is TEST BRTA');
+  assert(DL_DEFAULTS.issuingAuthority === 'DEMO ISSUING AUTHORITY', 'DL default Issuing Authority is DEMO ISSUING AUTHORITY');
 
   const dlCanvas = createCanvas(1, 1);
   renderDrivingLicense(dlCanvas as unknown as HTMLCanvasElement, { ...DL_DEFAULTS }, dlBg as unknown as HTMLImageElement, 1);
@@ -1205,7 +1205,7 @@ async function main() {
   assert(dlPayload.includes('Father / Husband : TEST FATHER'), 'DL default QR encodes Father / Husband');
   assert(dlPayload.includes('Issue / Renewal Date : 01 Jan 2024'), 'DL default QR encodes Issue / Renewal Date');
   assert(dlPayload.includes('Validity Date : 31 Dec 2028'), 'DL default QR encodes Validity Date');
-  assert(dlPayload.includes('Issuing Authority : TEST BRTA'), 'DL default QR encodes Issuing Authority');
+  assert(dlPayload.includes('Issuing Authority : DEMO ISSUING AUTHORITY'), 'DL default QR encodes Issuing Authority');
   const filledDlPayload = buildDrivingLicenseQrPayload({
     ...DL_DEFAULTS,
     name: 'MOVED HOLDER',
@@ -1265,7 +1265,7 @@ async function main() {
   assert(freshOpen.name === 'TEST HOLDER' && freshOpen.dob === '01 Jan 1990', 'fresh open snapshot seeds DEMO identity values');
   assert(freshOpen.bloodGroup === 'O+' && freshOpen.fatherHusband === 'TEST FATHER', 'fresh open snapshot seeds blood group and father/husband');
   assert(freshOpen.issueDate === '01 Jan 2024' && freshOpen.validityDate === '31 Dec 2028', 'fresh open snapshot seeds issue and validity dates');
-  assert(freshOpen.issuingAuthority === 'TEST BRTA', 'fresh open snapshot seeds issuing authority');
+  assert(freshOpen.issuingAuthority === 'DEMO ISSUING AUTHORITY', 'fresh open snapshot seeds issuing authority');
   assert(DL_AUTOSAVE_KEY_PREFIX === 'studio.autosave.driving-license.', 'DL autosave keys are namespaced per editor');
 
   const restored = normalizeDrivingLicenseSnapshot({
