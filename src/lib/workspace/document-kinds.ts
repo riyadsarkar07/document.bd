@@ -19,7 +19,8 @@ export type DocumentKind =
   | 'pdf'
   | 'page-recover'
   | 'business-manager'
-  | 'driving-license';
+  | 'driving-license'
+  | 'dubai-license';
 
 /** Mirrors the `Badge` component tones without importing UI into the data layer. */
 export type DocumentBadgeTone = 'gold' | 'blue' | 'red' | 'green' | 'violet' | 'muted' | 'warning';
@@ -130,6 +131,15 @@ export const DOCUMENT_KINDS: Record<DocumentKind, DocumentKindMeta> = {
     recordPrefix: 'DL',
     certificate: false,
   },
+  'dubai-license': {
+    kind: 'dubai-license',
+    label: 'Dubai License DEMO',
+    short: 'DXB',
+    editorPath: '/studio/editor/dubai-license',
+    badgeTone: 'gold',
+    recordPrefix: 'DXB',
+    certificate: false,
+  },
 };
 
 /** Stable display order for filters / menus. */
@@ -144,6 +154,7 @@ export const DOCUMENT_KIND_ORDER: DocumentKind[] = [
   'page-recover',
   'business-manager',
   'driving-license',
+  'dubai-license',
 ];
 
 export function isDocumentKind(value: unknown): value is DocumentKind {

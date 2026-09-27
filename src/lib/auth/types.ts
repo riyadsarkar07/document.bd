@@ -2,7 +2,7 @@ export type Role = 'admin' | 'editor' | 'viewer';
 
 export type UserStatus = 'active' | 'disabled';
 
-export type DocKind = 'tm' | 'nid' | 'tin' | 'unhcr' | 'driving-license';
+export type DocKind = 'tm' | 'nid' | 'tin' | 'unhcr' | 'driving-license' | 'dubai-license';
 
 export const DOC_KIND_LABEL: Record<DocKind, string> = {
   tm: 'Trademark Certificate',
@@ -10,6 +10,7 @@ export const DOC_KIND_LABEL: Record<DocKind, string> = {
   tin: 'TIN Record',
   unhcr: 'UNHCR ID',
   'driving-license': 'Driving License',
+  'dubai-license': 'Dubai License DEMO',
 };
 
 export interface Profile {

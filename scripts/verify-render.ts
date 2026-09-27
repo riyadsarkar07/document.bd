@@ -69,6 +69,7 @@ import {
 import { buildTinQrPayload, encodeDemoQr } from '../src/lib/tinQr';
 import { buildDrivingLicenseQrPayload, encodeDrivingLicenseQr } from '../src/lib/drivingLicenseQr';
 import { renderDrivingLicense } from '../src/lib/renderers/drivingLicenseRenderer';
+import { renderDubaiLicense } from '../src/lib/renderers/dubaiLicenseRenderer';
 import {
   DL_AUTOSAVE_KEY_PREFIX,
   DL_DEFAULTS,
@@ -88,6 +89,22 @@ import {
   isDrivingLicenseFreshOpen,
   normalizeDrivingLicenseSnapshot,
 } from '../src/lib/constants/driving-license';
+import {
+  DUBAI_AUTOSAVE_KEY_PREFIX,
+  DUBAI_DEFAULTS,
+  DUBAI_DEFAULT_LAYOUTS,
+  DUBAI_DEMO_NOTE,
+  DUBAI_DOC_HEIGHT,
+  DUBAI_DOC_WIDTH,
+  DUBAI_FIELD_ORDER,
+  DUBAI_PHOTO_DEFAULT,
+  DUBAI_TEMPLATE_SRC,
+  dubaiLicenseFreshOpenSnapshot,
+  isDubaiLicenseFreshOpen,
+  isDubaiOverlayArtifact,
+  isDubaiWarningText,
+  normalizeDubaiLicenseSnapshot,
+} from '../src/lib/constants/dubai-license';
 import type { DrivingLicenseSnapshot, NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
 
 const ROOT = process.cwd();
@@ -1346,6 +1363,84 @@ async function main() {
   assert(!dlEditorSrc.includes('Fictional TEST data only'), 'DL inspector omits fictional TEST warning box');
   assert(!dlEditorSrc.includes('The uploaded template is preserved'), 'DL inspector omits helper description paragraph');
   assert(DL_PHOTO_DEFAULT.w > 0 && DL_QR_DEFAULT.size > 0, 'DL photo and QR defaults are present');
+
+  console.log('\n[DXB] Dubai License DEMO editor\n');
+  const dubaiBg = await loadImage('public/assets/dubai.jpg');
+  assert(dubaiBg !== null, 'Dubai template image loads');
+  assert(dubaiBg!.width === 12800 && dubaiBg!.height === 7990, `Dubai template 12800×7990 (got ${dubaiBg!.width}×${dubaiBg!.height})`);
+  assert(DUBAI_TEMPLATE_SRC === '/assets/dubai.jpg', 'Dubai uses the uploaded template path');
+  assert(existsSync(join(ROOT, 'public/assets/dubai.jpg')), 'Dubai default template file is present');
+  assert(DUBAI_DOC_WIDTH === 3200 && DUBAI_DOC_HEIGHT === 1998, 'Dubai working canvas is 3200×1998');
+  assert(DUBAI_DEFAULTS.licenseNo === '784-1990-1234567-1', 'Dubai default license number is fictional');
+  assert(DUBAI_DEFAULTS.nameEn === 'ALEX MORGAN', 'Dubai default English name is fictional');
+  assert(DUBAI_DEFAULTS.nationality === '' && DUBAI_DEFAULTS.placeOfIssue === '', 'printed Nationality/Place of Issue stay blank');
+
+  const dubaiCanvas = createCanvas(1, 1);
+  renderDubaiLicense(dubaiCanvas as unknown as HTMLCanvasElement, { ...DUBAI_DEFAULTS }, dubaiBg as unknown as HTMLImageElement, 1);
+  assert(dubaiCanvas.width === 3200 && dubaiCanvas.height === 1998, `Dubai canvas 3200×1998 (got ${dubaiCanvas.width}×${dubaiCanvas.height})`);
+
+  const dubaiScaled = createCanvas(1, 1);
+  renderDubaiLicense(dubaiScaled as unknown as HTMLCanvasElement, { ...DUBAI_DEFAULTS }, dubaiBg as unknown as HTMLImageElement, 0.5);
+  assert(dubaiScaled.width === 1600 && dubaiScaled.height === 999, `Dubai scaled canvas 1600×999 (got ${dubaiScaled.width}×${dubaiScaled.height})`);
+
+  assert(DUBAI_DEFAULT_LAYOUTS.licenseNo.x === 1680 && DUBAI_DEFAULT_LAYOUTS.licenseNo.y === 730, 'Dubai License No at 1680,730');
+  assert(DUBAI_DEFAULT_LAYOUTS.nameEn.x === 1680 && DUBAI_DEFAULT_LAYOUTS.nameEn.y === 1055, 'Dubai English name at 1680,1055');
+  assert(DUBAI_DEFAULT_LAYOUTS.nameAr.align === 'right', 'Dubai Arabic name is right-aligned');
+  assert(DUBAI_DEFAULT_LAYOUTS.authorityText.y === 1820, 'Dubai authority text sits in the bottom box');
+  assert(isDubaiWarningText(DUBAI_DEMO_NOTE), 'DUBAI_DEMO_NOTE is classified as warning text');
+  assert(!isDubaiWarningText('ALEX MORGAN'), 'fictional holder name is not warning text');
+  assert(isDubaiOverlayArtifact('{{placeholder}}'), 'mustache placeholders are canvas artifacts');
+  assert(isDubaiOverlayArtifact(DUBAI_DEFAULTS.nationality), 'blank nationality is not painted over the template');
+  assert(isDubaiLicenseFreshOpen({}), 'direct editor open is a fresh open');
+  assert(!isDubaiLicenseFreshOpen({ recordNo: 'DXB-1' }), 'History record is not a fresh open');
+  const dubaiFresh = dubaiLicenseFreshOpenSnapshot();
+  assert(dubaiFresh.licenseNo === DUBAI_DEFAULTS.licenseNo, 'fresh open snapshot uses fictional license number');
+  assert(DUBAI_AUTOSAVE_KEY_PREFIX === 'studio.autosave.dubai-license.', 'Dubai autosave keys are namespaced');
+
+  const dubaiRestored = normalizeDubaiLicenseSnapshot({
+    nameEn: 'JORDAN LEE',
+    layouts: {
+      ...DUBAI_DEFAULT_LAYOUTS,
+      nameEn: { ...DUBAI_DEFAULT_LAYOUTS.nameEn, x: 1700, y: 1070, fontSize: 40, fontFamily: 'arial' },
+    },
+    photoX: 120,
+    photoY: 420,
+    photoW: 700,
+    photoH: 1000,
+  });
+  assert(dubaiRestored.nameEn === 'JORDAN LEE', 'Dubai name persists through normalize');
+  assert(dubaiRestored.layouts.nameEn.x === 1700 && dubaiRestored.layouts.nameEn.y === 1070, 'Dubai name X/Y persist through normalize');
+  assert(dubaiRestored.layouts.nameEn.fontSize === 40 && dubaiRestored.layouts.nameEn.fontFamily === 'arial', 'Dubai font settings persist through normalize');
+  assert(dubaiRestored.photoX === 120 && dubaiRestored.photoW === 700, 'Dubai photo settings persist through normalize');
+  for (const key of DUBAI_FIELD_ORDER) {
+    if (key === 'nameEn') continue;
+    assert(dubaiRestored.layouts[key].x === DUBAI_DEFAULT_LAYOUTS[key].x, `Dubai ${key} X untouched by others`);
+  }
+
+  const dubaiDefaultCanvas = createCanvas(1, 1);
+  renderDubaiLicense(dubaiDefaultCanvas as unknown as HTMLCanvasElement, { ...DUBAI_DEFAULTS }, null, 1);
+  const dubaiMovedCanvas = createCanvas(1, 1);
+  renderDubaiLicense(dubaiMovedCanvas as unknown as HTMLCanvasElement, dubaiRestored, null, 1);
+  const dubaiDefaultPx = Buffer.from(dubaiDefaultCanvas.getContext('2d')!.getImageData(0, 0, dubaiDefaultCanvas.width, dubaiDefaultCanvas.height).data.buffer);
+  const dubaiMovedPx = Buffer.from(dubaiMovedCanvas.getContext('2d')!.getImageData(0, 0, dubaiMovedCanvas.width, dubaiMovedCanvas.height).data.buffer);
+  assert(!dubaiMovedPx.equals(dubaiDefaultPx), 'Dubai moved fields paint different pixels');
+
+  const dubaiEditorSrc = readFileSync(join(ROOT, 'src/app/studio/editor/dubai-license/page.tsx'), 'utf8');
+  const dubaiRendererSrc = readFileSync(join(ROOT, 'src/lib/renderers/dubaiLicenseRenderer.ts'), 'utf8');
+  const dubaiDlSrc = readFileSync(join(ROOT, 'src/app/studio/editor/driving-license/page.tsx'), 'utf8');
+  assert(dubaiEditorSrc.includes("docKind: 'dubai-license'"), 'Dubai editor commits with dubai-license kind');
+  assert(dubaiEditorSrc.includes('getVaultRecord'), 'Dubai editor reopens History records');
+  assert(dubaiEditorSrc.includes('onSaveHistory'), 'Dubai editor Save → History button is wired');
+  assert(dubaiEditorSrc.includes('loadImage(DUBAI_TEMPLATE_SRC)'), 'Dubai editor loads the default template on open');
+  assert(dubaiEditorSrc.includes('kindLabel="Dubai License DEMO"'), 'Dubai editor is labelled DEMO');
+  assert(dubaiEditorSrc.includes('DEMO / SAMPLE'), 'Dubai editor keeps DEMO/SAMPLE marking');
+  assert(dubaiEditorSrc.includes('dir={f.rtl ? \'rtl\' : \'ltr\'}') || dubaiEditorSrc.includes('dir={f.rtl'), 'Dubai Arabic input uses RTL');
+  assert(dubaiRendererSrc.includes('isDubaiOverlayArtifact'), 'Dubai renderer filters overlay artifacts');
+  assert(!dubaiRendererSrc.includes('DUBAI_DEMO_NOTE'), 'Dubai renderer does not stamp extra DEMO note over the template');
+  assert(dubaiRendererSrc.includes("ctx.direction = 'rtl'"), 'Dubai renderer sets RTL for Arabic');
+  assert(!dubaiDlSrc.includes('dubai.jpg'), 'existing Driving License editor is unchanged vs Dubai template');
+  assert(DUBAI_PHOTO_DEFAULT.w > 0 && DUBAI_PHOTO_DEFAULT.h > 0, 'Dubai photo defaults are present');
+  assert(DUBAI_FIELD_ORDER.length === 9, 'Dubai has 9 editable text fields');
 
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);

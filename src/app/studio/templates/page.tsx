@@ -12,6 +12,7 @@ import { NID_DEFAULTS } from '@/lib/constants/nid';
 import { TIN_DEFAULTS } from '@/lib/constants/tin';
 import { UNHCR_DEFAULTS } from '@/lib/constants/unhcr';
 import { DL_DEFAULTS } from '@/lib/constants/driving-license';
+import { DUBAI_DEFAULTS } from '@/lib/constants/dubai-license';
 import { Card, PageHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -21,14 +22,15 @@ import { FieldLabel, Input, Textarea } from '@/components/ui/input';
 import { useToast } from '@/lib/toast/toast-provider';
 import { timeAgo } from '@/lib/utils';
 
-const KIND_ICON = { tm: FileText, nid: CreditCard, tin: Landmark, unhcr: Contact, 'driving-license': CreditCard } as const;
-const KIND_TONE = { tm: 'gold', nid: 'blue', tin: 'green', unhcr: 'blue', 'driving-license': 'green' } as const;
+const KIND_ICON = { tm: FileText, nid: CreditCard, tin: Landmark, unhcr: Contact, 'driving-license': CreditCard, 'dubai-license': CreditCard } as const;
+const KIND_TONE = { tm: 'gold', nid: 'blue', tin: 'green', unhcr: 'blue', 'driving-license': 'green', 'dubai-license': 'gold' } as const;
 const KIND_GRADIENT = {
   tm: 'bg-gradient-to-br from-accent to-accent-bright text-canvas',
   nid: 'bg-gradient-to-br from-info to-blue-500 text-white',
   tin: 'bg-gradient-to-br from-success to-emerald-500 text-white',
   unhcr: 'bg-gradient-to-br from-sky-500 to-blue-600 text-white',
   'driving-license': 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white',
+  'dubai-license': 'bg-gradient-to-br from-amber-500 to-yellow-600 text-white',
 } as const;
 
 export default function TemplatesPage() {
@@ -38,7 +40,7 @@ export default function TemplatesPage() {
   const [source, setSource] = useState<'supabase' | 'local'>('supabase');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' | 'tin' | 'unhcr' | 'driving-license' }>({
+  const [modal, setModal] = useState<{ open: boolean; kind: 'tm' | 'nid' | 'tin' | 'unhcr' | 'driving-license' | 'dubai-license' }>({
     open: false,
     kind: 'tm',
   });
@@ -66,7 +68,7 @@ export default function TemplatesPage() {
     void refresh();
   }, [refresh]);
 
-  const openCreate = (kind: 'tm' | 'nid' | 'tin' | 'unhcr' | 'driving-license') => {
+  const openCreate = (kind: 'tm' | 'nid' | 'tin' | 'unhcr' | 'driving-license' | 'dubai-license') => {
     setName(`${DOC_KIND_LABEL[kind]} — ${new Date().toLocaleDateString()}`);
     setDescription('');
     setModal({ open: true, kind });
@@ -82,6 +84,8 @@ export default function TemplatesPage() {
             ? ({ ...UNHCR_DEFAULTS, docKind: 'unhcr' } as unknown as Record<string, unknown>)
             : modal.kind === 'driving-license'
               ? ({ ...DL_DEFAULTS, docKind: 'driving-license' } as unknown as Record<string, unknown>)
+              : modal.kind === 'dubai-license'
+                ? ({ ...DUBAI_DEFAULTS, docKind: 'dubai-license' } as unknown as Record<string, unknown>)
               : ({ ...TIN_DEFAULTS } as unknown as Record<string, unknown>);
     const tpl: TemplateRecord = {
       name: name.trim() || `Untitled template`,
@@ -139,6 +143,9 @@ export default function TemplatesPage() {
               </Button>
               <Button variant="outline" icon={<CreditCard className="h-4 w-4" />} onClick={() => openCreate('driving-license')}>
                 Save DL Template
+              </Button>
+              <Button variant="outline" icon={<CreditCard className="h-4 w-4" />} onClick={() => openCreate('dubai-license')}>
+                Save Dubai DEMO Template
               </Button>
             </>
           ) : (

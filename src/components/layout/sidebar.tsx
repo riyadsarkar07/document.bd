@@ -51,6 +51,7 @@ const NAV: NavItem[] = [
   { href: '/studio/editor/nid', label: 'NID Card', icon: CreditCard, scope: 'nid', section: 'Studio' },
   { href: '/studio/editor/tin', label: 'TIN Record', icon: Landmark, scope: 'tin', section: 'Studio' },
   { href: '/studio/editor/driving-license', label: 'Driving License', icon: CreditCard, scope: 'driving-license', section: 'Studio' },
+  { href: '/studio/editor/dubai-license', label: 'Dubai License DEMO', icon: CreditCard, scope: 'driving-license', section: 'Studio' },
   { href: '/studio/editor/unhcr', label: 'UNHCR ID', icon: Contact, scope: 'unhcr', section: 'Studio' },
   { href: '/studio/editor/unhcr-s2', label: 'UNHCR ID Server 2', icon: Contact, scope: 'unhcr', section: 'Studio' },
   { href: '/studio/history', label: 'History', icon: History, scope: 'history', section: 'Studio' },

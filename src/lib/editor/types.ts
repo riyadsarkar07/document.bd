@@ -1,6 +1,6 @@
 import type { DocumentKind } from '@/lib/workspace/document-kinds';
 
-export type DocKind = 'tm' | 'nid' | 'tin' | 'unhcr' | 'driving-license';
+export type DocKind = 'tm' | 'nid' | 'tin' | 'unhcr' | 'driving-license' | 'dubai-license';
 
 export type TinAlign = 'left' | 'center' | 'right' | 'justify';
 export type TinWeight = 'normal' | 'bold';
@@ -262,4 +262,48 @@ export interface UnhcrS2Snapshot extends UnhcrSnapshot {
   testRefNoH: number;
   testRefNoFontSize: number;
   testRefNoOrientation: UnhcrTextOrientation;
+}
+
+export type DubaiFontFamily = 'arial' | 'arial-bold';
+
+export interface DubaiLayout {
+  fontSize: number;
+  x: number;
+  y: number;
+  fontFamily: DubaiFontFamily;
+  align?: 'left' | 'right';
+}
+
+export const DUBAI_FIELD_KEYS = [
+  'licenseNo',
+  'nameEn',
+  'nameAr',
+  'nationality',
+  'dob',
+  'issueDate',
+  'expiryDate',
+  'placeOfIssue',
+  'authorityText',
+] as const;
+
+export type DubaiFieldKey = (typeof DUBAI_FIELD_KEYS)[number];
+
+export type DubaiOverlayKey = DubaiFieldKey | 'photo';
+
+export interface DubaiLicenseSnapshot {
+  licenseNo: string;
+  nameEn: string;
+  nameAr: string;
+  nationality: string;
+  dob: string;
+  issueDate: string;
+  expiryDate: string;
+  placeOfIssue: string;
+  authorityText: string;
+  layouts: Record<DubaiFieldKey, DubaiLayout>;
+  photoX: number;
+  photoY: number;
+  photoW: number;
+  photoH: number;
+  photoDataUrl?: string | null;
 }

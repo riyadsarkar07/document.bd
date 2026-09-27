@@ -10,6 +10,7 @@ interface PropertyInputProps {
   textarea?: boolean;
   rows?: number;
   mono?: boolean;
+  dir?: 'ltr' | 'rtl';
 }
 
 export const PropertyInput = memo(
@@ -20,14 +21,16 @@ export const PropertyInput = memo(
     textarea,
     rows = 2,
     mono,
+    dir,
   }: PropertyInputProps) {
     return (
       <div>
         <FieldLabel mono={mono}>{label}</FieldLabel>
         {textarea ? (
-          <Textarea rows={rows} value={value} onChange={(e) => onChange(e.target.value)} />
+          <Textarea dir={dir} rows={rows} value={value} onChange={(e) => onChange(e.target.value)} />
         ) : (
           <Input
+            dir={dir}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             className={mono ? 'font-mono text-xs' : undefined}
@@ -42,5 +45,6 @@ export const PropertyInput = memo(
     prev.textarea === next.textarea &&
     prev.rows === next.rows &&
     prev.mono === next.mono &&
+    prev.dir === next.dir &&
     prev.onChange === next.onChange,
 );

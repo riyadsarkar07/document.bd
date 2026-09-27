@@ -334,7 +334,7 @@ function main() {
   assert(unpackedLegacyKind.docKind === undefined, 'legacy TM rows without docKind stay untagged');
 
   console.log('\n[14] Unified History document-kind registry\n');
-  assert(DOCUMENT_KIND_ORDER.length === 10, 'registry lists all 10 Studio editors');
+  assert(DOCUMENT_KIND_ORDER.length === 11, 'registry lists all 11 Studio editors');
   assert(DOCUMENT_KIND_ORDER.every(isDocumentKind), 'every ordered kind is a valid DocumentKind');
   assert(documentKindMeta('tm').certificate === true, 'TM is a certificate kind');
   assert(documentKindMeta('youtube-trademark').certificate === true, 'YouTube Trademark is a certificate kind');
@@ -358,6 +358,9 @@ function main() {
   assert(documentKindMeta('business-manager').editorPath === '/studio/editor/business-manager', 'Business Manager reopens in its editor');
   assert(documentKindMeta('driving-license').editorPath === '/studio/editor/driving-license', 'Driving License reopens in its editor');
   assert(documentKindMeta('driving-license').recordPrefix === 'DL', 'Driving License History ids use the DL prefix');
+  assert(documentKindMeta('dubai-license').certificate === false, 'Dubai License DEMO is not a certificate kind');
+  assert(documentKindMeta('dubai-license').editorPath === '/studio/editor/dubai-license', 'Dubai License DEMO reopens in its editor');
+  assert(documentKindMeta('dubai-license').recordPrefix === 'DXB', 'Dubai License DEMO History ids use the DXB prefix');
   assert(isDocumentKind('nid') && !isDocumentKind('certificate'), 'isDocumentKind accepts only registered kinds');
   const generated = newRecordId('pdf');
   assert(generated.startsWith(`${DOCUMENT_KINDS.pdf.recordPrefix}-`), 'generated PDF ids use the PDF prefix');
@@ -401,6 +404,29 @@ function main() {
   assert((unpackedDl.doc as { refNo: string }).refNo === 'DL-TEST-0001', 'Driving License pack restores refNo');
   assert((unpackedDl.doc as { name: string }).name === 'DEMO HOLDER', 'Driving License pack restores name');
   assert((unpackedDl.doc as { qrX: number }).qrX === 2860, 'Driving License pack restores QR X');
+
+  const dubaiDoc = {
+    licenseNo: '784-1990-1234567-1',
+    nameEn: 'ALEX MORGAN',
+    nameAr: 'أليكس مورغان',
+    nationality: 'SAMPLE',
+    dob: '01 JAN 1990',
+    issueDate: '01 JAN 2024',
+    expiryDate: '01 JAN 2028',
+    placeOfIssue: 'SAMPLE CITY',
+    authorityText: 'SAMPLE AUTHORITY',
+    layouts: { nameEn: { fontSize: 42, x: 1700, y: 1060, fontFamily: 'arial-bold' } },
+    photoX: 104,
+    photoY: 408,
+    photoW: 778,
+    photoH: 1168,
+  };
+  const packedDubai = packDetails('', stored, { docKind: 'dubai-license', doc: dubaiDoc });
+  const unpackedDubai = unpackDetails(packedDubai);
+  assert(unpackedDubai.docKind === 'dubai-license', 'Dubai License pack stores docKind');
+  assert((unpackedDubai.doc as { licenseNo: string }).licenseNo === '784-1990-1234567-1', 'Dubai License pack restores licenseNo');
+  assert((unpackedDubai.doc as { nameEn: string }).nameEn === 'ALEX MORGAN', 'Dubai License pack restores nameEn');
+  assert((unpackedDubai.doc as { photoX: number }).photoX === 104, 'Dubai License pack restores photo X');
 
   const unhcrDoc = {
     unhcrNo: 'MY-1001',

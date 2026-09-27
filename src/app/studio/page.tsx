@@ -167,6 +167,17 @@ export default function DashboardPage() {
                 Driving License
               </Button>
             )}
+            {hasToolAccess(profile, 'driving-license') ? (
+              <Link href="/studio/editor/dubai-license">
+                <Button variant="outline" icon={<CreditCard className="h-4 w-4" />}>
+                  Dubai License DEMO
+                </Button>
+              </Link>
+            ) : (
+              <Button variant="outline" icon={<Lock className="h-4 w-4" />} onClick={denyAccess}>
+                Dubai License DEMO
+              </Button>
+            )}
             {hasToolAccess(profile, 'unhcr') ? (
               <Link href="/studio/editor/unhcr">
                 <Button variant="outline" icon={<Contact className="h-4 w-4" />}>
@@ -315,6 +326,15 @@ export default function DashboardPage() {
               icon: CreditCard,
               tone: 'from-emerald-500 to-teal-600 text-white',
               meta: '3264 × 1998 px',
+              scope: 'driving-license',
+            },
+            {
+              href: '/studio/editor/dubai-license',
+              title: 'Dubai License DEMO',
+              desc: 'DEMO overlay on the uploaded UAE Dubai template — Arial fields and photo. Not an official licence.',
+              icon: CreditCard,
+              tone: 'from-amber-500 to-yellow-600 text-white',
+              meta: '3200 × 1998 px',
               scope: 'driving-license',
             },
             {
