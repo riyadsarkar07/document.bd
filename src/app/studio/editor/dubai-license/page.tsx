@@ -13,6 +13,7 @@ import {
   DUBAI_FIELDS,
   DUBAI_FONT_OPTIONS,
   DUBAI_LAYOUT_RANGES,
+  DUBAI_PHOTO_DEFAULT,
   DUBAI_PHOTO_RANGES,
   DUBAI_TEMPLATE_SRC,
   dubaiLicenseFreshOpenSnapshot,
@@ -547,7 +548,13 @@ function DubaiLicenseEditorInner() {
       }
       setPhotoImage(img);
       setPhotoName(file.name);
-      setPhoto({ photoDataUrl: dataUrl });
+      setPhoto({
+        photoDataUrl: dataUrl,
+        photoX: DUBAI_PHOTO_DEFAULT.x,
+        photoY: DUBAI_PHOTO_DEFAULT.y,
+        photoW: DUBAI_PHOTO_DEFAULT.w,
+        photoH: DUBAI_PHOTO_DEFAULT.h,
+      });
       setActiveField('photo');
       toast.success('Photo loaded');
     },

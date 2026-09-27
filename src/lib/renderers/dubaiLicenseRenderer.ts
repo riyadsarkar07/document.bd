@@ -51,26 +51,16 @@ export function drawPhotoCover(
   const destW = Math.max(1, Math.round(w));
   const destH = Math.max(1, Math.round(h));
   const scale = Math.max(destW / size.w, destH / size.h);
-  const srcW = destW / scale;
-  const srcH = destH / scale;
-  const srcX = (size.w - srcW) / 2;
-  const srcY = (size.h - srcH) / 2;
+  const drawW = size.w * scale;
+  const drawH = size.h * scale;
+  const drawX = destX + (destW - drawW) / 2;
+  const drawY = destY + (destH - drawH) / 2;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.beginPath();
   ctx.rect(destX, destY, destW, destH);
   ctx.clip();
-  ctx.drawImage(
-    photo as CanvasImageSource,
-    srcX,
-    srcY,
-    srcW,
-    srcH,
-    destX,
-    destY,
-    destW,
-    destH,
-  );
+  ctx.drawImage(photo as CanvasImageSource, drawX, drawY, drawW, drawH);
   ctx.restore();
 }
 

@@ -1424,6 +1424,17 @@ async function main() {
   assert(dubaiRestored.layouts.nameEn.x === 1700 && dubaiRestored.layouts.nameEn.y === 1070, 'Dubai name X/Y persist through normalize');
   assert(dubaiRestored.layouts.nameEn.fontSize === 40 && dubaiRestored.layouts.nameEn.fontFamily === 'arial', 'Dubai font settings persist through normalize');
   assert(dubaiRestored.photoX === 120 && dubaiRestored.photoW === 700, 'Dubai photo settings persist through normalize');
+  assert(DUBAI_PHOTO_DEFAULT.x === 104 && DUBAI_PHOTO_DEFAULT.y === 652, 'Dubai photo slot starts below the emblem');
+  assert(DUBAI_PHOTO_DEFAULT.w === 778 && DUBAI_PHOTO_DEFAULT.h === 924, 'Dubai photo slot is 778×924 inside the cyan window');
+  assert(DUBAI_PHOTO_DEFAULT.y + DUBAI_PHOTO_DEFAULT.h === 1576, 'Dubai photo slot ends at the cyan window bottom');
+  const dubaiLegacyPhoto = normalizeDubaiLicenseSnapshot({
+    photoX: 104,
+    photoY: 408,
+    photoW: 778,
+    photoH: 1168,
+  });
+  assert(dubaiLegacyPhoto.photoX === 104 && dubaiLegacyPhoto.photoY === 652, 'legacy oversized Dubai photo Y remaps into the designated slot');
+  assert(dubaiLegacyPhoto.photoW === 778 && dubaiLegacyPhoto.photoH === 924, 'legacy oversized Dubai photo size remaps into the designated slot');
   for (const key of DUBAI_FIELD_ORDER) {
     if (key === 'nameEn') continue;
     assert(dubaiRestored.layouts[key].x === DUBAI_DEFAULT_LAYOUTS[key].x, `Dubai ${key} X untouched by others`);
@@ -1507,6 +1518,30 @@ async function main() {
   assert(keptBg[0] === 200 && keptBg[1] === 230 && keptBg[2] === 240, 'transparent photo pixels keep the template background');
   assert(!(keptBg[0] === 0 && keptBg[1] === 0 && keptBg[2] === 0), 'transparent photo pixels are not filled black');
   assert(painted[2] > 200 && painted[0] < 80, 'opaque photo pixels still paint inside the frame');
+
+  const dubaiLandscape = createCanvas(800, 400);
+  const dubaiLandscapeCtx = dubaiLandscape.getContext('2d');
+  dubaiLandscapeCtx.fillStyle = '#ff00ff';
+  dubaiLandscapeCtx.fillRect(0, 0, 800, 400);
+  const dubaiFitCard = createCanvas(DUBAI_DOC_WIDTH, DUBAI_DOC_HEIGHT);
+  const dubaiFitCtx = dubaiFitCard.getContext('2d');
+  dubaiFitCtx.fillStyle = '#00ff00';
+  dubaiFitCtx.fillRect(0, 0, DUBAI_DOC_WIDTH, DUBAI_DOC_HEIGHT);
+  drawPhotoCover(
+    dubaiFitCtx as unknown as CanvasRenderingContext2D,
+    dubaiLandscape as unknown as HTMLCanvasElement,
+    DUBAI_PHOTO_DEFAULT.x,
+    DUBAI_PHOTO_DEFAULT.y,
+    DUBAI_PHOTO_DEFAULT.w,
+    DUBAI_PHOTO_DEFAULT.h,
+  );
+  const emblemPx = dubaiFitCtx.getImageData(400, 500, 1, 1).data;
+  const framePx = dubaiFitCtx.getImageData(400, 1100, 1, 1).data;
+  const belowSlot = dubaiFitCtx.getImageData(400, 1600, 1, 1).data;
+  assert(emblemPx[1] === 255 && emblemPx[0] === 0, 'Dubai photo does not overflow upward over the emblem');
+  assert(framePx[0] === 255 && framePx[2] === 255, 'Dubai landscape photo cover-fills the designated slot');
+  assert(belowSlot[1] === 255 && belowSlot[0] === 0, 'Dubai photo does not overflow below the Licensing Authority box');
+  assert(dubaiEditorSrc.includes('DUBAI_PHOTO_DEFAULT'), 'Dubai upload resets the photo into the designated slot');
   assert(dubaiEditorSrc.includes('fileToOrientedDataUrl'), 'Dubai photo upload preserves orientation and alpha');
   assert(
     readFileSync(join(ROOT, 'src/lib/images.ts'), 'utf8').includes("canvas.toDataURL('image/png')"),

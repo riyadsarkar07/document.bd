@@ -95,10 +95,26 @@ export const DUBAI_DEFAULT_LAYOUTS: Record<DubaiFieldKey, DubaiLayout> = {
 
 export const DUBAI_PHOTO_DEFAULT = {
   x: 104,
+  y: 652,
+  w: 778,
+  h: 924,
+};
+
+const DUBAI_LEGACY_OVERSIZED_PHOTO = {
+  x: 104,
   y: 408,
   w: 778,
   h: 1168,
 };
+
+function isLegacyOversizedDubaiPhoto(s: Partial<DubaiLicenseSnapshot>): boolean {
+  return (
+    s.photoX === DUBAI_LEGACY_OVERSIZED_PHOTO.x &&
+    s.photoY === DUBAI_LEGACY_OVERSIZED_PHOTO.y &&
+    s.photoW === DUBAI_LEGACY_OVERSIZED_PHOTO.w &&
+    s.photoH === DUBAI_LEGACY_OVERSIZED_PHOTO.h
+  );
+}
 
 export const DUBAI_PHOTO_RANGES: Record<'x' | 'y' | 'w' | 'h', Omit<SliderSpec, 'key'>> = {
   x: { label: 'X', min: 0, max: DUBAI_DOC_WIDTH, default: DUBAI_PHOTO_DEFAULT.x, mono: true },
@@ -172,14 +188,22 @@ export function normalizeDubaiLicenseSnapshot(
     typeof s.photoDataUrl === 'string' && s.photoDataUrl.startsWith('data:image/')
       ? s.photoDataUrl
       : null;
+  const photo = isLegacyOversizedDubaiPhoto(s)
+    ? {
+        photoX: DUBAI_PHOTO_DEFAULT.x,
+        photoY: DUBAI_PHOTO_DEFAULT.y,
+        photoW: DUBAI_PHOTO_DEFAULT.w,
+        photoH: DUBAI_PHOTO_DEFAULT.h,
+      }
+    : s;
   return {
     ...DUBAI_DEFAULTS,
     ...root,
     layouts: layouts as Record<DubaiFieldKey, DubaiLayout>,
-    photoX: finiteNumber(s.photoX, DUBAI_PHOTO_DEFAULT.x, DUBAI_PHOTO_RANGES.x.min, DUBAI_PHOTO_RANGES.x.max),
-    photoY: finiteNumber(s.photoY, DUBAI_PHOTO_DEFAULT.y, DUBAI_PHOTO_RANGES.y.min, DUBAI_PHOTO_RANGES.y.max),
-    photoW: finiteNumber(s.photoW, DUBAI_PHOTO_DEFAULT.w, DUBAI_PHOTO_RANGES.w.min, DUBAI_PHOTO_RANGES.w.max),
-    photoH: finiteNumber(s.photoH, DUBAI_PHOTO_DEFAULT.h, DUBAI_PHOTO_RANGES.h.min, DUBAI_PHOTO_RANGES.h.max),
+    photoX: finiteNumber(photo.photoX, DUBAI_PHOTO_DEFAULT.x, DUBAI_PHOTO_RANGES.x.min, DUBAI_PHOTO_RANGES.x.max),
+    photoY: finiteNumber(photo.photoY, DUBAI_PHOTO_DEFAULT.y, DUBAI_PHOTO_RANGES.y.min, DUBAI_PHOTO_RANGES.y.max),
+    photoW: finiteNumber(photo.photoW, DUBAI_PHOTO_DEFAULT.w, DUBAI_PHOTO_RANGES.w.min, DUBAI_PHOTO_RANGES.w.max),
+    photoH: finiteNumber(photo.photoH, DUBAI_PHOTO_DEFAULT.h, DUBAI_PHOTO_RANGES.h.min, DUBAI_PHOTO_RANGES.h.max),
     photoDataUrl,
   };
 }
