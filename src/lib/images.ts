@@ -171,3 +171,44 @@ export async function fileToOrientedDataUrl(file: File): Promise<string | null> 
     reader.readAsDataURL(file);
   });
 }
+
+const SMALL_DATA_URL_CHARS = 80_000;
+
+/**
+ * Downscale a data-URL photo before vault persistence so History saves stay
+ * well under PostgREST payload limits. Alpha images stay PNG; others JPEG.
+ */
+export async function compressDataUrlImage(
+  dataUrl: string,
+  maxWidth: number,
+  maxHeight: number,
+  quality = 0.82,
+): Promise<string> {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return dataUrl;
+  if (dataUrl.length < SMALL_DATA_URL_CHARS) return dataUrl;
+  if (typeof document === 'undefined') return dataUrl;
+  const img = await loadDataUrlImage(dataUrl);
+  if (!img) return dataUrl;
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  if (srcW <= 0 || srcH <= 0) return dataUrl;
+  const scale = Math.min(1, maxWidth / srcW, maxHeight / srcH);
+  const w = Math.max(1, Math.round(srcW * scale));
+  const h = Math.max(1, Math.round(srcH * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { alpha: true });
+  if (!ctx) return dataUrl;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  const keepAlpha = dataUrl.startsWith('data:image/png') || dataUrl.startsWith('data:image/webp') || dataUrl.startsWith('data:image/gif');
+  try {
+    const next = keepAlpha ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', quality);
+    return next && next.startsWith('data:image/') && next.length < dataUrl.length ? next : dataUrl;
+  } catch {
+    return dataUrl;
+  }
+}

@@ -100,6 +100,7 @@ import {
   DUBAI_PHOTO_DEFAULT,
   DUBAI_TEMPLATE_SRC,
   dubaiLicenseFreshOpenSnapshot,
+  dubaiLicenseHistoryRecordIdForSave,
   isDubaiLicenseFreshOpen,
   isDubaiOverlayArtifact,
   isDubaiWarningText,
@@ -1454,6 +1455,21 @@ async function main() {
   assert(dubaiEditorSrc.includes("docKind: 'dubai-license'"), 'Dubai editor commits with dubai-license kind');
   assert(dubaiEditorSrc.includes('getVaultRecord'), 'Dubai editor reopens History records');
   assert(dubaiEditorSrc.includes('onSaveHistory'), 'Dubai editor Save → History button is wired');
+  assert(dubaiEditorSrc.includes('dubaiLicenseHistoryRecordIdForSave'), 'Dubai History save uses a unique record id, not the fictional license number');
+  assert(dubaiEditorSrc.includes('savingHistory'), 'Dubai Save is guarded against duplicate clicks');
+  assert(dubaiEditorSrc.includes('compressDataUrlImage'), 'Dubai History save compresses the photo before vault persist');
+  assert(dubaiEditorSrc.includes('History record is missing saved DEMO data'), 'Dubai reopen refuses a blank History payload');
+  assert(dubaiEditorSrc.includes('toast.success(\'JPG downloaded (DEMO)\')'), 'Dubai JPG download reports success from the live canvas');
+  assert(dubaiEditorSrc.includes('toast.success(\'PDF downloaded (DEMO)\')'), 'Dubai PDF download reports success from the live canvas');
+  const dubaiExportJpgFn = dubaiEditorSrc.slice(dubaiEditorSrc.indexOf('const exportJpg'), dubaiEditorSrc.indexOf('const exportPdf'));
+  const dubaiExportPdfFn = dubaiEditorSrc.slice(dubaiEditorSrc.indexOf('const exportPdf'), dubaiEditorSrc.indexOf('const preview'));
+  assert(!dubaiExportJpgFn.includes('persistToHistory'), 'Dubai JPG download uses the live canvas, not a previously saved History row');
+  assert(!dubaiExportPdfFn.includes('persistToHistory'), 'Dubai PDF download uses the live canvas, not a previously saved History row');
+  const dubaiReopenId = dubaiLicenseHistoryRecordIdForSave('DXB-existing', 'DXB-generated');
+  assert(dubaiReopenId === 'DXB-existing', 'reopened Dubai records keep the same History id on save');
+  const dubaiFreshId = dubaiLicenseHistoryRecordIdForSave(null, 'DXB-generated');
+  assert(dubaiFreshId === 'DXB-generated', 'fresh Dubai saves use a generated unique History id');
+  assert(dubaiFreshId !== `DXB-${DUBAI_DEFAULTS.licenseNo}`, 'fresh Dubai saves do not key off the shared fictional license number');
   assert(dubaiEditorSrc.includes('loadImage(DUBAI_TEMPLATE_SRC)'), 'Dubai editor loads the default template on open');
   assert(dubaiEditorSrc.includes('loadImageToCanvas'), 'Dubai editor decodes the template to the working canvas immediately');
   assert(dubaiEditorSrc.includes('englishNameToArabic'), 'Dubai English name auto-fills Arabic');

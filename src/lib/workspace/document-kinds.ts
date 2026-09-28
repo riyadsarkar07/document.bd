@@ -161,6 +161,45 @@ export function isDocumentKind(value: unknown): value is DocumentKind {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(DOCUMENT_KINDS, value);
 }
 
+const LABEL_TO_KIND: Record<string, DocumentKind> = Object.fromEntries(
+  Object.values(DOCUMENT_KINDS).map((meta) => [meta.label, meta.kind]),
+) as Record<string, DocumentKind>;
+
+const RECORD_PREFIX_KIND: { prefix: string; kind: DocumentKind }[] = [
+  { prefix: 'UNHCR-S2-', kind: 'unhcr-s2' },
+  { prefix: 'UNHCR-', kind: 'unhcr' },
+  { prefix: 'DXB-', kind: 'dubai-license' },
+  { prefix: 'DL-', kind: 'driving-license' },
+  { prefix: 'NID-', kind: 'nid' },
+  { prefix: 'TIN-', kind: 'tin' },
+  { prefix: 'PDF-', kind: 'pdf' },
+  { prefix: 'RECOVER-', kind: 'page-recover' },
+  { prefix: 'BM-', kind: 'business-manager' },
+  { prefix: 'YT-', kind: 'youtube-trademark' },
+  { prefix: 'TM-', kind: 'tm' },
+];
+
+/**
+ * Resolve a vault row's document kind without unpacking the packed `details`
+ * payload. History list queries omit `details` (photos/PDFs) for speed, so
+ * kind is recovered from an explicit value, the stored company_type label,
+ * or the record-id prefix.
+ */
+export function inferDocumentKind(input: {
+  docKind?: unknown;
+  recordId?: string | null;
+  companyType?: string | null;
+}): DocumentKind | undefined {
+  if (isDocumentKind(input.docKind)) return input.docKind;
+  const label = (input.companyType ?? '').trim();
+  if (label && LABEL_TO_KIND[label]) return LABEL_TO_KIND[label];
+  const id = (input.recordId ?? '').trim().toUpperCase();
+  for (const row of RECORD_PREFIX_KIND) {
+    if (id.startsWith(row.prefix)) return row.kind;
+  }
+  return undefined;
+}
+
 /** Metadata for a record's kind; unknown/legacy rows fall back to TM. */
 export function documentKindMeta(kind: DocumentKind | undefined | null): DocumentKindMeta {
   if (kind && isDocumentKind(kind)) return DOCUMENT_KINDS[kind];

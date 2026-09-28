@@ -11,6 +11,7 @@ import { layoutFromSnapshot, layoutFromVaultSources, packDetails, unpackDetails 
 import type { TMSnapshot } from '@/lib/editor/types';
 import {
   DOCUMENT_KINDS,
+  inferDocumentKind,
   isDocumentKind,
   type DocumentKind,
 } from '@/lib/workspace/document-kinds';
@@ -110,7 +111,12 @@ function mapVaultRow(row: VaultRow): VaultRecord {
           : '',
     ...layoutFromVaultSources(row.layout_json, row.details),
     logoDataUrl: row.logo_data_url || null,
-    docKind: isDocumentKind(unpacked.docKind) ? unpacked.docKind : 'tm',
+    docKind:
+      inferDocumentKind({
+        docKind: unpacked.docKind,
+        recordId: row.trademark_no,
+        companyType: row.company_type,
+      }) ?? 'tm',
     doc: unpacked.doc ?? null,
     createdBy: row.created_by || null,
     timestamp: row.synced_at ? formatTimestamp(new Date(row.synced_at)) : '—',
@@ -127,6 +133,10 @@ function isMissingDeletedAt(err: { message?: string } | null): boolean {
   return /column .*deleted_at.*does not exist/i.test(err?.message ?? '');
 }
 
+function isMissingColumn(err: { message?: string } | null): boolean {
+  return /column .*does not exist/i.test(err?.message ?? '');
+}
+
 /**
  * Shared vault upsert keyed by the natural `trademark_no`.
  *
@@ -136,25 +146,48 @@ function isMissingDeletedAt(err: { message?: string } | null): boolean {
  * Re-saving a trashed record also clears `deleted_at` so it returns to the
  * active vault.
  */
+async function writeVaultMutation(
+  existingRow: { registration_no?: number | null; created_by?: string | null } | undefined,
+  trademarkNo: string,
+  payload: Record<string, unknown>,
+): Promise<{ error: { message: string } | null }> {
+  const timedOut = timedOutQuery('Vault save timed out.');
+  return existingRow
+    ? settleWithTimeout(
+        supabaseData.from('certificates').update(payload).eq('trademark_no', trademarkNo),
+        timedOut,
+        WORKSPACE_QUERY_TIMEOUT_MS,
+      )
+    : settleWithTimeout(
+        supabaseData.from('certificates').insert([payload]),
+        timedOut,
+        WORKSPACE_QUERY_TIMEOUT_MS,
+      );
+}
+
 async function writeVaultRow(
   trademarkNo: string,
   payload: Record<string, unknown>,
   createdBy?: string | null,
 ): Promise<{ error: { message: string } | null }> {
-  const existing = await supabaseData
-    .from('certificates')
-    .select('registration_no, created_by, details')
-    .eq('trademark_no', trademarkNo)
-    .limit(1);
+  // Lookup metadata only — never pull packed `details` / photos on the save path.
+  const existing = await settleWithTimeout(
+    supabaseData
+      .from('certificates')
+      .select('registration_no, created_by, company_type')
+      .eq('trademark_no', trademarkNo)
+      .limit(1),
+    timedOutQuery('Vault lookup timed out.'),
+    WORKSPACE_QUERY_TIMEOUT_MS,
+  );
+  if (existing.error) return { error: { message: existing.error.message } };
 
   const existingRow = existing.data?.[0];
-  const existingKindRaw = unpackDetails(
-    typeof existingRow?.details === 'string' ? existingRow.details : null,
-  ).docKind;
   const existingKind: DocumentKind | undefined = existingRow
-    ? isDocumentKind(existingKindRaw)
-      ? existingKindRaw
-      : 'tm'
+    ? inferDocumentKind({
+        recordId: trademarkNo,
+        companyType: existingRow.company_type,
+      }) ?? 'tm'
     : undefined;
   const incomingKindRaw = unpackDetails(typeof payload.details === 'string' ? payload.details : null).docKind;
   const incomingKind = isDocumentKind(incomingKindRaw) ? incomingKindRaw : undefined;
@@ -175,10 +208,10 @@ async function writeVaultRow(
   if (existingRow) {
     if (existingRow.registration_no) payload.registration_no = existingRow.registration_no;
     if (existingRow.created_by) delete payload.created_by;
-    result = await supabaseData.from('certificates').update(payload).eq('trademark_no', trademarkNo);
+    result = await writeVaultMutation(existingRow, trademarkNo, payload);
   } else {
     payload.registration_no = Math.floor(Date.now() / 1000);
-    result = await supabaseData.from('certificates').insert([payload]);
+    result = await writeVaultMutation(undefined, trademarkNo, payload);
   }
 
   let attempts = 0;
@@ -195,9 +228,7 @@ async function writeVaultRow(
     if (/logo_text/i.test(msg)) drops.push('logo_text');
     if (drops.length === 0) break;
     for (const key of drops) delete payload[key];
-    result = existingRow
-      ? await supabaseData.from('certificates').update(payload).eq('trademark_no', trademarkNo)
-      : await supabaseData.from('certificates').insert([payload]);
+    result = await writeVaultMutation(existingRow, trademarkNo, payload);
     attempts += 1;
   }
 
@@ -386,7 +417,11 @@ export async function resolveCreatorEmails(
   // Admins can read any profile (RLS `profiles_admin_select`), so every other
   // creator email is resolved from the `profiles` table (authoritative).
   if (opts.role === 'admin' && ids.length) {
-    const { data, error } = await supabaseData.from('profiles').select('id, email').in('id', ids);
+    const { data, error } = await settleWithTimeout(
+      supabaseData.from('profiles').select('id, email').in('id', ids),
+      timedOutQuery('Creator emails request timed out.'),
+      WORKSPACE_QUERY_TIMEOUT_MS,
+    );
     if (!error && data) {
       for (const p of data) {
         if (p.id && p.email) map.set(String(p.id), String(p.email));
@@ -416,6 +451,16 @@ export interface VaultListQuery {
   pageSize?: number;
 }
 
+/**
+ * History table columns only. Omits packed `details`, `layout_json`, and
+ * `logo_data_url` so photo/PDF payloads never ride along with the listing.
+ */
+const VAULT_LIST_COLUMNS =
+  'trademark_no,reg_date,app_date,name,owner_name,address,company_type,sealed_date,sealed_text_phrase,opening_text,middle_text_arial,logo_text,created_by,synced_at,deleted_at,publish_status,published_at,publish_commit_sha,publish_error';
+
+/** Original vault columns only — used when a later migration column is absent. */
+const VAULT_LIST_COLUMNS_CORE = 'trademark_no,reg_date,app_date,name,owner_name,address,company_type,sealed_date,synced_at';
+
 export interface VaultListResult {
   records: VaultRecord[];
   total: number;
@@ -435,10 +480,10 @@ export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultLis
   const status = q.status ?? 'active';
 
   try {
-    const build = (withTrash: boolean) => {
+    const build = (withTrash: boolean, columns: string) => {
       let query = supabaseData
         .from('certificates')
-        .select('*', { count: 'exact' })
+        .select(columns, { count: 'exact' })
         .neq('trademark_no', UNHCR_CURRENT_RECORD_ID)
         .neq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID);
       if (withTrash) {
@@ -458,16 +503,22 @@ export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultLis
     };
 
     const timedOut = timedOutQuery('Vault request timed out.');
-    let { data, error, count } = await settleWithTimeout(build(true), timedOut);
+    let { data, error, count } = await settleWithTimeout(build(true, VAULT_LIST_COLUMNS), timedOut);
     if (error && isMissingDeletedAt(error)) {
-      const fallback = await settleWithTimeout(build(false), timedOut);
+      const fallback = await settleWithTimeout(build(false, VAULT_LIST_COLUMNS), timedOut);
+      data = fallback.data;
+      error = fallback.error;
+      count = fallback.count;
+    }
+    if (error && isMissingColumn(error)) {
+      const fallback = await settleWithTimeout(build(false, VAULT_LIST_COLUMNS_CORE), timedOut);
       data = fallback.data;
       error = fallback.error;
       count = fallback.count;
     }
 
     if (error) return { records: [], total: 0, page, pageSize, error: error.message };
-    const records = (data ?? []).map(mapVaultRow);
+    const records = ((data ?? []) as VaultRow[]).map(mapVaultRow);
     return { records, total: count ?? records.length, page, pageSize, error: null };
   } catch (err) {
     return {
@@ -488,12 +539,12 @@ export async function getVaultRecord(
   if (!tm) return { record: null, error: 'Missing Trademark No.' };
   if (isUnhcrCurrentRecordId(tm) || isUnhcrS2CurrentRecordId(tm)) return { record: null, error: 'Record not found.' };
   const { data, error } = await settleWithTimeout(
-    supabaseData.from('certificates').select('*').eq('trademark_no', tm).limit(1),
+    supabaseData.from('certificates').select('*').eq('trademark_no', tm).maybeSingle(),
     timedOutQuery('Vault record request timed out.'),
     WORKSPACE_QUERY_TIMEOUT_MS,
   );
   if (error) return { record: null, error: error.message };
-  const row = data?.[0];
+  const row = Array.isArray(data) ? data[0] : data;
   if (!row) return { record: null, error: 'Record not found.' };
   return { record: mapVaultRow(row as VaultRow), error: null };
 }

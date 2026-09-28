@@ -17,6 +17,7 @@ import {
   DUBAI_PHOTO_RANGES,
   DUBAI_TEMPLATE_SRC,
   dubaiLicenseFreshOpenSnapshot,
+  dubaiLicenseHistoryRecordIdForSave,
   isDubaiFieldKey,
   isDubaiLicenseFreshOpen,
   normalizeDubaiLicenseSnapshot,
@@ -29,7 +30,14 @@ import type {
   DubaiLicenseSnapshot,
 } from '@/lib/editor/types';
 import { renderDubaiLicense } from '@/lib/renderers/dubaiLicenseRenderer';
-import { fileToOrientedDataUrl, loadDataUrlImage, loadImage, loadImageToCanvas, preloadImage } from '@/lib/images';
+import {
+  compressDataUrlImage,
+  fileToOrientedDataUrl,
+  loadDataUrlImage,
+  loadImage,
+  loadImageToCanvas,
+  preloadImage,
+} from '@/lib/images';
 import { englishNameToArabic } from '@/lib/dubaiArabicName';
 import { validateImageFile } from '@/lib/uploads';
 import { loadDocumentFonts } from '@/lib/fonts';
@@ -91,6 +99,9 @@ function DubaiLicenseEditorInner() {
   const [activeField, setActiveField] = useState<DubaiOverlayKey>('licenseNo');
   const [moveStep, setMoveStep] = useState(1);
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
+  const [savingHistory, setSavingHistory] = useState(false);
+  const [exportingJpg, setExportingJpg] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [photoImage, setPhotoImage] = useState<HTMLImageElement | null>(null);
   const [photoName, setPhotoName] = useState<string | null>(null);
@@ -152,7 +163,13 @@ function DubaiLicenseEditorInner() {
           toast.error('This History record is not a Dubai License DEMO.');
           return;
         }
-        const next = normalizeDubaiLicenseSnapshot((res.record.doc as Partial<DubaiLicenseSnapshot>) ?? {});
+        const rawDoc = res.record.doc;
+        if (!rawDoc || typeof rawDoc !== 'object') {
+          toast.error('History record is missing saved DEMO data.');
+          setStatus('History record could not be restored');
+          return;
+        }
+        const next = normalizeDubaiLicenseSnapshot(rawDoc as Partial<DubaiLicenseSnapshot>);
         externalCacheRef.current = next;
         editor.replace(next);
         setPhotoName(next.photoDataUrl ? 'Saved photo' : null);
@@ -399,7 +416,10 @@ function DubaiLicenseEditorInner() {
       return null;
     }
     const snap = normalizeDubaiLicenseSnapshot(presentRef.current);
-    const recordId = historyRecordId ?? (snap.licenseNo.trim() ? `DXB-${snap.licenseNo.trim()}` : newRecordId('dubai-license'));
+    if (typeof snap.photoDataUrl === 'string' && snap.photoDataUrl.startsWith('data:image/')) {
+      snap.photoDataUrl = await compressDataUrlImage(snap.photoDataUrl, 900, 1200, 0.82);
+    }
+    const recordId = dubaiLicenseHistoryRecordIdForSave(historyRecordId, newRecordId('dubai-license'));
     const res = await commitDocument({
       docKind: 'dubai-license',
       recordId,
@@ -424,66 +444,83 @@ function DubaiLicenseEditorInner() {
   }, [historyRecordId, user, toast, setStatus]);
 
   const saveToHistory = useCallback(async () => {
-    const savedId = await persistToHistory();
-    if (savedId) toast.success(`Saved to History · ${savedId}`);
-  }, [persistToHistory, toast]);
+    if (savingHistory) return;
+    setSavingHistory(true);
+    setStatus('Saving to History…');
+    try {
+      const savedId = await persistToHistory();
+      if (savedId) toast.success(`Saved to History · ${savedId}`);
+    } finally {
+      setSavingHistory(false);
+    }
+  }, [persistToHistory, toast, savingHistory, setStatus]);
 
   const exportJpg = useCallback(async () => {
-    const limit = await checkLimit('export');
-    if (!limit.ok) {
-      toast.error(limit.message ?? 'Export limit reached.');
-      return;
+    if (exportingJpg) return;
+    setExportingJpg(true);
+    try {
+      const limit = await checkLimit('export');
+      if (!limit.ok) {
+        toast.error(limit.message ?? 'Export limit reached.');
+        return;
+      }
+      const generationLimit = await checkLimit('generation');
+      if (!generationLimit.ok) {
+        toast.error(generationLimit.message ?? 'Generation limit reached.');
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      renderDubaiLicense(canvas, presentRef.current, bgImgRef.current, 1, undefined, photoImageRef.current);
+      const link = document.createElement('a');
+      const id = presentRef.current.licenseNo || 'demo';
+      link.download = `DXB-${id}-DEMO.jpg`;
+      link.href = canvas.toDataURL('image/jpeg', 0.96);
+      link.click();
+      void logActivity({
+        user_id: user?.id,
+        email: user?.email,
+        action: 'export.dubai-license.jpg',
+        detail: `DXB ${id} (DEMO)`,
+      });
+      toast.success('JPG downloaded (DEMO)');
+    } finally {
+      setExportingJpg(false);
     }
-    const generationLimit = await checkLimit('generation');
-    if (!generationLimit.ok) {
-      toast.error(generationLimit.message ?? 'Generation limit reached.');
-      return;
-    }
-    const canvas = document.createElement('canvas');
-    renderDubaiLicense(canvas, presentRef.current, bgImgRef.current, 1, undefined, photoImageRef.current);
-    const link = document.createElement('a');
-    const id = presentRef.current.licenseNo || 'demo';
-    link.download = `DXB-${id}-DEMO.jpg`;
-    link.href = canvas.toDataURL('image/jpeg', 0.96);
-    link.click();
-    void logActivity({
-      user_id: user?.id,
-      email: user?.email,
-      action: 'export.dubai-license.jpg',
-      detail: `DXB ${id} (DEMO)`,
-    });
-    const savedId = await persistToHistory();
-    toast.success(savedId ? 'JPG downloaded (DEMO) · secured in History' : 'JPG downloaded (DEMO)');
-  }, [user, toast, persistToHistory]);
+  }, [user, toast, exportingJpg]);
 
   const exportPdf = useCallback(async () => {
-    const limit = await checkLimit('export');
-    if (!limit.ok) {
-      toast.error(limit.message ?? 'Export limit reached.');
-      return;
+    if (exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      const limit = await checkLimit('export');
+      if (!limit.ok) {
+        toast.error(limit.message ?? 'Export limit reached.');
+        return;
+      }
+      const generationLimit = await checkLimit('generation');
+      if (!generationLimit.ok) {
+        toast.error(generationLimit.message ?? 'Generation limit reached.');
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      renderDubaiLicense(canvas, presentRef.current, bgImgRef.current, 1, undefined, photoImageRef.current);
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [DUBAI_DOC_WIDTH, DUBAI_DOC_HEIGHT] });
+      const pW = pdf.internal.pageSize.getWidth();
+      const pH = pdf.internal.pageSize.getHeight();
+      pdf.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, pW, pH);
+      const id = presentRef.current.licenseNo || 'demo';
+      pdf.save(`DXB-${id}-DEMO.pdf`);
+      void logActivity({
+        user_id: user?.id,
+        email: user?.email,
+        action: 'export.dubai-license.pdf',
+        detail: `DXB ${id} (DEMO)`,
+      });
+      toast.success('PDF downloaded (DEMO)');
+    } finally {
+      setExportingPdf(false);
     }
-    const generationLimit = await checkLimit('generation');
-    if (!generationLimit.ok) {
-      toast.error(generationLimit.message ?? 'Generation limit reached.');
-      return;
-    }
-    const canvas = document.createElement('canvas');
-    renderDubaiLicense(canvas, presentRef.current, bgImgRef.current, 1, undefined, photoImageRef.current);
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [DUBAI_DOC_WIDTH, DUBAI_DOC_HEIGHT] });
-    const pW = pdf.internal.pageSize.getWidth();
-    const pH = pdf.internal.pageSize.getHeight();
-    pdf.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, pW, pH);
-    const id = presentRef.current.licenseNo || 'demo';
-    pdf.save(`DXB-${id}-DEMO.pdf`);
-    void logActivity({
-      user_id: user?.id,
-      email: user?.email,
-      action: 'export.dubai-license.pdf',
-      detail: `DXB ${id} (DEMO)`,
-    });
-    const savedId = await persistToHistory();
-    toast.success(savedId ? 'PDF downloaded (DEMO) · secured in History' : 'PDF downloaded (DEMO)');
-  }, [user, toast, persistToHistory]);
+  }, [user, toast, exportingPdf]);
 
   const preview = useCallback(async () => {
     const canvas = document.createElement('canvas');
@@ -728,7 +765,7 @@ function DubaiLicenseEditorInner() {
         <EditorToolbar
           canUndo={editor.canUndo}
           canRedo={editor.canRedo}
-          busy={editor.busy}
+          busy={editor.busy || savingHistory || exportingJpg || exportingPdf}
           onUndo={editor.undo}
           onRedo={editor.redo}
           onReset={reset}
@@ -738,6 +775,9 @@ function DubaiLicenseEditorInner() {
           onPreview={preview}
           onSaveProject={saveAsProject}
           onSaveHistory={saveToHistory}
+          historySaving={savingHistory}
+          jpgExporting={exportingJpg}
+          pdfExporting={exportingPdf}
           status={`${editor.status}${fontsLoaded ? '' : ' · fonts loading'}`}
           lastSavedAt={editor.lastSavedAt}
         />

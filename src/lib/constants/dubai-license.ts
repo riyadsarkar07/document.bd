@@ -224,6 +224,20 @@ export function dubaiLicenseFreshOpenSnapshot(): DubaiLicenseSnapshot {
   return normalizeDubaiLicenseSnapshot({});
 }
 
+/**
+ * History row id for a Dubai DEMO save. Reuses the opened record id so edits
+ * update the same vault row. New saves always get a unique DXB- id — never the
+ * shared fictional license number, which would collide across users/sessions.
+ */
+export function dubaiLicenseHistoryRecordIdForSave(
+  historyRecordId: string | null | undefined,
+  generatedId: string,
+): string {
+  const existing = (historyRecordId ?? '').trim();
+  if (existing) return existing;
+  return generatedId;
+}
+
 export function purgeDubaiLicenseAutosave(): void {
   if (typeof window === 'undefined') return;
   try {

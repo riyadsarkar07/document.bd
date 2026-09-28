@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Ban, Download, ExternalLink, FilePen, History, Rocket, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Ban, Download, ExternalLink, FilePen, History, RefreshCw, Rocket, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import {
   listVaultRecords,
@@ -11,6 +11,7 @@ import {
   permanentDeleteVaultRecord,
   liveVerifyUrl,
   resolveCreatorEmails,
+  getVaultRecord,
   type VaultRecord,
   type PublishStatus,
 } from '@/lib/workspace/vault';
@@ -76,6 +77,10 @@ export default function HistoryPage() {
   const [ownerOptions, setOwnerOptions] = useState<{ id: string; email: string }[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const refreshGenRef = useRef(0);
+  const userId = user?.id ?? null;
+  const userEmail = user?.email ?? profile?.email ?? null;
+  const role = profile?.role ?? null;
 
   // The Users page links here with ?createdBy=<user-id> to pre-filter the vault.
   useEffect(() => {
@@ -93,6 +98,7 @@ export default function HistoryPage() {
   }, [isAdmin]);
 
   const refresh = useCallback(async () => {
+    const gen = (refreshGenRef.current += 1);
     setLoading(true);
     try {
       const res = await listVaultRecords({
@@ -107,32 +113,38 @@ export default function HistoryPage() {
         page,
         pageSize: PAGE_SIZE,
       });
+      if (gen !== refreshGenRef.current) return;
       if (res.error) {
         setError(res.error);
         setRecords([]);
         setTotal(0);
       } else {
         const resolved = await resolveCreatorEmails(res.records, {
-          currentUserId: user?.id,
-          currentUserEmail: user?.email ?? profile?.email ?? null,
-          role: profile?.role ?? null,
+          currentUserId: userId,
+          currentUserEmail: userEmail,
+          role,
         });
+        if (gen !== refreshGenRef.current) return;
         setRecords(resolved);
         setTotal(res.total);
         setError(null);
       }
     } catch (err) {
+      if (gen !== refreshGenRef.current) return;
       setError(err instanceof Error ? err.message : 'Could not load vault records.');
       setRecords([]);
       setTotal(0);
     } finally {
-      setLoading(false);
+      if (gen === refreshGenRef.current) setLoading(false);
     }
-  }, [search, company, owner, type, dateFrom, dateTo, createdBy, view, page, user, profile]);
+  }, [search, company, owner, type, dateFrom, dateTo, createdBy, view, page, userId, userEmail, role]);
 
   useEffect(() => {
-    const t = setTimeout(() => void refresh(), 200);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => void refresh(), 150);
+    return () => {
+      clearTimeout(t);
+      refreshGenRef.current += 1;
+    };
   }, [refresh]);
 
   useEffect(() => {
@@ -153,12 +165,25 @@ export default function HistoryPage() {
     return canvas;
   };
 
+  const hydrateRecord = async (record: VaultRecord): Promise<VaultRecord | null> => {
+    if (record.doc != null || record.logoDataUrl) return record;
+    if (!record.trademarkNo) return record;
+    const res = await getVaultRecord(record.trademarkNo);
+    if (res.error || !res.record) {
+      toast.error(res.error ?? 'Could not load the vault record.');
+      return null;
+    }
+    return res.record;
+  };
+
   const openPreview = async (record: VaultRecord) => {
-    setPreview(record);
+    const full = await hydrateRecord(record);
+    if (!full) return;
+    setPreview(full);
     setPreviewImg(null);
     // Non-certificate records render as a structured detail view, not a canvas.
-    if (!documentKindMeta(record.docKind).certificate) return;
-    const canvas = await renderHistoryCertificate(record, TM_EXPORT_SCALE);
+    if (!documentKindMeta(full.docKind).certificate) return;
+    const canvas = await renderHistoryCertificate(full, TM_EXPORT_SCALE);
     if (!canvas) {
       toast.error('Certificate fonts are not ready. Please try again.');
       setPreview(null);
@@ -168,14 +193,16 @@ export default function HistoryPage() {
   };
 
   const downloadRecord = async (record: VaultRecord) => {
-    const meta = documentKindMeta(record.docKind);
+    const full = await hydrateRecord(record);
+    if (!full) return;
+    const meta = documentKindMeta(full.docKind);
     if (!meta.certificate) {
       const blob = new Blob(
-        [JSON.stringify({ record: record.trademarkNo, docKind: record.docKind, doc: record.doc ?? null }, null, 2)],
+        [JSON.stringify({ record: full.trademarkNo, docKind: full.docKind, doc: full.doc ?? null }, null, 2)],
         { type: 'application/json' },
       );
       const link = document.createElement('a');
-      link.download = `${meta.recordPrefix}-${record.trademarkNo || 'record'}.json`;
+      link.download = `${meta.recordPrefix}-${full.trademarkNo || 'record'}.json`;
       link.href = URL.createObjectURL(blob);
       link.click();
       URL.revokeObjectURL(link.href);
@@ -183,13 +210,13 @@ export default function HistoryPage() {
       return;
     }
     toast.success('Preparing download…');
-    const canvas = await renderHistoryCertificate(record, TM_EXPORT_SCALE);
+    const canvas = await renderHistoryCertificate(full, TM_EXPORT_SCALE);
     if (!canvas) {
       toast.error('Certificate fonts are not ready. Please try again.');
       return;
     }
     const link = document.createElement('a');
-    link.download = `Archive-TM-${record.trademarkNo || 'cert'}.jpg`;
+    link.download = `Archive-TM-${full.trademarkNo || 'cert'}.jpg`;
     link.href = canvas.toDataURL('image/jpeg', 0.96);
     link.click();
     toast.success(`Downloaded: TM No. ${record.trademarkNo}`);
@@ -510,6 +537,11 @@ export default function HistoryPage() {
           title="Vault unavailable"
           description={error}
           className="border-danger/30"
+          action={
+            <Button variant="secondary" size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void refresh()}>
+              Retry
+            </Button>
+          }
         />
       ) : records.length === 0 ? (
         hasFilters ? (
@@ -517,6 +549,11 @@ export default function HistoryPage() {
             icon={<History className="h-8 w-8" />}
             title="No matching records"
             description="No vault records match the current filters."
+            action={
+              <Button variant="ghost" size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void refresh()}>
+                Retry
+              </Button>
+            }
           />
         ) : (
           <EmptyState
@@ -526,6 +563,11 @@ export default function HistoryPage() {
               view === 'trashed'
                 ? 'Records you move to the trash appear here until restored or permanently deleted.'
                 : 'Save a document from any Studio editor (TM, YouTube, PDF, NID, TIN, Driving License, Dubai License DEMO, or a service record) to secure it in the Cloud Vault.'
+            }
+            action={
+              <Button variant="ghost" size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void refresh()}>
+                Retry
+              </Button>
             }
           />
         )

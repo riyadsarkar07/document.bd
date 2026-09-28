@@ -30,6 +30,7 @@ import {
   DOCUMENT_KINDS,
   DOCUMENT_KIND_ORDER,
   documentKindMeta,
+  inferDocumentKind,
   isDocumentKind,
   newRecordId,
 } from '../src/lib/workspace/document-kinds';
@@ -361,6 +362,9 @@ function main() {
   assert(documentKindMeta('dubai-license').certificate === false, 'Dubai License DEMO is not a certificate kind');
   assert(documentKindMeta('dubai-license').editorPath === '/studio/editor/dubai-license', 'Dubai License DEMO reopens in its editor');
   assert(documentKindMeta('dubai-license').recordPrefix === 'DXB', 'Dubai License DEMO History ids use the DXB prefix');
+  assert(inferDocumentKind({ companyType: 'Dubai License DEMO' }) === 'dubai-license', 'History infers Dubai DEMO from company_type without packed details');
+  assert(inferDocumentKind({ recordId: 'DXB-ab12cd34' }) === 'dubai-license', 'History infers Dubai DEMO from DXB- record prefix');
+  assert(inferDocumentKind({ recordId: 'UNHCR-S2-abc' }) === 'unhcr-s2', 'UNHCR-S2 prefix is not confused with UNHCR');
   assert(isDocumentKind('nid') && !isDocumentKind('certificate'), 'isDocumentKind accepts only registered kinds');
   const generated = newRecordId('pdf');
   assert(generated.startsWith(`${DOCUMENT_KINDS.pdf.recordPrefix}-`), 'generated PDF ids use the PDF prefix');
@@ -884,6 +888,11 @@ function main() {
   assert(!auditSrc.includes('supabase.auth.getSession()'), 'audit trail does not wait on getSession');
   assert(!auditSrc.includes('supabase.auth.getUser('), 'audit trail does not call getUser');
   assert(historySrc.includes('} finally {') && historySrc.includes('setLoading(false)'), 'History always clears vault loading');
+  assert(historySrc.includes('Retry') && historySrc.includes('refreshGenRef'), 'History has retry and request generation so loading cannot stick');
+  assert(historySrc.includes('title={view === \'trashed\' ? \'Trash is empty\' : \'No download records yet\'}'), 'History shows an empty state when no records exist');
+  assert(vault.includes('VAULT_LIST_COLUMNS') && vault.includes("select(columns, { count: 'exact' })"), 'History list selects slim columns, not packed details');
+  assert(vault.includes("select('registration_no, created_by, company_type')"), 'vault save lookup never pulls packed details/photos');
+  assert(vault.includes('writeVaultMutation') && vault.includes('Vault save timed out.'), 'vault writes settle with a timeout instead of hanging');
   assert(templatesSrc.includes('} finally {') && templatesSrc.includes('setLoading(false)'), 'Templates always clears loading');
   assert(projectsSrc.includes('} finally {') && projectsSrc.includes('setLoading(false)'), 'Projects always clears loading');
   assert(dashboard.includes('setVaultLoading(false)') && dashboard.includes('setTemplatesLoading(false)') && dashboard.includes('setProjectsLoading(false)'), 'Dashboard always clears independent workspace loaders');

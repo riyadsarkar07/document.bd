@@ -29,6 +29,9 @@ interface EditorToolbarProps {
   onSaveProject?: () => void;
   onSaveHistory?: () => void;
   onPublish?: () => void;
+  historySaving?: boolean;
+  jpgExporting?: boolean;
+  pdfExporting?: boolean;
   status?: string;
   lastSavedAt?: string | null;
   className?: string;
@@ -48,6 +51,9 @@ export function EditorToolbar({
   onSaveProject,
   onSaveHistory,
   onPublish,
+  historySaving,
+  jpgExporting,
+  pdfExporting,
   status,
   lastSavedAt,
   className,
@@ -113,7 +119,7 @@ export function EditorToolbar({
         </Button>
       )}
       {onSaveHistory && (
-        <Button variant="secondary" size="sm" onClick={onSaveHistory}>
+        <Button variant="secondary" size="sm" onClick={onSaveHistory} loading={historySaving} disabled={historySaving}>
           <Save className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Save</span>
         </Button>
@@ -128,12 +134,12 @@ export function EditorToolbar({
         </Button>
       )}
 
-      <Button variant="success" size="sm" onClick={onExportJpg}>
+      <Button variant="success" size="sm" onClick={onExportJpg} loading={jpgExporting} disabled={jpgExporting}>
         <Download className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">JPG</span>
       </Button>
       {onExportPdf && (
-        <Button variant="outline" size="sm" onClick={onExportPdf}>
+        <Button variant="outline" size="sm" onClick={onExportPdf} loading={pdfExporting} disabled={pdfExporting}>
           <FileDown className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">PDF</span>
         </Button>
