@@ -1564,6 +1564,34 @@ async function main() {
     'alpha photos are stored as PNG instead of JPEG',
   );
 
+  console.log('\n[DXB+] editor asset gates and shared loaders\n');
+  const imagesSrc = readFileSync(join(ROOT, 'src/lib/images.ts'), 'utf8');
+  const fontsSrcGate = readFileSync(join(ROOT, 'src/lib/fonts.ts'), 'utf8');
+  const nidEditorSrc = readFileSync(join(ROOT, 'src/app/studio/editor/nid/page.tsx'), 'utf8');
+  const tinEditorSrc = readFileSync(join(ROOT, 'src/app/studio/editor/tin/page.tsx'), 'utf8');
+  const unhcrEditorSrc = readFileSync(join(ROOT, 'src/app/studio/editor/unhcr/page.tsx'), 'utf8');
+  const unhcrS2EditorSrc = readFileSync(join(ROOT, 'src/app/studio/editor/unhcr-s2/page.tsx'), 'utf8');
+  const tmEditorSrc = readFileSync(join(ROOT, 'src/components/editor/certificate-editor.tsx'), 'utf8');
+  assert(imagesSrc.includes('img.decode') && imagesSrc.includes('createImageBitmap'), 'shared image loader decodes before cache');
+  assert(imagesSrc.includes('inflight') && imagesSrc.includes('canvasInflight'), 'image loads are single-flight');
+  assert(fontsSrcGate.includes('export function loadArialFonts'), 'Arial-only loader is exported for non-TM editors');
+  assert(fontsSrcGate.includes('Promise.all') && fontsSrcGate.includes('registerTmCorsivaFaces'), 'document fonts load faces in parallel');
+  assert(!fontsSrcGate.includes('await waitForDocumentFonts'), 'TM fonts no longer wait on extra document.fonts.ready');
+  const nidDraw = nidEditorSrc.slice(nidEditorSrc.indexOf('const draw = useCallback'), nidEditorSrc.indexOf('const forceRender'));
+  assert(nidDraw.includes('if (!bg) return') || nidDraw.includes('if (!bgImgRef.current) return'), 'NID live draw waits for the cached background');
+  assert(!nidDraw.includes('loadImage(NID_BACKGROUND)'), 'NID live draw does not reload nid-bg every frame');
+  assert(nidEditorSrc.includes('preloadImage(NID_BACKGROUND)'), 'NID editor preloads the card background');
+  assert(dubaiEditorSrc.includes('if (!bgImgRef.current) return'), 'Dubai live draw waits for the template canvas');
+  assert(dlEditorSrc.includes('if (!bgImgRef.current) return'), 'DL live draw waits for the template image');
+  assert(tinEditorSrc.includes('if (!bgImgRef.current) return'), 'TIN live draw waits for the template image');
+  assert(unhcrEditorSrc.includes('if (!bgImgRef.current) return'), 'UNHCR live draw waits for the template image');
+  assert(unhcrS2EditorSrc.includes('if (!bgImgRef.current) return'), 'UNHCR S2 live draw waits for the template image');
+  assert(dubaiEditorSrc.includes('loadArialFonts()'), 'Dubai editor loads Arial without waiting on Corsiva/Kalpurush');
+  assert(dlEditorSrc.includes('loadArialFonts()'), 'DL editor loads Arial without waiting on Corsiva/Kalpurush');
+  assert(tinEditorSrc.includes('loadArialFonts()'), 'TIN editor loads Arial without waiting on Corsiva/Kalpurush');
+  assert(unhcrEditorSrc.includes('loadArialFonts()'), 'UNHCR editor loads Arial without waiting on Corsiva/Kalpurush');
+  assert(tmEditorSrc.includes('drawGenRef') && tmEditorSrc.includes('Promise.all'), 'TM draw ignores stale async overwrites and loads bg/sign together');
+
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

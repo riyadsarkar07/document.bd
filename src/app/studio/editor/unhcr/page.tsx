@@ -27,9 +27,9 @@ import type { UnhcrCodeKey, UnhcrFieldKey, UnhcrLayout, UnhcrOverlayKey, UnhcrSn
 import { UNHCR_CODE_KEYS } from '@/lib/editor/types';
 import { renderUnhcrCard } from '@/lib/renderers/unhcrRenderer';
 import { syncUnhcrCodePayloads } from '@/lib/unhcrCodes';
-import { loadDataUrlImage, loadImage } from '@/lib/images';
+import { loadDataUrlImage, loadImage, preloadImage } from '@/lib/images';
 import { validateImageFile } from '@/lib/uploads';
-import { loadDocumentFonts } from '@/lib/fonts';
+import { loadArialFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import { commitDocument, getUnhcrCurrentState, getVaultRecord, saveUnhcrCurrentState } from '@/lib/workspace/vault';
 import { newRecordId } from '@/lib/workspace/document-kinds';
@@ -51,6 +51,8 @@ import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { clamp, cn } from '@/lib/utils';
+
+if (typeof document !== 'undefined') preloadImage(UNHCR_BACKGROUND);
 
 function MoveButton({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
   return (
@@ -201,7 +203,7 @@ function UnhcrEditorInner() {
   }, [searchParams, user?.id]);
 
   useEffect(() => {
-    loadDocumentFonts().then((ok) => {
+    loadArialFonts().then((ok) => {
       setFontsLoaded(ok);
       if (ok) setStatus('Renderer fonts loaded');
     });
@@ -223,6 +225,7 @@ function UnhcrEditorInner() {
 
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
+      if (!bgImgRef.current) return;
       renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, scale, activeFieldRef.current, photoImageRef.current);
       setDims((prev) =>
         prev && prev.w === UNHCR_DOC_WIDTH && prev.h === UNHCR_DOC_HEIGHT

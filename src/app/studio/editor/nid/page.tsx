@@ -7,7 +7,7 @@ import { useDocumentEditor } from '@/lib/editor/use-document-editor';
 import { NID_DEFAULTS, NID_SECTIONS, NID_BACKGROUND, NID_TEXT_FIELDS } from '@/lib/constants/nid';
 import type { NIDSnapshot } from '@/lib/editor/types';
 import { renderNIDCard } from '@/lib/renderers/nidRenderer';
-import { loadImage, loadDataUrlImage } from '@/lib/images';
+import { loadImage, loadDataUrlImage, preloadImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
@@ -24,6 +24,8 @@ import { PropertySlider } from '@/components/editor/property-slider';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { validateImageFile } from '@/lib/uploads';
+
+if (typeof document !== 'undefined') preloadImage(NID_BACKGROUND);
 
 export default function NIDEditorPage() {
   return (
@@ -43,6 +45,7 @@ function NIDEditorInner() {
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -62,6 +65,8 @@ function NIDEditorInner() {
   presentRef.current = present;
   const photoImageRef = useRef(photoImage);
   photoImageRef.current = photoImage;
+  const bgImgRef = useRef(bgImg);
+  bgImgRef.current = bgImg;
 
   // Load external history/project/template state
   useEffect(() => {
@@ -139,6 +144,16 @@ function NIDEditorInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    void loadImage(NID_BACKGROUND).then((img) => {
+      if (alive && img) setBgImg(img);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const rafRef = useRef(0);
   const liveScaleRef = useRef(1);
 
@@ -147,10 +162,11 @@ function NIDEditorInner() {
   // every frame while typing.
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
-      const bg = await loadImage(NID_BACKGROUND);
+      const bg = bgImgRef.current;
+      if (!bg) return;
       renderNIDCard(canvas, presentRef.current, bg, photoImageRef.current, scale);
-      const w = bg ? bg.naturalWidth : 856;
-      const h = bg ? bg.naturalHeight : 540;
+      const w = bg.naturalWidth || 856;
+      const h = bg.naturalHeight || 540;
       setDims((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
       setRendered(true);
     },
@@ -168,7 +184,7 @@ function NIDEditorInner() {
       if (canvas) void draw(canvas, liveScaleRef.current);
     });
     return () => cancelAnimationFrame(rafRef.current);
-  }, [present, fontsLoaded, photoImage, zoom, draw]);
+  }, [present, fontsLoaded, bgImg, photoImage, zoom, draw]);
 
   // Force refresh at full resolution (explicit "Render" action).
   const forceRender = useCallback(async () => {
@@ -227,7 +243,7 @@ function NIDEditorInner() {
       toast.error(generationLimit.message ?? 'Generation limit reached.');
       return;
     }
-    const bg = await loadImage(NID_BACKGROUND);
+    const bg = bgImgRef.current ?? (await loadImage(NID_BACKGROUND));
     const canvas = document.createElement('canvas');
     renderNIDCard(canvas, presentRef.current, bg, photoImageRef.current, 1);
     const idNo = presentRef.current.idNo || 'nid';
@@ -243,7 +259,7 @@ function NIDEditorInner() {
   }, [user, toast, persistToHistory]);
 
   const preview = useCallback(async () => {
-    const bg = await loadImage(NID_BACKGROUND);
+    const bg = bgImgRef.current ?? (await loadImage(NID_BACKGROUND));
     const canvas = document.createElement('canvas');
     renderNIDCard(canvas, presentRef.current, bg, photoImageRef.current, 1);
     setPreviewDataUrl(canvas.toDataURL('image/jpeg', 0.97));

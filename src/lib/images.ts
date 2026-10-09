@@ -26,6 +26,20 @@ export function preloadImage(src: string): void {
   document.head.appendChild(link);
 }
 
+export function getCachedImage(src: string): HTMLImageElement | null {
+  return cache.get(src) ?? null;
+}
+
+async function finishImageLoad(src: string, img: HTMLImageElement): Promise<HTMLImageElement> {
+  try {
+    if (typeof img.decode === 'function') await img.decode();
+  } catch {
+    // decode() is best-effort; onload already produced a drawable frame
+  }
+  cache.set(src, img);
+  return img;
+}
+
 export function loadImage(src: string): Promise<HTMLImageElement | null> {
   if (cache.has(src)) return Promise.resolve(cache.get(src)!);
   const pending = inflight.get(src);
@@ -36,9 +50,10 @@ export function loadImage(src: string): Promise<HTMLImageElement | null> {
     img.crossOrigin = 'Anonymous';
     markHighPriority(img);
     img.onload = () => {
-      inflight.delete(src);
-      cache.set(src, img);
-      resolve(img);
+      void finishImageLoad(src, img).then((ready) => {
+        inflight.delete(src);
+        resolve(ready);
+      });
     };
     img.onerror = () => {
       inflight.delete(src);
@@ -52,16 +67,26 @@ export function loadImage(src: string): Promise<HTMLImageElement | null> {
 
 export function loadDataUrlImage(dataUrl: string): Promise<HTMLImageElement | null> {
   if (cache.has(dataUrl)) return Promise.resolve(cache.get(dataUrl)!);
-  return new Promise((resolve) => {
+  const pending = inflight.get(dataUrl);
+  if (pending) return pending;
+
+  const promise = new Promise<HTMLImageElement | null>((resolve) => {
     const img = new Image();
     markHighPriority(img);
     img.onload = () => {
-      cache.set(dataUrl, img);
-      resolve(img);
+      void finishImageLoad(dataUrl, img).then((ready) => {
+        inflight.delete(dataUrl);
+        resolve(ready);
+      });
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => {
+      inflight.delete(dataUrl);
+      resolve(null);
+    };
     img.src = dataUrl;
   });
+  inflight.set(dataUrl, promise);
+  return promise;
 }
 
 function canvasCacheKey(src: string, width: number, height: number): string {
@@ -88,7 +113,7 @@ export function loadImageToCanvas(
           const bitmap = await createImageBitmap(blob, {
             resizeWidth: width,
             resizeHeight: height,
-            resizeQuality: 'high',
+            resizeQuality: 'medium',
             imageOrientation: 'from-image',
           });
           const canvas = document.createElement('canvas');

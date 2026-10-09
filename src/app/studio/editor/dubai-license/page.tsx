@@ -40,7 +40,7 @@ import {
 } from '@/lib/images';
 import { englishNameToArabic } from '@/lib/dubaiArabicName';
 import { validateImageFile } from '@/lib/uploads';
-import { loadDocumentFonts } from '@/lib/fonts';
+import { loadArialFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
 import { newRecordId } from '@/lib/workspace/document-kinds';
@@ -225,7 +225,7 @@ function DubaiLicenseEditorInner() {
   }, [searchParams]);
 
   useEffect(() => {
-    loadDocumentFonts().then((ok) => {
+    loadArialFonts().then((ok) => {
       setFontsLoaded(ok);
       if (ok) setStatus('Renderer fonts loaded');
     });
@@ -254,6 +254,7 @@ function DubaiLicenseEditorInner() {
 
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
+      if (!bgImgRef.current) return;
       renderDubaiLicense(
         canvas,
         presentRef.current,

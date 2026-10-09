@@ -891,6 +891,11 @@ function main() {
   assert(historySrc.includes('Retry') && historySrc.includes('refreshGenRef'), 'History has retry and request generation so loading cannot stick');
   assert(historySrc.includes('title={view === \'trashed\' ? \'Trash is empty\' : \'No download records yet\'}'), 'History shows an empty state when no records exist');
   assert(vault.includes('VAULT_LIST_COLUMNS') && vault.includes("select(columns, { count: 'exact' })"), 'History list selects slim columns, not packed details');
+  assert(!vault.includes('opening_text,middle_text_arial,logo_text'), 'History list does not select TM text columns missing from the live schema');
+  assert(vault.includes('parseMissingColumn') && vault.includes("code === 'PGRST204'"), 'History list retries after PostgREST missing-column 400');
+  assert(vault.includes("listVaultRecords({ page: 1, pageSize: 1, status: 'active' })"), 'Dashboard loadVault uses a one-row list query, not select(*)');
+  assert(!/export async function loadVault[\s\S]{0,400}select\('\*'\)/.test(vault), 'loadVault never fetches packed details/photos');
+  assert(dashboard.includes('records: vault.total'), 'Dashboard record count uses the exact list total, not a full payload length');
   assert(vault.includes("select('registration_no, created_by, company_type')"), 'vault save lookup never pulls packed details/photos');
   assert(vault.includes('writeVaultMutation') && vault.includes('Vault save timed out.'), 'vault writes settle with a timeout instead of hanging');
   assert(templatesSrc.includes('} finally {') && templatesSrc.includes('setLoading(false)'), 'Templates always clears loading');

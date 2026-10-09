@@ -31,9 +31,9 @@ import type {
 } from '@/lib/editor/types';
 import { renderDrivingLicense } from '@/lib/renderers/drivingLicenseRenderer';
 import { buildDrivingLicenseQrPayload, encodeDrivingLicenseQr } from '@/lib/drivingLicenseQr';
-import { loadDataUrlImage, loadImage } from '@/lib/images';
+import { loadDataUrlImage, loadImage, preloadImage } from '@/lib/images';
 import { validateImageFile } from '@/lib/uploads';
-import { loadDocumentFonts } from '@/lib/fonts';
+import { loadArialFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
 import { newRecordId } from '@/lib/workspace/document-kinds';
@@ -50,6 +50,8 @@ import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { clamp, cn } from '@/lib/utils';
+
+if (typeof document !== 'undefined') preloadImage(DL_TEMPLATE_SRC);
 
 function MoveButton({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
   return (
@@ -206,7 +208,7 @@ function DrivingLicenseEditorInner() {
   }, [searchParams]);
 
   useEffect(() => {
-    loadDocumentFonts().then((ok) => {
+    loadArialFonts().then((ok) => {
       setFontsLoaded(ok);
       if (ok) setStatus('Renderer fonts loaded');
     });
@@ -254,6 +256,7 @@ function DrivingLicenseEditorInner() {
 
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
+      if (!bgImgRef.current) return;
       renderDrivingLicense(
         canvas,
         presentRef.current,

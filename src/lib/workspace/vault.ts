@@ -133,8 +133,22 @@ function isMissingDeletedAt(err: { message?: string } | null): boolean {
   return /column .*deleted_at.*does not exist/i.test(err?.message ?? '');
 }
 
-function isMissingColumn(err: { message?: string } | null): boolean {
-  return /column .*does not exist/i.test(err?.message ?? '');
+function isMissingColumn(err: { message?: string; code?: string } | null): boolean {
+  const msg = err?.message ?? '';
+  const code = err?.code ?? '';
+  return (
+    code === 'PGRST204' ||
+    /column .*does not exist/i.test(msg) ||
+    /could not find the ['"]?[\w.]+['"]? column/i.test(msg)
+  );
+}
+
+function parseMissingColumn(err: { message?: string } | null): string | null {
+  const msg = err?.message ?? '';
+  const match =
+    msg.match(/column (?:[\w]+\.)?(\w+) does not exist/i) ||
+    msg.match(/could not find the ['"](\w+)['"] column/i);
+  return match?.[1] ?? null;
 }
 
 /**
@@ -456,7 +470,7 @@ export interface VaultListQuery {
  * `logo_data_url` so photo/PDF payloads never ride along with the listing.
  */
 const VAULT_LIST_COLUMNS =
-  'trademark_no,reg_date,app_date,name,owner_name,address,company_type,sealed_date,sealed_text_phrase,opening_text,middle_text_arial,logo_text,created_by,synced_at,deleted_at,publish_status,published_at,publish_commit_sha,publish_error';
+  'trademark_no,reg_date,app_date,name,owner_name,address,company_type,sealed_date,sealed_text_phrase,created_by,synced_at,deleted_at,publish_status,published_at,publish_commit_sha,publish_error';
 
 /** Original vault columns only — used when a later migration column is absent. */
 const VAULT_LIST_COLUMNS_CORE = 'trademark_no,reg_date,app_date,name,owner_name,address,company_type,sealed_date,synced_at';
@@ -503,18 +517,41 @@ export async function listVaultRecords(q: VaultListQuery = {}): Promise<VaultLis
     };
 
     const timedOut = timedOutQuery('Vault request timed out.');
-    let { data, error, count } = await settleWithTimeout(build(true, VAULT_LIST_COLUMNS), timedOut);
-    if (error && isMissingDeletedAt(error)) {
-      const fallback = await settleWithTimeout(build(false, VAULT_LIST_COLUMNS), timedOut);
+    let columns = VAULT_LIST_COLUMNS;
+    let withTrash = true;
+    let { data, error, count } = await settleWithTimeout(build(withTrash, columns), timedOut);
+    let attempts = 0;
+    while (error && attempts < 8) {
+      if (isMissingDeletedAt(error) && withTrash) {
+        withTrash = false;
+        const fallback = await settleWithTimeout(build(false, columns), timedOut);
+        data = fallback.data;
+        error = fallback.error;
+        count = fallback.count;
+        attempts += 1;
+        continue;
+      }
+      if (!isMissingColumn(error)) break;
+      const missing = parseMissingColumn(error);
+      const next = missing
+        ? columns
+            .split(',')
+            .filter((col) => col !== missing)
+            .join(',')
+        : VAULT_LIST_COLUMNS_CORE;
+      if (!next || next === columns) {
+        const fallback = await settleWithTimeout(build(false, VAULT_LIST_COLUMNS_CORE), timedOut);
+        data = fallback.data;
+        error = fallback.error;
+        count = fallback.count;
+        break;
+      }
+      columns = next;
+      const fallback = await settleWithTimeout(build(withTrash, columns), timedOut);
       data = fallback.data;
       error = fallback.error;
       count = fallback.count;
-    }
-    if (error && isMissingColumn(error)) {
-      const fallback = await settleWithTimeout(build(false, VAULT_LIST_COLUMNS_CORE), timedOut);
-      data = fallback.data;
-      error = fallback.error;
-      count = fallback.count;
+      attempts += 1;
     }
 
     if (error) return { records: [], total: 0, page, pageSize, error: error.message };
@@ -688,35 +725,12 @@ export async function saveUnhcrS2CurrentState(input: {
 }
 
 /**
- * Legacy loader used by the studio dashboard and NID/TIN editors. Same active
- * (non-trashed) view as `listVaultRecords` with no pagination.
+ * Legacy loader used by the studio dashboard. Same active (non-trashed) view
+ * as `listVaultRecords`, but only list columns — never packed `details`/photos.
  */
-export async function loadVault(): Promise<{ records: VaultRecord[]; error: string | null }> {
-  try {
-    const build = (withTrash: boolean) => {
-      let query = supabaseData
-        .from('certificates')
-        .select('*')
-        .neq('trademark_no', UNHCR_CURRENT_RECORD_ID)
-        .neq('trademark_no', UNHCR_S2_CURRENT_RECORD_ID);
-      if (withTrash) query = query.is('deleted_at', null);
-      return query.order('synced_at', { ascending: false });
-    };
-
-    const timedOut = timedOutQuery('Vault request timed out.');
-    let { data, error } = await settleWithTimeout(build(true), timedOut);
-    if (error && isMissingDeletedAt(error)) {
-      const fallback = await settleWithTimeout(build(false), timedOut);
-      data = fallback.data;
-      error = fallback.error;
-    }
-
-    if (error) return { records: [], error: error.message };
-    const records = (data || []).map(mapVaultRow);
-    return { records, error: null };
-  } catch (err) {
-    return { records: [], error: err instanceof Error ? err.message : 'Could not load vault records.' };
-  }
+export async function loadVault(): Promise<{ records: VaultRecord[]; error: string | null; total: number }> {
+  const listed = await listVaultRecords({ page: 1, pageSize: 1, status: 'active' });
+  return { records: listed.records, error: listed.error, total: listed.total };
 }
 
 /**

@@ -103,11 +103,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         WORKSPACE_QUERY_TIMEOUT_MS,
       );
 
-      if (insertResult.error || !insertResult.data) {
-        setProfile(fallbackProfile(userId, email, bootstrapRole));
+      if (insertResult.data) {
+        setProfile(mapProfileRow(insertResult.data as Record<string, unknown>, email));
         return;
       }
-      setProfile(mapProfileRow(insertResult.data as Record<string, unknown>, email));
+
+      const insertErr = insertResult.error;
+      const duplicate =
+        insertErr?.code === '23505' ||
+        /duplicate key value violates unique constraint/i.test(insertErr?.message ?? '') ||
+        /\b409\b/.test(insertErr?.message ?? '');
+      if (duplicate) {
+        const retry = await settleWithTimeout(
+          supabaseData.from('profiles').select('*').eq('id', userId).maybeSingle(),
+          timedOutQuery('Profile request timed out.'),
+          WORKSPACE_QUERY_TIMEOUT_MS,
+        );
+        if (retry.data) {
+          setProfile(mapProfileRow(retry.data as Record<string, unknown>, email));
+          return;
+        }
+      }
+
+      setProfile(fallbackProfile(userId, email, bootstrapRole));
     } catch {
       setProfile(fallbackProfile(userId, email));
     }

@@ -17,7 +17,7 @@ import type { TMSnapshot } from '@/lib/editor/types';
 import { CERTIFICATE_VARIANTS } from '@/lib/editor/certificate-variant';
 import type { CertificateDocKind } from '@/lib/workspace/vault';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
-import { loadImage, loadDataUrlImage } from '@/lib/images';
+import { loadImage, loadDataUrlImage, preloadImage } from '@/lib/images';
 import { ensureTmFontsReady } from '@/lib/fonts';
 import { commitCertificate, getVaultRecord } from '@/lib/workspace/vault';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
@@ -39,6 +39,11 @@ import { Button } from '@/components/ui/button';
 // Full-resolution export/download is untouched.
 const TM_PUBLISH_SCALE = 1;
 const TM_PUBLISH_QUALITY = 0.9;
+
+if (typeof document !== 'undefined') {
+  preloadImage(TM_BACKGROUND);
+  preloadImage(TM_SIGNATURE);
+}
 
 export function CertificateEditor({ variant }: { variant: CertificateDocKind }) {
   return (
@@ -161,20 +166,23 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
 
   const rafRef = useRef(0);
   const liveScaleRef = useRef(1);
+  const drawGenRef = useRef(0);
 
   // Draw the latest snapshot onto a canvas at a given scale. `setDims` only
   // commits when the value actually changes so the page doesn't re-render on
   // every frame while typing.
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
+      const gen = (drawGenRef.current += 1);
       const fontsOk = await ensureTmFontsReady();
-      if (!fontsOk) return;
-      const bg = await loadImage(TM_BACKGROUND);
-      const sign = await loadImage(TM_SIGNATURE);
+      if (!fontsOk || gen !== drawGenRef.current) return;
+      const [bg, sign] = await Promise.all([loadImage(TM_BACKGROUND), loadImage(TM_SIGNATURE)]);
+      if (!bg || gen !== drawGenRef.current) return;
       renderTMCertificate(canvas, presentRef.current, bg, logoImageRef.current, sign, scale);
-      const w = bg ? bg.naturalWidth : 1200;
-      const h = bg ? bg.naturalHeight : 1650;
+      const w = bg.naturalWidth || 1200;
+      const h = bg.naturalHeight || 1650;
       setDims((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+      if (gen !== drawGenRef.current) return;
       setRendered(true);
     },
     [setDims, setRendered],

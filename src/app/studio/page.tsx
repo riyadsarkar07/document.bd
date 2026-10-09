@@ -54,7 +54,7 @@ export default function DashboardPage() {
           setVaultError(null);
           setStats((prev) => ({
             ...prev,
-            records: vault.records.length,
+            records: vault.total,
             lastSync: vault.records[0]?.timestamp ?? null,
           }));
         }

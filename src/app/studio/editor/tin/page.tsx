@@ -27,8 +27,8 @@ import {
 } from '@/lib/constants/tin';
 import type { TINSnapshot, TinAlign, TinFieldKey, TinLayout, TinWeight } from '@/lib/editor/types';
 import { renderTINDocument } from '@/lib/renderers/tinRenderer';
-import { loadDataUrlImage, loadImage } from '@/lib/images';
-import { loadDocumentFonts } from '@/lib/fonts';
+import { loadDataUrlImage, loadImage, preloadImage } from '@/lib/images';
+import { loadArialFonts } from '@/lib/fonts';
 import { encodeDemoQr, buildTinQrPayload } from '@/lib/tinQr';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
@@ -46,6 +46,8 @@ import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { clamp, cn } from '@/lib/utils';
+
+if (typeof document !== 'undefined') preloadImage(TIN_TEMPLATE_SRC);
 
 /** A single directional-move button on the inspector's move pad. */
 function MoveButton({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
@@ -177,7 +179,7 @@ function TINEditorInner() {
 
   // Load renderer fonts once
   useEffect(() => {
-    loadDocumentFonts().then((ok) => {
+    loadArialFonts().then((ok) => {
       setFontsLoaded(ok);
       if (ok) setStatus('Renderer fonts loaded');
     });
@@ -236,6 +238,7 @@ function TINEditorInner() {
   // Draw the latest snapshot onto the canvas at a given scale.
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
+      if (!bgImgRef.current) return;
       renderTINDocument(canvas, presentRef.current, qrImgRef.current, scale, bgImgRef.current);
       setDims((prev) =>
         prev && prev.w === TIN_DOC_WIDTH && prev.h === TIN_DOC_HEIGHT ? prev : { w: TIN_DOC_WIDTH, h: TIN_DOC_HEIGHT },

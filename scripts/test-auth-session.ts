@@ -124,6 +124,9 @@ function main() {
   assert(clientSrc.includes('beginLocalSignOut') && clientSrc.includes('__studioAuthEpoch'), 'in-flight refresh cannot resurrect a signed-out session');
   assert(authSrc.includes('beginLocalSignOut()'), 'signOut clears the session cache before GoTrue signOut');
   assert(authSrc.includes('shouldIgnoreAuthEvent(event)'), 'TOKEN_REFRESHED after logout cannot restore the signed-out user');
+  assert(authSrc.includes("insertErr?.code === '23505'"), 'profile bootstrap treats unique-violation as already created');
+  assert(authSrc.includes("eq('id', userId).maybeSingle()"), 'profile bootstrap re-selects after a 409/23505 race');
+  assert(authSrc.includes('duplicate key value violates unique constraint'), 'profile bootstrap recovers from concurrent first-sign-in inserts');
 
   if (failures) {
     console.error(`\n${failures} auth session check(s) failed.`);
