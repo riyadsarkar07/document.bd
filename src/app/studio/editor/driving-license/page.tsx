@@ -2,7 +2,6 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { jsPDF } from 'jspdf';
 import { Camera, Download, PanelRightOpen, QrCode, Type } from 'lucide-react';
 import { useDocumentEditor } from '@/lib/editor/use-document-editor';
 import {
@@ -31,6 +30,8 @@ import type {
 } from '@/lib/editor/types';
 import { renderDrivingLicense } from '@/lib/renderers/drivingLicenseRenderer';
 import { buildDrivingLicenseQrPayload, encodeDrivingLicenseQr } from '@/lib/drivingLicenseQr';
+import { createJsPdf } from '@/lib/export/jspdf';
+import { markEditorPhase, measureEditorOpen } from '@/lib/editor/open-timing';
 import { loadDataUrlImage, loadImage, preloadImage } from '@/lib/images';
 import { validateImageFile } from '@/lib/uploads';
 import { loadArialFonts } from '@/lib/fonts';
@@ -51,7 +52,10 @@ import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { clamp, cn } from '@/lib/utils';
 
-if (typeof document !== 'undefined') preloadImage(DL_TEMPLATE_SRC);
+if (typeof document !== 'undefined') {
+  preloadImage(DL_TEMPLATE_SRC);
+  markEditorPhase('driving-license', 'module');
+}
 
 function MoveButton({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
   return (
@@ -228,16 +232,25 @@ function DrivingLicenseEditorInner() {
   const qrPayload = useMemo(() => buildDrivingLicenseQrPayload(present), [present]);
   const lastQrPayloadRef = useRef<string | null>(null);
   const qrRafRef = useRef(0);
+  const qrIdleRef = useRef(0);
   useEffect(() => {
     if (qrPayload === lastQrPayloadRef.current) return;
     lastQrPayloadRef.current = qrPayload;
+    const schedule = typeof requestIdleCallback === 'function' ? requestIdleCallback : (cb: () => void) => window.setTimeout(cb, 1);
+    const cancel = typeof cancelIdleCallback === 'function' ? cancelIdleCallback : window.clearTimeout;
     cancelAnimationFrame(qrRafRef.current);
-    qrRafRef.current = requestAnimationFrame(() => {
-      void encodeDrivingLicenseQr(presentRef.current, 512).then((dataUrl) => {
-        setQrDataUrl((prev) => (prev === dataUrl ? prev : dataUrl));
+    cancel(qrIdleRef.current);
+    qrIdleRef.current = schedule(() => {
+      qrRafRef.current = requestAnimationFrame(() => {
+        void encodeDrivingLicenseQr(presentRef.current, 512).then((dataUrl) => {
+          setQrDataUrl((prev) => (prev === dataUrl ? prev : dataUrl));
+        });
       });
-    });
-    return () => cancelAnimationFrame(qrRafRef.current);
+    }) as number;
+    return () => {
+      cancel(qrIdleRef.current);
+      cancelAnimationFrame(qrRafRef.current);
+    };
   }, [qrPayload]);
 
   useEffect(() => {
@@ -257,6 +270,7 @@ function DrivingLicenseEditorInner() {
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
       if (!bgImgRef.current) return;
+      markEditorPhase('driving-license', 'bg');
       renderDrivingLicense(
         canvas,
         presentRef.current,
@@ -266,6 +280,8 @@ function DrivingLicenseEditorInner() {
         photoImageRef.current,
         qrImgRef.current,
       );
+      markEditorPhase('driving-license', 'interactive');
+      measureEditorOpen('driving-license');
       setDims((prev) =>
         prev && prev.w === DL_DOC_WIDTH && prev.h === DL_DOC_HEIGHT
           ? prev
@@ -511,7 +527,7 @@ function DrivingLicenseEditorInner() {
     }
     const canvas = document.createElement('canvas');
     renderDrivingLicense(canvas, presentRef.current, bgImgRef.current, 1, undefined, photoImageRef.current, qrImgRef.current);
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [DL_DOC_WIDTH, DL_DOC_HEIGHT] });
+    const pdf = await createJsPdf({ orientation: 'landscape', unit: 'px', format: [DL_DOC_WIDTH, DL_DOC_HEIGHT] });
     const pW = pdf.internal.pageSize.getWidth();
     const pH = pdf.internal.pageSize.getHeight();
     pdf.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, pW, pH);

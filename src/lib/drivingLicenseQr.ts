@@ -1,6 +1,5 @@
 'use client';
 
-import QRCode from 'qrcode';
 import { isDlWarningText } from './constants/driving-license';
 import type { DrivingLicenseSnapshot } from './editor/types';
 
@@ -35,6 +34,7 @@ export async function encodeDrivingLicenseQr(
   snap: DrivingLicenseSnapshot,
   size = 512,
 ): Promise<string> {
+  const QRCode = (await import('qrcode')).default;
   const payload = buildDrivingLicenseQrPayload(snap);
   return QRCode.toDataURL(payload, {
     width: size,

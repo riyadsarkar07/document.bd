@@ -128,6 +128,14 @@ function main() {
   assert(authSrc.includes("eq('id', userId).maybeSingle()"), 'profile bootstrap re-selects after a 409/23505 race');
   assert(authSrc.includes('duplicate key value violates unique constraint'), 'profile bootstrap recovers from concurrent first-sign-in inserts');
 
+  console.log('\n[5] studio editors mount from session, not profile fetch\n');
+  const layoutSrc = readFileSync(join(ROOT, 'src/app/studio/layout.tsx'), 'utf8');
+  const mountSrc = readFileSync(join(ROOT, 'src/lib/studioEditorMount.ts'), 'utf8');
+  assert(layoutSrc.includes('resolveStudioEditorMount'), 'studio layout uses session-first editor mount');
+  assert(layoutSrc.includes('isStudioEditorPath'), 'studio layout identifies editor routes');
+  assert(mountSrc.includes("if (params.hasSession) return 'mount'"), 'session is enough to mount an editor');
+  assert(layoutSrc.includes("if (isEditor)"), 'editors skip the loading||!checked spinner');
+
   if (failures) {
     console.error(`\n${failures} auth session check(s) failed.`);
     process.exit(1);

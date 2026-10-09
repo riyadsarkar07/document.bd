@@ -6,7 +6,7 @@ import { Loader2, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/lib/auth/auth-context';
 import { canManageUsers } from '@/lib/auth/types';
 import { hasToolAccess, type ToolScope } from '@/lib/workspace/access';
-import { isUnhcrS2EditorPath, resolveUnhcrS2StudioMount } from '@/lib/unhcrS2CurrentState';
+import { isStudioEditorPath, resolveStudioEditorMount } from '@/lib/studioEditorMount';
 import { StudioShell } from '@/components/layout/studio-shell';
 import { Button } from '@/components/ui/button';
 
@@ -42,26 +42,27 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
     path === prefix || path.startsWith(`${prefix}/`);
 
   const isAdminRoute = ADMIN_ROUTES.some((prefix) => matchesPrefix(pathname, prefix));
-  const isUnhcrS2 = isUnhcrS2EditorPath(pathname);
-  const blockedTool = TOOL_ROUTES.find(
-    ({ prefix, scope }) => matchesPrefix(pathname, prefix) && !hasToolAccess(profile, scope),
-  );
-  const s2Mount = resolveUnhcrS2StudioMount({
+  const isEditor = isStudioEditorPath(pathname);
+  const matchedTool = TOOL_ROUTES.find(({ prefix }) => matchesPrefix(pathname, prefix));
+  const profileReady = Boolean(profile);
+  const blockedTool =
+    profileReady && matchedTool && !hasToolAccess(profile, matchedTool.scope) ? matchedTool : null;
+  const editorMount = resolveStudioEditorMount({
     hasSession: Boolean(user),
     sessionLoading: loading,
-    profileReady: Boolean(profile),
-    hasUnhcrAccess: profile ? hasToolAccess(profile, 'unhcr') : undefined,
+    profileReady,
+    hasToolAccess: matchedTool ? (profile ? hasToolAccess(profile, matchedTool.scope) : undefined) : undefined,
     disabled: profile?.status === 'disabled',
   });
 
   useEffect(() => {
-    if (isUnhcrS2) {
-      if (s2Mount === 'login') {
+    if (isEditor) {
+      if (editorMount === 'login') {
         setChecked(false);
         router.replace('/login');
-      } else if (s2Mount === 'blocked') {
+      } else if (editorMount === 'blocked') {
         router.replace('/studio');
-      } else if (s2Mount === 'mount') {
+      } else if (editorMount === 'mount') {
         setChecked(true);
       }
       return;
@@ -74,7 +75,7 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
         setChecked(true);
       }
     }
-  }, [user, loading, router, isUnhcrS2, s2Mount]);
+  }, [user, loading, router, isEditor, editorMount]);
 
   useEffect(() => {
     if (checked && isAdminRoute && !canManageUsers(role)) {
@@ -83,14 +84,14 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
   }, [checked, isAdminRoute, role, router]);
 
   useEffect(() => {
-    if (isUnhcrS2) return;
+    if (isEditor) return;
     if (checked && blockedTool) {
       router.replace('/studio');
     }
-  }, [checked, blockedTool, router, isUnhcrS2]);
+  }, [checked, blockedTool, router, isEditor]);
 
-  if (isUnhcrS2) {
-    if (s2Mount === 'disabled') {
+  if (isEditor) {
+    if (editorMount === 'disabled') {
       return (
         <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-canvas px-6 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-danger/30 bg-danger/10 text-danger">
@@ -115,7 +116,7 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
         </div>
       );
     }
-    if (s2Mount === 'wait-session' || s2Mount === 'login' || s2Mount === 'blocked') {
+    if (editorMount === 'wait-session' || editorMount === 'login' || editorMount === 'blocked') {
       return (
         <div className="flex min-h-screen items-center justify-center bg-canvas">
           <Loader2 className="h-7 w-7 animate-spin text-accent" />

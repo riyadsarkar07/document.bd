@@ -1,6 +1,5 @@
 'use client';
 
-import QRCode from 'qrcode';
 import type { TINSnapshot } from './editor/types';
 
 /** Readable, human-facing payload labels — never internal field keys. */
@@ -35,6 +34,7 @@ export async function encodeDemoQr(
   snap: TINSnapshot,
   size = 512,
 ): Promise<string> {
+  const QRCode = (await import('qrcode')).default;
   const payload = buildTinQrPayload(snap);
   return QRCode.toDataURL(payload, {
     width: size,

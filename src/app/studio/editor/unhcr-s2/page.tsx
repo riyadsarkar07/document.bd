@@ -2,7 +2,6 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { jsPDF } from 'jspdf';
 import { Camera, Download, PanelRightOpen, Type } from 'lucide-react';
 import { useDocumentEditor } from '@/lib/editor/use-document-editor';
 import {
@@ -73,8 +72,13 @@ import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { clamp, cn } from '@/lib/utils';
+import { createJsPdf } from '@/lib/export/jspdf';
+import { markEditorPhase, measureEditorOpen } from '@/lib/editor/open-timing';
 
-if (typeof document !== 'undefined') preloadImage(UNHCR_BACKGROUND);
+if (typeof document !== 'undefined') {
+  preloadImage(UNHCR_BACKGROUND);
+  markEditorPhase('unhcr-s2', 'module');
+}
 
 function MoveButton({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
   return (
@@ -268,7 +272,10 @@ function UnhcrEditorInner() {
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
       if (!bgImgRef.current) return;
+      markEditorPhase('unhcr-s2', 'bg');
       renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, scale, activeFieldRef.current, photoImageRef.current);
+      markEditorPhase('unhcr-s2', 'interactive');
+      measureEditorOpen('unhcr-s2');
       setDims((prev) =>
         prev && prev.w === UNHCR_DOC_WIDTH && prev.h === UNHCR_DOC_HEIGHT
           ? prev
@@ -619,7 +626,7 @@ function UnhcrEditorInner() {
     }
     const canvas = document.createElement('canvas');
     renderUnhcrCard(canvas, presentRef.current, bgImgRef.current, 1, undefined, photoImageRef.current);
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [UNHCR_DOC_WIDTH, UNHCR_DOC_HEIGHT] });
+    const pdf = await createJsPdf({ orientation: 'landscape', unit: 'px', format: [UNHCR_DOC_WIDTH, UNHCR_DOC_HEIGHT] });
     const pW = pdf.internal.pageSize.getWidth();
     const pH = pdf.internal.pageSize.getHeight();
     pdf.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, pW, pH);

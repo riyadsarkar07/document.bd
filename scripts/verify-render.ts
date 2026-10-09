@@ -1592,6 +1592,38 @@ async function main() {
   assert(unhcrEditorSrc.includes('loadArialFonts()'), 'UNHCR editor loads Arial without waiting on Corsiva/Kalpurush');
   assert(tmEditorSrc.includes('drawGenRef') && tmEditorSrc.includes('Promise.all'), 'TM draw ignores stale async overwrites and loads bg/sign together');
 
+  console.log('\n[DXB+] editor open: session-first shell, lazy jsPDF/QR, timing marks\n');
+  const studioLayoutSrc = readFileSync(join(ROOT, 'src/app/studio/layout.tsx'), 'utf8');
+  const jspdfHelperSrc = readFileSync(join(ROOT, 'src/lib/export/jspdf.ts'), 'utf8');
+  const tinQrSrc = readFileSync(join(ROOT, 'src/lib/tinQr.ts'), 'utf8');
+  const dlQrSrc = readFileSync(join(ROOT, 'src/lib/drivingLicenseQr.ts'), 'utf8');
+  assert(studioLayoutSrc.includes('resolveStudioEditorMount'), 'studio layout mounts editors from session, not profile');
+  assert(studioLayoutSrc.includes('isStudioEditorPath'), 'studio layout treats all /studio/editor routes as session-first');
+  assert(!studioLayoutSrc.includes("from 'jspdf'"), 'studio layout does not pull jsPDF');
+  assert(jspdfHelperSrc.includes("await import('jspdf')"), 'jsPDF is loaded only on PDF export');
+  for (const [label, src] of [
+    ['TIN', tinEditorSrc],
+    ['DL', dlEditorSrc],
+    ['Dubai', dubaiEditorSrc],
+    ['UNHCR', unhcrEditorSrc],
+    ['UNHCR S2', unhcrS2EditorSrc],
+    ['TM', tmEditorSrc],
+  ] as const) {
+    assert(!src.includes("from 'jspdf'"), `${label} editor does not statically import jsPDF`);
+    assert(src.includes('createJsPdf'), `${label} editor lazy-loads jsPDF on export`);
+  }
+  assert(tinEditorSrc.includes('requestIdleCallback'), 'TIN defers QR encode until after first paint');
+  assert(dlEditorSrc.includes('requestIdleCallback'), 'DL defers QR encode until after first paint');
+  assert(!tinQrSrc.includes("import QRCode from 'qrcode'"), 'TIN QR encoder does not statically import qrcode');
+  assert(!dlQrSrc.includes("import QRCode from 'qrcode'"), 'DL QR encoder does not statically import qrcode');
+  assert(tinQrSrc.includes("await import('qrcode')"), 'TIN QR encoder dynamic-imports qrcode');
+  assert(dlQrSrc.includes("await import('qrcode')"), 'DL QR encoder dynamic-imports qrcode');
+  assert(tinEditorSrc.includes("markEditorPhase('tin'"), 'TIN records editor-open timing marks');
+  assert(dlEditorSrc.includes("markEditorPhase('driving-license'"), 'DL records editor-open timing marks');
+  assert(dubaiEditorSrc.includes("markEditorPhase('dubai-license'"), 'Dubai records editor-open timing marks');
+  assert(unhcrEditorSrc.includes("markEditorPhase('unhcr'"), 'UNHCR records editor-open timing marks');
+  assert(unhcrS2EditorSrc.includes("markEditorPhase('unhcr-s2'"), 'UNHCR S2 records editor-open timing marks');
+
   console.log(`\n${failures === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

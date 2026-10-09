@@ -2,7 +2,6 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { jsPDF } from 'jspdf';
 import {
   Download,
   Eye,
@@ -30,6 +29,8 @@ import { renderTINDocument } from '@/lib/renderers/tinRenderer';
 import { loadDataUrlImage, loadImage, preloadImage } from '@/lib/images';
 import { loadArialFonts } from '@/lib/fonts';
 import { encodeDemoQr, buildTinQrPayload } from '@/lib/tinQr';
+import { createJsPdf } from '@/lib/export/jspdf';
+import { markEditorPhase, measureEditorOpen } from '@/lib/editor/open-timing';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
 import { newRecordId } from '@/lib/workspace/document-kinds';
@@ -47,7 +48,10 @@ import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { clamp, cn } from '@/lib/utils';
 
-if (typeof document !== 'undefined') preloadImage(TIN_TEMPLATE_SRC);
+if (typeof document !== 'undefined') {
+  preloadImage(TIN_TEMPLATE_SRC);
+  markEditorPhase('tin', 'module');
+}
 
 /** A single directional-move button on the inspector's move pad. */
 function MoveButton({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
@@ -202,22 +206,29 @@ function TINEditorInner() {
   // value changes (never on X/Y/layout/zoom/QR-position state changes).
   const qrPayload = useMemo(() => buildTinQrPayload(present), [present]);
 
-  // DEMO QR regeneration — rAF-coalesced and keyed on the payload string, so
-  // the QR re-encodes only when the record data actually changed. Encoding is
-  // async, so the editor UI is never blocked.
+  // DEMO QR regeneration — idle after first paint, rAF-coalesced, keyed on payload.
   const lastQrPayloadRef = useRef<string | null>(null);
   const qrRafRef = useRef(0);
+  const qrIdleRef = useRef(0);
   useEffect(() => {
     if (qrPayload === lastQrPayloadRef.current) return;
     lastQrPayloadRef.current = qrPayload;
-    if (!qrPayload) return; // nothing to encode while the record is empty
+    if (!qrPayload) return;
+    const schedule = typeof requestIdleCallback === 'function' ? requestIdleCallback : (cb: () => void) => window.setTimeout(cb, 1);
+    const cancel = typeof cancelIdleCallback === 'function' ? cancelIdleCallback : window.clearTimeout;
     cancelAnimationFrame(qrRafRef.current);
-    qrRafRef.current = requestAnimationFrame(() => {
-      void encodeDemoQr(presentRef.current, 512).then((dataUrl) => {
-        setQrDataUrl((prev) => (prev === dataUrl ? prev : dataUrl));
+    cancel(qrIdleRef.current);
+    qrIdleRef.current = schedule(() => {
+      qrRafRef.current = requestAnimationFrame(() => {
+        void encodeDemoQr(presentRef.current, 512).then((dataUrl) => {
+          setQrDataUrl((prev) => (prev === dataUrl ? prev : dataUrl));
+        });
       });
-    });
-    return () => cancelAnimationFrame(qrRafRef.current);
+    }) as number;
+    return () => {
+      cancel(qrIdleRef.current);
+      cancelAnimationFrame(qrRafRef.current);
+    };
   }, [qrPayload]);
 
   // Hydrate the renderer's QR image whenever a fresh data URL lands.
@@ -239,7 +250,10 @@ function TINEditorInner() {
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
       if (!bgImgRef.current) return;
+      markEditorPhase('tin', 'bg');
       renderTINDocument(canvas, presentRef.current, qrImgRef.current, scale, bgImgRef.current);
+      markEditorPhase('tin', 'interactive');
+      measureEditorOpen('tin');
       setDims((prev) =>
         prev && prev.w === TIN_DOC_WIDTH && prev.h === TIN_DOC_HEIGHT ? prev : { w: TIN_DOC_WIDTH, h: TIN_DOC_HEIGHT },
       );
@@ -396,7 +410,7 @@ function TINEditorInner() {
     }
     const canvas = document.createElement('canvas');
     renderTINDocument(canvas, presentRef.current, qrImgRef.current, 1, bgImgRef.current);
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: 'a4' });
+    const pdf = await createJsPdf({ orientation: 'portrait', unit: 'px', format: 'a4' });
     const pW = pdf.internal.pageSize.getWidth();
     const pH = pdf.internal.pageSize.getHeight();
     const cr = canvas.width / canvas.height;

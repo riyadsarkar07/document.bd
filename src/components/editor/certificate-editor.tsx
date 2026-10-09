@@ -2,7 +2,6 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { jsPDF } from 'jspdf';
 import {
   Award,
   FileText,
@@ -34,6 +33,7 @@ import { PropertyInput } from '@/components/editor/property-input';
 import { PropertySlider } from '@/components/editor/property-slider';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
+import { createJsPdf } from '@/lib/export/jspdf';
 
 // The public verification portal receives a separate, web-optimized JPG.
 // Full-resolution export/download is untouched.
@@ -278,7 +278,7 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
     const sign = await loadImage(TM_SIGNATURE);
     const canvas = document.createElement('canvas');
     renderTMCertificate(canvas, presentRef.current, bg, logoImageRef.current, sign, TM_EXPORT_SCALE);
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: 'a4' });
+    const pdf = await createJsPdf({ orientation: 'portrait', unit: 'px', format: 'a4' });
     const pW = pdf.internal.pageSize.getWidth();
     const pH = pdf.internal.pageSize.getHeight();
     const cr = canvas.width / canvas.height;

@@ -6,6 +6,7 @@ import {
   UNHCR_TEST_REF_NO_DEFAULT_VALUE,
   normalizeUnhcrSnapshot,
 } from './constants/unhcr-s2';
+import { resolveStudioEditorMount, type StudioEditorMount } from './studioEditorMount';
 
 /**
  * Dedicated vault id for the UNHCR Server 2 editor's shared current workspace.
@@ -29,7 +30,7 @@ export function isUnhcrS2EditorPath(pathname: string | null | undefined): boolea
   return path === '/studio/editor/unhcr-s2' || path.startsWith('/studio/editor/unhcr-s2/');
 }
 
-export type UnhcrS2StudioMount = 'mount' | 'wait-session' | 'login' | 'blocked' | 'disabled';
+export type UnhcrS2StudioMount = StudioEditorMount;
 
 /**
  * Server 2 must mount from its own session + S2 state. A missing profiles row
@@ -42,11 +43,13 @@ export function resolveUnhcrS2StudioMount(params: {
   hasUnhcrAccess?: boolean;
   disabled?: boolean;
 }): UnhcrS2StudioMount {
-  if (params.disabled) return 'disabled';
-  if (params.profileReady && params.hasUnhcrAccess === false) return 'blocked';
-  if (params.hasSession) return 'mount';
-  if (params.sessionLoading) return 'wait-session';
-  return 'login';
+  return resolveStudioEditorMount({
+    hasSession: params.hasSession,
+    sessionLoading: params.sessionLoading,
+    profileReady: params.profileReady,
+    hasToolAccess: params.hasUnhcrAccess,
+    disabled: params.disabled,
+  });
 }
 
 function parseJsonValue(value: string): unknown | undefined {

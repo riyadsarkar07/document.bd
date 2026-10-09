@@ -76,6 +76,7 @@ import {
   isUnhcrS2EditorPath,
   resolveUnhcrS2StudioMount,
 } from '../src/lib/unhcrS2CurrentState';
+import { isStudioEditorPath, resolveStudioEditorMount } from '../src/lib/studioEditorMount';
 
 const ROOT = process.cwd();
 
@@ -840,11 +841,18 @@ function main() {
   assert(resolveUnhcrS2StudioMount({ hasSession: false, sessionLoading: true }) === 'wait-session', 'S2 waits only for its own auth session');
   assert(resolveUnhcrS2StudioMount({ hasSession: false, sessionLoading: false }) === 'login', 'S2 without a session goes to login');
   assert(resolveUnhcrS2StudioMount({ hasSession: true, profileReady: true, hasUnhcrAccess: false }) === 'blocked', 'S2 still honors an explicit unhcr deny after profile loads');
+  assert(resolveStudioEditorMount({ hasSession: true, sessionLoading: true, profileReady: false }) === 'mount', 'TIN/DL/Dubai/UNHCR mount from session without waiting for profiles');
+  assert(resolveStudioEditorMount({ hasSession: true, sessionLoading: false, profileReady: false }) === 'mount', 'editors mount even when Dashboard profile is still empty');
+  assert(resolveStudioEditorMount({ hasSession: false, sessionLoading: true }) === 'wait-session', 'editors wait only for auth session');
+  assert(resolveStudioEditorMount({ hasSession: true, profileReady: true, hasToolAccess: false }) === 'blocked', 'editors still honor an explicit tool deny after profile loads');
+  assert(isStudioEditorPath('/studio/editor/tin'), 'TIN editor path is recognized');
+  assert(isStudioEditorPath('/studio/editor/unhcr-s2'), 'UNHCR S2 editor path is recognized as a studio editor');
+  assert(!isStudioEditorPath('/studio'), 'Dashboard path is not treated as an editor');
   const studioLayout = readFileSync(join(ROOT, 'src/app/studio/layout.tsx'), 'utf8');
   const fontsSrc = readFileSync(join(ROOT, 'src/lib/fonts.ts'), 'utf8');
   const dashboard = readFileSync(join(ROOT, 'src/app/studio/page.tsx'), 'utf8');
-  assert(studioLayout.includes('resolveUnhcrS2StudioMount'), 'studio layout mounts Server 2 independently of Dashboard profile');
-  assert(studioLayout.includes('isUnhcrS2EditorPath'), 'studio layout special-cases the Server 2 editor path');
+  assert(studioLayout.includes('resolveStudioEditorMount'), 'studio layout mounts editors independently of Dashboard profile');
+  assert(studioLayout.includes('isStudioEditorPath'), 'studio layout session-mounts all editor routes');
   assert(fontsSrc.includes('export function loadUnhcrS2Fonts'), 'S2 font loader is dedicated');
   assert(fontsSrc.includes('UNHCR_S2_FONT_FACES'), 'S2 font loader registers UNHCR S2 faces');
   const s2FontStart = fontsSrc.indexOf('export function loadUnhcrS2Fonts');
