@@ -1599,6 +1599,8 @@ async function main() {
   const dlQrSrc = readFileSync(join(ROOT, 'src/lib/drivingLicenseQr.ts'), 'utf8');
   assert(studioLayoutSrc.includes('resolveStudioEditorMount'), 'studio layout mounts editors from session, not profile');
   assert(studioLayoutSrc.includes('isStudioEditorPath'), 'studio layout treats all /studio/editor routes as session-first');
+  assert(studioLayoutSrc.includes("if (editorMount === 'login' || editorMount === 'blocked')"), 'wait-session mounts the editor shell instead of a spinner');
+  assert(!studioLayoutSrc.includes("editorMount === 'wait-session'"), 'TIN/DL/Dubai/UNHCR are not blocked on a wait-session spinner');
   assert(!studioLayoutSrc.includes("from 'jspdf'"), 'studio layout does not pull jsPDF');
   assert(jspdfHelperSrc.includes("await import('jspdf')"), 'jsPDF is loaded only on PDF export');
   for (const [label, src] of [

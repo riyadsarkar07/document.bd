@@ -135,6 +135,10 @@ function main() {
   assert(layoutSrc.includes('isStudioEditorPath'), 'studio layout identifies editor routes');
   assert(mountSrc.includes("if (params.hasSession) return 'mount'"), 'session is enough to mount an editor');
   assert(layoutSrc.includes("if (isEditor)"), 'editors skip the loading||!checked spinner');
+  assert(layoutSrc.includes("if (editorMount === 'login' || editorMount === 'blocked')"), 'wait-session still mounts the editor shell');
+  assert(!layoutSrc.includes("editorMount === 'wait-session'"), 'wait-session does not hold editors on a full-page spinner');
+  assert(authSrc.includes('useLayoutEffect'), 'AuthProvider hydrates the cached session before paint');
+  assert(/setLoading\(false\);\s*void loadProfile/.test(authSrc), 'session ready is not blocked on the profiles row');
 
   if (failures) {
     console.error(`\n${failures} auth session check(s) failed.`);

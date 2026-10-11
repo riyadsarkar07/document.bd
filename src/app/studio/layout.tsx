@@ -116,7 +116,7 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
         </div>
       );
     }
-    if (editorMount === 'wait-session' || editorMount === 'login' || editorMount === 'blocked') {
+    if (editorMount === 'login' || editorMount === 'blocked') {
       return (
         <div className="flex min-h-screen items-center justify-center bg-canvas">
           <Loader2 className="h-7 w-7 animate-spin text-accent" />

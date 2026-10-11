@@ -851,8 +851,13 @@ function main() {
   const studioLayout = readFileSync(join(ROOT, 'src/app/studio/layout.tsx'), 'utf8');
   const fontsSrc = readFileSync(join(ROOT, 'src/lib/fonts.ts'), 'utf8');
   const dashboard = readFileSync(join(ROOT, 'src/app/studio/page.tsx'), 'utf8');
+  const authSrc = readFileSync(join(ROOT, 'src/lib/auth/auth-context.tsx'), 'utf8');
   assert(studioLayout.includes('resolveStudioEditorMount'), 'studio layout mounts editors independently of Dashboard profile');
   assert(studioLayout.includes('isStudioEditorPath'), 'studio layout session-mounts all editor routes');
+  assert(studioLayout.includes("if (editorMount === 'login' || editorMount === 'blocked')"), 'wait-session still mounts editor chrome so assets can start');
+  assert(!studioLayout.includes("editorMount === 'wait-session'"), 'editors are not held on a spinner while the session is still hydrating');
+  assert(authSrc.includes('useLayoutEffect'), 'AuthProvider applies the cached session before first paint');
+  assert(/setLoading\(false\);\s*void loadProfile/.test(authSrc), 'AuthProvider does not keep loading true until profiles returns');
   assert(fontsSrc.includes('export function loadUnhcrS2Fonts'), 'S2 font loader is dedicated');
   assert(fontsSrc.includes('UNHCR_S2_FONT_FACES'), 'S2 font loader registers UNHCR S2 faces');
   const s2FontStart = fontsSrc.indexOf('export function loadUnhcrS2Fonts');
@@ -861,7 +866,6 @@ function main() {
   assert(s2FontFn.includes('UNHCR_S2_FONT_FACES'), 'S2 font loader body uses UNHCR S2 faces');
   assert(!s2FontFn.includes('Kalpurush') && !s2FontFn.includes('Corsiva') && !s2FontFn.includes('waitForDocumentFonts'), 'S2 font loader does not wait for NID/TM workspace fonts');
   assert(dashboard.includes('loadVault()') && dashboard.includes('listTemplates()') && dashboard.includes('listProjects()'), 'Dashboard still loads vault/templates/projects');
-  const authSrc = readFileSync(join(ROOT, 'src/lib/auth/auth-context.tsx'), 'utf8');
   const storeSrc = readFileSync(join(ROOT, 'src/lib/workspace/store.ts'), 'utf8');
   const auditSrc = readFileSync(join(ROOT, 'src/lib/workspace/audit.ts'), 'utf8');
   const historySrc = readFileSync(join(ROOT, 'src/app/studio/history/page.tsx'), 'utf8');

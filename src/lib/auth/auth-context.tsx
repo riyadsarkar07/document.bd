@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -136,7 +137,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         rememberSession(session);
         setUser(session.user);
-        void loadProfile(session.user.id, session.user.email || '').finally(() => setLoading(false));
+        setLoading(false);
+        void loadProfile(session.user.id, session.user.email || '');
         return;
       }
       if (source === 'sign-out' || source === 'invalid') {
@@ -176,6 +178,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [loadProfile]);
 
+  useLayoutEffect(() => {
+    const cached = getCachedSession();
+    if (cached?.user) applySession(cached, 'bootstrap');
+  }, [applySession]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -186,9 +193,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       applySession(session, source);
     };
-
-    const cached = getCachedSession();
-    if (cached?.user) apply(cached, 'bootstrap');
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       setTimeout(() => {
