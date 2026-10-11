@@ -5,9 +5,18 @@ import {
   type TempmailConfig,
 } from '@/lib/tempmail/config';
 import { buildAddress, generateLocalPart, mailboxMd5, pickDomain } from '@/lib/tempmail/hash';
-import { parseDeleteResult, parseDomains, parseMessageDetail, parseMessageList } from '@/lib/tempmail/parse';
+import {
+  parseAttachmentFile,
+  parseAttachments,
+  parseDeleteResult,
+  parseDomains,
+  parseMessageDetail,
+  parseMessageList,
+  parseSourceMessage,
+} from '@/lib/tempmail/parse';
 import type {
   FetchLike,
+  TempmailAttachment,
   TempmailErrorCode,
   TempmailErrorShape,
   TempmailMessageDetail,
@@ -65,10 +74,20 @@ function classifyHttpError(status: number, bodyText: string): TempmailProviderEr
     );
   }
   if (status === 429) {
+    const quota = /quota|not subscribed|subscription|plan exceeded|exceeded your/i.test(snippet);
     return new TempmailProviderError(
-      'Temporary email provider rate limit reached. Try again shortly.',
-      'rate_limited',
+      quota
+        ? 'Temporary email provider subscription or quota limit reached.'
+        : 'Temporary email provider rate limit reached. Try again shortly.',
+      quota ? 'quota' : 'rate_limited',
       429,
+    );
+  }
+  if (status === 402) {
+    return new TempmailProviderError(
+      'Temporary email provider subscription limit prevents this operation.',
+      'quota',
+      402,
     );
   }
   if (status === 404) {
@@ -142,7 +161,13 @@ export interface TempmailClient {
   createInbox(): Promise<{ email: string; domain: string }>;
   listMessages(email: string): Promise<TempmailMessageSummary[]>;
   readMessage(mailId: string): Promise<TempmailMessageDetail>;
+  sourceMessage(mailId: string): Promise<string>;
   deleteMessage(mailId: string): Promise<boolean>;
+  listAttachments(mailId: string): Promise<TempmailAttachment[]>;
+  getAttachment(
+    mailId: string,
+    attachmentId: string,
+  ): Promise<{ filename: string; contentType: string; size: number; base64: string }>;
 }
 
 export function createTempmailClient(
@@ -172,6 +197,34 @@ export function createTempmailClient(
     async deleteMessage(mailId: string) {
       const payload = await rapidApiGet(`/request/delete/id/${encodeURIComponent(mailId)}/`, config, fetchImpl);
       return parseDeleteResult(payload);
+    },
+    async sourceMessage(mailId: string) {
+      const payload = await rapidApiGet(`/request/source/id/${encodeURIComponent(mailId)}/`, config, fetchImpl);
+      return parseSourceMessage(payload);
+    },
+    async listAttachments(mailId: string) {
+      const payload = await rapidApiGet(`/request/attachments/id/${encodeURIComponent(mailId)}/`, config, fetchImpl);
+      return parseAttachments(payload);
+    },
+    async getAttachment(mailId: string, attachmentId: string) {
+      const encodedMail = encodeURIComponent(mailId);
+      const encodedAtt = encodeURIComponent(attachmentId);
+      try {
+        const payload = await rapidApiGet(
+          `/request/one_attachment/id/${encodedMail}/id/${encodedAtt}/`,
+          config,
+          fetchImpl,
+        );
+        return parseAttachmentFile(payload, attachmentId);
+      } catch (err) {
+        if (!(err instanceof TempmailProviderError) || err.code !== 'not_found') throw err;
+        const payload = await rapidApiGet(
+          `/request/one_mail/id/${encodedMail}/id/${encodedAtt}/`,
+          config,
+          fetchImpl,
+        );
+        return parseAttachmentFile(payload, attachmentId);
+      }
     },
   };
 }

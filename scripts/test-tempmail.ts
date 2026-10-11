@@ -10,9 +10,19 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mailboxMd5, isValidTempmailAddress, isValidMailId, buildAddress } from '../src/lib/tempmail/hash';
-import { parseDeleteResult, parseDomains, parseMessageDetail, parseMessageList } from '../src/lib/tempmail/parse';
+import {
+  parseAttachments,
+  parseAttachmentFile,
+  parseDeleteResult,
+  parseDomains,
+  parseMessageDetail,
+  parseMessageList,
+  parseSourceMessage,
+} from '../src/lib/tempmail/parse';
 import { createTempmailClient, TempmailProviderError } from '../src/lib/tempmail/provider';
 import { signInboxToken, verifyInboxToken } from '../src/lib/tempmail/token';
+import { messageBelongsToInbox } from '../src/lib/tempmail/ownership';
+import { evaluateAccountMutation } from '../src/lib/auth/roles';
 import type { FetchLike } from '../src/lib/tempmail/types';
 import { hasToolAccess } from '../src/lib/workspace/access';
 
@@ -118,7 +128,13 @@ async function run() {
     mail_to: 'user@temp.test',
   });
   assert(detail.text === 'Hello there' && detail.html.includes('Hello'), 'message body parsed');
+  assert(detail.attachments.length === 0, 'message without attachments has empty list');
   assert(parseDeleteResult({ result: 'ok' }) === true, 'delete acknowledgement accepted');
+  assert(parseSourceMessage({ data: 'From: a@b.c' }) === 'From: a@b.c', 'source payload parsed');
+  const atts = parseAttachments([{ id: 'att-1', name: 'otp.txt', size: 12, content_type: 'text/plain' }]);
+  assert(atts.length === 1 && atts[0].id === 'att-1', 'attachment list parsed');
+  const file = parseAttachmentFile({ body: Buffer.from('hi').toString('base64'), filename: 'otp.txt' }, 'att-1');
+  assert(file.filename === 'otp.txt' && file.base64.length > 0, 'attachment file parsed');
 
   console.log('\n[4] inbox creation (mocked RapidAPI domains)\n');
   const createClient = createTempmailClient(
@@ -176,6 +192,36 @@ async function run() {
   );
   assert((await deleteClient.deleteMessage('abc123')) === true, 'delete acknowledgement returned');
 
+  const sourceClient = createTempmailClient(
+    config,
+    mockFetch((url) => {
+      assert(url.includes('/request/source/id/abc123/'), 'source hits GET /request/source/id/{mail_id}/');
+      return jsonResponse(200, { data: 'From: alerts@bank.test' });
+    }),
+  );
+  assert((await sourceClient.sourceMessage('abc123')).includes('alerts@bank.test'), 'source message returned');
+
+  const attClient = createTempmailClient(
+    config,
+    mockFetch((url) => {
+      assert(url.includes('/request/attachments/id/abc123/'), 'attachments hits GET /request/attachments/id/{mail_id}/');
+      return jsonResponse(200, [{ id: 'att-1', name: 'otp.txt' }]);
+    }),
+  );
+  assert((await attClient.listAttachments('abc123'))[0].id === 'att-1', 'attachment list returned');
+
+  const oneAttClient = createTempmailClient(
+    config,
+    mockFetch((url) => {
+      assert(
+        url.includes('/request/one_attachment/id/abc123/id/att-1/'),
+        'one attachment hits GET /request/one_attachment/id/{mail_id}/id/{attachment_id}/',
+      );
+      return jsonResponse(200, { body: 'aGk=', filename: 'otp.txt', content_type: 'text/plain' });
+    }),
+  );
+  assert((await oneAttClient.getAttachment('abc123', 'att-1')).filename === 'otp.txt', 'one attachment returned');
+
   console.log('\n[6] invalid credentials / provider errors / rate limits\n');
   await expectProviderError(
     () =>
@@ -218,7 +264,52 @@ async function run() {
     '500 maps to provider_error',
   );
 
-  console.log('\n[7] tool access + source contracts\n');
+  console.log('\n[7] ownership + last-admin protection\n');
+  assert(messageBelongsToInbox('user@temp.test', 'user@temp.test') === true, 'owner recipient matches inbox');
+  assert(messageBelongsToInbox('Other <other@temp.test>', 'user@temp.test') === false, 'foreign recipient is rejected');
+  assert(messageBelongsToInbox('', 'user@temp.test') === true, 'empty recipient does not fail closed on missing to');
+  const lastAdmin = evaluateAccountMutation({
+    actorId: 'admin-a',
+    actorRole: 'admin',
+    targetId: 'admin-b',
+    targetRole: 'admin',
+    targetStatus: 'active',
+    nextRole: 'viewer',
+    activeAdminCount: 1,
+  });
+  assert(!lastAdmin.ok && lastAdmin.status === 409, 'last admin cannot be demoted');
+  const viewerBlocked = evaluateAccountMutation({
+    actorId: 'user-1',
+    actorRole: 'viewer',
+    targetId: 'user-2',
+    targetRole: 'viewer',
+    targetStatus: 'active',
+    nextStatus: 'disabled',
+    activeAdminCount: 1,
+  });
+  assert(!viewerBlocked.ok && viewerBlocked.status === 403, 'non-admin cannot disable users');
+  const selfBlocked = evaluateAccountMutation({
+    actorId: 'admin-a',
+    actorRole: 'admin',
+    targetId: 'admin-a',
+    targetRole: 'admin',
+    targetStatus: 'active',
+    nextRole: 'viewer',
+    activeAdminCount: 2,
+  });
+  assert(!selfBlocked.ok, 'admin cannot change own role');
+  const okDemote = evaluateAccountMutation({
+    actorId: 'admin-a',
+    actorRole: 'admin',
+    targetId: 'admin-b',
+    targetRole: 'admin',
+    targetStatus: 'active',
+    nextRole: 'editor',
+    activeAdminCount: 2,
+  });
+  assert(okDemote.ok, 'second admin can be demoted');
+
+  console.log('\n[8] tool access + source contracts\n');
   assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tempmail'] }, 'tempmail') === true, 'tempmail scope granted');
   assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tm'] }, 'tempmail') === false, 'unrelated scope denied');
 
@@ -245,9 +336,22 @@ async function run() {
   assert(provider.includes('/request/mail/id/'), 'server client uses verified inbox endpoint');
   assert(provider.includes('/request/one_mail/id/'), 'server client uses verified message endpoint');
   assert(provider.includes('/request/delete/id/'), 'server client uses verified delete endpoint');
+  assert(provider.includes('/request/source/id/'), 'server client uses verified source endpoint');
+  assert(provider.includes('/request/attachments/id/'), 'server client uses verified attachments endpoint');
+  assert(provider.includes('/request/one_attachment/id/'), 'server client uses verified one_attachment endpoint');
   assert(inboxRoute.includes('authorizeTempmail') && listRoute.includes('authorizeInboxAccess'), 'routes require session + inbox token');
   assert(itemRoute.includes('authorizeInboxAccess'), 'message detail/delete require inbox token');
+  assert(itemRoute.includes('assertMessageOwnership'), 'message routes validate inbox ownership');
   assert(sidebar.includes("scope: 'tempmail'"), 'sidebar gates CYBER TEMPMAIL');
+  assert(sidebar.includes('/studio/tempmail/admin'), 'sidebar has Temp Mail Admin');
+  assert(sidebar.includes('/studio/admins'), 'sidebar has Admins view');
+  assert(sidebar.includes("label: 'Users'"), 'sidebar has Users view');
+  const adminStatus = readFileSync(join(ROOT, 'src/app/api/tempmail/admin/status/route.ts'), 'utf8');
+  const accountsRoute = readFileSync(join(ROOT, 'src/app/api/admin/accounts/route.ts'), 'utf8');
+  const accountPatch = readFileSync(join(ROOT, 'src/app/api/admin/accounts/[id]/route.ts'), 'utf8');
+  assert(adminStatus.includes('authorizeTempmailAdmin'), 'admin status is server-protected');
+  assert(accountsRoute.includes('authorizeTempmailAdmin'), 'account list is server-protected');
+  assert(accountPatch.includes('evaluateAccountMutation'), 'account updates enforce last-admin protection');
 
   if (failures) {
     console.error(`\n${failures} tempmail check(s) failed.`);

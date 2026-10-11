@@ -1,5 +1,9 @@
 import { normalizeDomain } from '@/lib/tempmail/hash';
-import type { TempmailMessageDetail, TempmailMessageSummary } from '@/lib/tempmail/types';
+import type {
+  TempmailAttachment,
+  TempmailMessageDetail,
+  TempmailMessageSummary,
+} from '@/lib/tempmail/types';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -125,6 +129,62 @@ export function parseMessageList(payload: unknown): TempmailMessageSummary[] {
   return list.map(parseMessageSummary).filter((row): row is TempmailMessageSummary => Boolean(row));
 }
 
+export function parseAttachment(value: unknown): TempmailAttachment | null {
+  if (typeof value === 'string') {
+    const id = value.trim();
+    return id ? { id, name: id, size: null, contentType: null } : null;
+  }
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = pickString(record, ['id', 'attachment_id', 'attachmentId', '_id', 'file_id', 'fileId']);
+  if (!id) return null;
+  const name = pickString(record, ['name', 'filename', 'file_name', 'fileName', 'original_name']) || id;
+  const sizeRaw = record.size ?? record.byte_size ?? record.bytes ?? record.length;
+  const size =
+    typeof sizeRaw === 'number' && Number.isFinite(sizeRaw)
+      ? sizeRaw
+      : typeof sizeRaw === 'string' && /^\d+$/.test(sizeRaw)
+        ? Number(sizeRaw)
+        : null;
+  const contentType = pickString(record, ['contentType', 'content_type', 'mime', 'mime_type', 'type']) || null;
+  return { id, name, size, contentType };
+}
+
+export function parseAttachments(payload: unknown): TempmailAttachment[] {
+  if (payload == null) return [];
+  if (typeof payload === 'string') {
+    const lower = payload.toLowerCase();
+    if (/no attachment|empty|not found|there are no/.test(lower)) return [];
+  }
+  const list = unwrapList(payload);
+  if (!list) {
+    const record = asRecord(payload);
+    if (record) {
+      for (const key of ['attachments', 'files', 'mail_attachments']) {
+        const inner = record[key];
+        if (Array.isArray(inner)) {
+          return inner.map(parseAttachment).filter((row): row is TempmailAttachment => Boolean(row));
+        }
+      }
+      const single = parseAttachment(payload);
+      return single ? [single] : [];
+    }
+    return [];
+  }
+  return list.map(parseAttachment).filter((row): row is TempmailAttachment => Boolean(row));
+}
+
+function attachmentsFromMessage(source: Record<string, unknown> | null): TempmailAttachment[] {
+  if (!source) return [];
+  for (const key of ['mail_attachments', 'attachments', 'files']) {
+    const value = source[key];
+    if (Array.isArray(value)) {
+      return value.map(parseAttachment).filter((row): row is TempmailAttachment => Boolean(row));
+    }
+  }
+  return [];
+}
+
 export function parseMessageDetail(payload: unknown, fallbackId = ''): TempmailMessageDetail {
   const record = asRecord(payload);
   const nested = record ? unwrapList(record)?.[0] : null;
@@ -144,7 +204,40 @@ export function parseMessageDetail(payload: unknown, fallbackId = ''): TempmailM
     to: pickString(source, ['mail_to', 'mailTo', 'to', 'recipient']),
     text,
     html,
+    attachments: attachmentsFromMessage(source),
   };
+}
+
+export function parseSourceMessage(payload: unknown): string {
+  if (typeof payload === 'string') return payload;
+  const record = asRecord(payload);
+  if (!record) return payload == null ? '' : JSON.stringify(payload);
+  return (
+    pickString(record, ['data', 'source', 'raw', 'mail_source', 'body', 'message', 'result']) ||
+    JSON.stringify(payload)
+  );
+}
+
+export function parseAttachmentFile(
+  payload: unknown,
+  fallbackId: string,
+): { filename: string; contentType: string; size: number; base64: string } {
+  const record = asRecord(payload);
+  const nested = record ? asRecord(record.data) ?? asRecord(record.file) ?? record : null;
+  const base64 =
+    pickString(nested, ['body', 'content', 'data', 'file', 'base64', 'attachment']) ||
+    (typeof payload === 'string' && !payload.trim().startsWith('{') ? payload.trim() : '');
+  if (!base64) {
+    throw new Error('Provider returned an unrecognized attachment payload.');
+  }
+  const filename = pickString(nested, ['name', 'filename', 'file_name', 'fileName']) || fallbackId;
+  const contentType = pickString(nested, ['contentType', 'content_type', 'mime', 'mime_type', 'type']) || 'application/octet-stream';
+  const sizeRaw = nested?.size ?? nested?.byte_size ?? nested?.bytes;
+  const size =
+    typeof sizeRaw === 'number' && Number.isFinite(sizeRaw)
+      ? sizeRaw
+      : Math.ceil((base64.replace(/\s+/g, '').length * 3) / 4);
+  return { filename, contentType, size, base64: base64.replace(/\s+/g, '') };
 }
 
 export function parseDeleteResult(payload: unknown): boolean {

@@ -10,7 +10,14 @@ import { isStudioEditorPath, resolveStudioEditorMount } from '@/lib/studioEditor
 import { StudioShell } from '@/components/layout/studio-shell';
 import { Button } from '@/components/ui/button';
 
-const ADMIN_ROUTES = ['/studio/users', '/studio/activity', '/studio/bug-hunter'];
+const ADMIN_ROUTES = [
+  '/studio/users',
+  '/studio/accounts',
+  '/studio/admins',
+  '/studio/tempmail/admin',
+  '/studio/activity',
+  '/studio/bug-hunter',
+];
 
 /** Route prefix -> tool scope. Users without the scope are redirected. */
 const TOOL_ROUTES: { prefix: string; scope: ToolScope }[] = [

@@ -3,11 +3,13 @@ export type TempmailErrorCode =
   | 'unauthorized'
   | 'forbidden'
   | 'rate_limited'
+  | 'quota'
   | 'timeout'
   | 'invalid_response'
   | 'provider_error'
   | 'validation'
-  | 'not_found';
+  | 'not_found'
+  | 'disabled';
 
 export interface TempmailErrorShape {
   ok: false;
@@ -32,10 +34,43 @@ export interface TempmailMessageSummary {
   preview: string;
 }
 
+export interface TempmailAttachment {
+  id: string;
+  name: string;
+  size: number | null;
+  contentType: string | null;
+}
+
 export interface TempmailMessageDetail extends TempmailMessageSummary {
   to: string;
   text: string;
   html: string;
+  attachments: TempmailAttachment[];
+}
+
+export interface TempmailSourceResult {
+  ok: true;
+  email: string;
+  id: string;
+  source: string;
+}
+
+export interface TempmailAttachmentsResult {
+  ok: true;
+  email: string;
+  id: string;
+  attachments: TempmailAttachment[];
+}
+
+export interface TempmailAttachmentFileResult {
+  ok: true;
+  email: string;
+  id: string;
+  attachmentId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  base64: string;
 }
 
 export interface TempmailListResult {

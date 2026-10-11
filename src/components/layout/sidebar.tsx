@@ -21,6 +21,7 @@ import {
   Settings,
   Shapes,
   ShieldCheck,
+  UserCog,
   Users,
   Youtube,
   Inbox,
@@ -62,8 +63,11 @@ const NAV: NavItem[] = [
   { href: '/studio/projects', label: 'Projects', icon: FolderKanban, scope: 'projects', section: 'Studio' },
   { href: '/studio/settings', label: 'Settings', icon: Settings, scope: 'settings', section: 'Studio' },
   { href: '/studio/assets', label: 'Assets', icon: Package, scope: 'assets', section: 'Workspace' },
-  { href: '/studio/users', label: 'Users', icon: Users, admin: true },
-  { href: '/studio/activity', label: 'Activity Logs', icon: Activity, admin: true },
+  { href: '/studio/tempmail/admin', label: 'Temp Mail Admin', icon: Inbox, admin: true, section: 'Admin' },
+  { href: '/studio/admins', label: 'Admins', icon: ShieldCheck, admin: true, section: 'Admin' },
+  { href: '/studio/accounts', label: 'Users', icon: Users, admin: true, section: 'Admin' },
+  { href: '/studio/users', label: 'User Management', icon: UserCog, admin: true, section: 'Admin' },
+  { href: '/studio/activity', label: 'Activity Logs', icon: Activity, admin: true, section: 'Admin' },
   { href: '/studio/bug-hunter', label: 'Bug Hunter', icon: Bug, admin: true, section: 'ADMIN TOOLS' },
 ];
 
@@ -107,8 +111,10 @@ export function Sidebar() {
                   const locked = itemLocked(item, profile);
                   const isActive =
                     !locked &&
-                    (pathname === item.href ||
-                      (item.href !== '/studio' && pathname.startsWith(item.href)));
+                    (item.href === '/studio/tempmail'
+                      ? pathname === '/studio/tempmail'
+                      : pathname === item.href ||
+                        (item.href !== '/studio' && pathname.startsWith(item.href)));
                   const className = cn(
                     'group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-150',
                     locked

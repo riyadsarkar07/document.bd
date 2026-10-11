@@ -19,6 +19,10 @@ export function isValidMailId(value: string): boolean {
   return MAIL_ID_RE.test(value.trim());
 }
 
+export function isValidAttachmentId(value: string): boolean {
+  return MAIL_ID_RE.test(value.trim());
+}
+
 export function generateLocalPart(): string {
   const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = randomBytes(10);

@@ -8,6 +8,7 @@ import {
   requireEmail,
   requireInboxToken,
 } from '@/lib/tempmail/auth';
+import { hashInboxEmail, recordTempmailOp } from '@/lib/tempmail/ops';
 import { requireTempmailClient } from '@/lib/tempmail/provider';
 
 export const runtime = 'nodejs';
@@ -40,8 +41,20 @@ export async function GET(req: Request): Promise<NextResponse> {
   try {
     const client = requireTempmailClient();
     const messages = await client.listMessages(access.email);
+    recordTempmailOp({
+      kind: 'inbox.list',
+      ok: true,
+      actorId: auth.caller.userId,
+      inboxHash: hashInboxEmail(access.email),
+    });
     return json({ ok: true, email: access.email, messages });
   } catch (err) {
+    recordTempmailOp({
+      kind: 'inbox.list',
+      ok: false,
+      actorId: auth.caller.userId,
+      inboxHash: hashInboxEmail(email),
+    });
     return providerErrorResponse(err);
   }
 }

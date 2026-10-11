@@ -33,6 +33,7 @@ import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { useToast } from '@/lib/toast/toast-provider';
 import { cn, escapePostgrestSearch, timeAgo } from '@/lib/utils';
 import { TOOL_SCOPES, TOOL_SCOPE_LABEL, type ToolScope } from '@/lib/workspace/access';
+import { evaluateAccountMutation } from '@/lib/auth/roles';
 
 interface UserUsage {
   projects: number;
@@ -160,6 +161,20 @@ export default function UsersPage() {
   }, [refresh]);
 
   const setStatus = async (target: AdminUserRow, status: UserStatus) => {
+    const activeAdmins = users.filter((u) => u.role === 'admin' && u.status !== 'disabled').length;
+    const guarded = evaluateAccountMutation({
+      actorId: currentUser?.id ?? '',
+      actorRole: role ?? 'viewer',
+      targetId: target.id,
+      targetRole: target.role,
+      targetStatus: target.status ?? 'active',
+      nextStatus: status,
+      activeAdminCount: activeAdmins,
+    });
+    if (!guarded.ok) {
+      toast.error(guarded.error);
+      return;
+    }
     const { error: err } = await supabaseData.from('profiles').update({ status }).eq('id', target.id);
     if (err) {
       toast.error(`Update blocked: ${err.message}`);
@@ -182,6 +197,20 @@ export default function UsersPage() {
   const changeRole = async (target: AdminUserRow, newRole: Role) => {
     if (target.id === currentUser?.id) {
       toast.error('You cannot change your own role');
+      return;
+    }
+    const activeAdmins = users.filter((u) => u.role === 'admin' && u.status !== 'disabled').length;
+    const guarded = evaluateAccountMutation({
+      actorId: currentUser?.id ?? '',
+      actorRole: role ?? 'viewer',
+      targetId: target.id,
+      targetRole: target.role,
+      targetStatus: target.status ?? 'active',
+      nextRole: newRole,
+      activeAdminCount: activeAdmins,
+    });
+    if (!guarded.ok) {
+      toast.error(guarded.error);
       return;
     }
     const { error: err } = await supabaseData.from('profiles').update({ role: newRole }).eq('id', target.id);

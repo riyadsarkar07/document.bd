@@ -1,17 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   AlertCircle,
   Check,
   Copy,
+  FileText,
   Inbox,
   Loader2,
   Mail,
+  Paperclip,
   RefreshCw,
   RotateCcw,
   Trash2,
 } from 'lucide-react';
+import { useAuth } from '@/lib/auth/auth-context';
+import { canManageUsers } from '@/lib/auth/types';
 import { Card, PageHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,8 +26,12 @@ import { cn, timeAgo } from '@/lib/utils';
 import {
   apiCreateInbox,
   apiDeleteMessage,
+  apiGetAttachment,
+  apiListAttachments,
   apiListMessages,
   apiReadMessage,
+  apiSourceMessage,
+  type TempmailAttachment,
   type TempmailClientError,
   type TempmailInbox,
   type TempmailMessageDetail,
@@ -78,6 +87,7 @@ function messageBody(detail: TempmailMessageDetail | null): string {
 
 export default function CyberTempmailPage() {
   const toast = useToast();
+  const { role } = useAuth();
   const [inbox, setInbox] = useState<TempmailInbox | null>(null);
   const [messages, setMessages] = useState<TempmailMessageSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -88,6 +98,10 @@ export default function CyberTempmailPage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [source, setSource] = useState<string | null>(null);
+  const [sourceState, setSourceState] = useState<LoadState>('idle');
+  const [attachments, setAttachments] = useState<TempmailAttachment[]>([]);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const hydrated = useRef(false);
 
   const selected = useMemo(
@@ -118,6 +132,8 @@ export default function CyberTempmailPage() {
     setError(null);
     setSelectedId(null);
     setDetail(null);
+    setSource(null);
+    setAttachments([]);
     const res = await apiCreateInbox();
     if (isClientError(res)) {
       setCreateState('error');
@@ -162,6 +178,9 @@ export default function CyberTempmailPage() {
       if (!inbox) return;
       setSelectedId(id);
       setDetailState('loading');
+      setSource(null);
+      setSourceState('idle');
+      setAttachments([]);
       const res = await apiReadMessage(inbox.email, inbox.inboxToken, id);
       if (isClientError(res)) {
         setDetailState('error');
@@ -171,7 +190,10 @@ export default function CyberTempmailPage() {
         return;
       }
       setDetail(res.message);
+      setAttachments(res.message.attachments ?? []);
       setDetailState('ok');
+      const listed = await apiListAttachments(inbox.email, inbox.inboxToken, id);
+      if (!isClientError(listed)) setAttachments(listed.attachments);
     },
     [inbox, toast],
   );
@@ -188,9 +210,50 @@ export default function CyberTempmailPage() {
     setMessages((prev) => prev.filter((m) => m.id !== selectedId));
     setSelectedId(null);
     setDetail(null);
+    setSource(null);
+    setAttachments([]);
     setDetailState('idle');
     toast.success('Message deleted');
   }, [inbox, selectedId, toast]);
+
+  const loadSource = useCallback(async () => {
+    if (!inbox || !selectedId) return;
+    setSourceState('loading');
+    const res = await apiSourceMessage(inbox.email, inbox.inboxToken, selectedId);
+    if (isClientError(res)) {
+      setSourceState('error');
+      toast.error(res.error);
+      return;
+    }
+    setSource(res.source);
+    setSourceState('ok');
+  }, [inbox, selectedId, toast]);
+
+  const downloadAttachment = useCallback(
+    async (attachment: TempmailAttachment) => {
+      if (!inbox || !selectedId) return;
+      setDownloadingId(attachment.id);
+      const res = await apiGetAttachment(inbox.email, inbox.inboxToken, selectedId, attachment.id);
+      setDownloadingId(null);
+      if (isClientError(res)) {
+        toast.error(res.error);
+        return;
+      }
+      try {
+        const binary = Uint8Array.from(atob(res.base64), (c) => c.charCodeAt(0));
+        const blob = new Blob([binary], { type: res.contentType || 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = res.filename || attachment.name || 'attachment';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch {
+        toast.error('Could not download this attachment.');
+      }
+    },
+    [inbox, selectedId, toast],
+  );
 
   return (
     <div>
@@ -218,6 +281,11 @@ export default function CyberTempmailPage() {
             >
               New address
             </Button>
+            {canManageUsers(role) && (
+              <Link href="/studio/tempmail/admin">
+                <Button variant="outline">Temp Mail Admin</Button>
+              </Link>
+            )}
           </div>
         }
       />
@@ -418,6 +486,51 @@ export default function CyberTempmailPage() {
                   {messageBody(detail)}
                 </pre>
               </div>
+              {attachments.length > 0 && (
+                <div className="rounded-2xl border border-line bg-surface-raised p-4">
+                  <div className="mb-3 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-dimm">
+                    <Paperclip className="h-3.5 w-3.5" />
+                    Attachments
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {attachments.map((file) => (
+                      <div key={file.id} className="flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] text-primary">{file.name}</div>
+                          <div className="font-mono text-[10px] text-dimm">
+                            {file.contentType || 'file'}
+                            {file.size != null ? ` · ${file.size} bytes` : ''}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          loading={downloadingId === file.id}
+                          onClick={() => void downloadAttachment(file)}
+                        >
+                          Download
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  icon={<FileText className="h-3.5 w-3.5" />}
+                  loading={sourceState === 'loading'}
+                  onClick={() => void loadSource()}
+                >
+                  View source
+                </Button>
+              </div>
+              {sourceState === 'ok' && source != null && (
+                <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-line bg-canvas p-4 font-mono text-[11px] text-muted">
+                  {source}
+                </pre>
+              )}
             </div>
           )}
         </Card>

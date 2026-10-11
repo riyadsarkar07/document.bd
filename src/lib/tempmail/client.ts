@@ -2,6 +2,9 @@
 
 import { ensureFreshAccessToken } from '@/lib/supabase/client';
 import type {
+  TempmailAttachment,
+  TempmailAttachmentFileResult,
+  TempmailAttachmentsResult,
   TempmailCreateResult,
   TempmailDeleteResult,
   TempmailErrorCode,
@@ -10,9 +13,10 @@ import type {
   TempmailMessageDetail,
   TempmailMessageSummary,
   TempmailReadResult,
+  TempmailSourceResult,
 } from '@/lib/tempmail/types';
 
-export type { TempmailInbox, TempmailMessageDetail, TempmailMessageSummary };
+export type { TempmailAttachment, TempmailInbox, TempmailMessageDetail, TempmailMessageSummary };
 
 export interface TempmailClientError {
   ok: false;
@@ -112,4 +116,44 @@ export async function apiDeleteMessage(
     body: JSON.stringify({ email, inboxToken, id }),
   });
   return parseResult<TempmailDeleteResult>(res);
+}
+
+export async function apiSourceMessage(
+  email: string,
+  inboxToken: string,
+  id: string,
+): Promise<TempmailSourceResult | TempmailClientError> {
+  const params = new URLSearchParams({ email, inboxToken, id });
+  const res = await authedFetch(
+    `/api/tempmail/messages/${encodeURIComponent(id)}/source?${params.toString()}`,
+    { method: 'GET' },
+  );
+  return parseResult<TempmailSourceResult>(res);
+}
+
+export async function apiListAttachments(
+  email: string,
+  inboxToken: string,
+  id: string,
+): Promise<TempmailAttachmentsResult | TempmailClientError> {
+  const params = new URLSearchParams({ email, inboxToken, id });
+  const res = await authedFetch(
+    `/api/tempmail/messages/${encodeURIComponent(id)}/attachments?${params.toString()}`,
+    { method: 'GET' },
+  );
+  return parseResult<TempmailAttachmentsResult>(res);
+}
+
+export async function apiGetAttachment(
+  email: string,
+  inboxToken: string,
+  id: string,
+  attachmentId: string,
+): Promise<TempmailAttachmentFileResult | TempmailClientError> {
+  const params = new URLSearchParams({ email, inboxToken, id, attachmentId });
+  const res = await authedFetch(
+    `/api/tempmail/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}?${params.toString()}`,
+    { method: 'GET' },
+  );
+  return parseResult<TempmailAttachmentFileResult>(res);
 }

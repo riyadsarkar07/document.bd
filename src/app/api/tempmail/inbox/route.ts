@@ -7,6 +7,7 @@ import {
   providerErrorResponse,
 } from '@/lib/tempmail/auth';
 import { getTempmailConfig } from '@/lib/tempmail/config';
+import { hashInboxEmail, recordTempmailOp } from '@/lib/tempmail/ops';
 import { requireTempmailClient } from '@/lib/tempmail/provider';
 
 export const runtime = 'nodejs';
@@ -33,8 +34,25 @@ export async function POST(req: Request): Promise<NextResponse> {
     const client = requireTempmailClient();
     const created = await client.createInbox();
     const inbox = issueInbox(auth.caller, created.email, created.domain);
+    recordTempmailOp({
+      kind: 'inbox.create',
+      ok: true,
+      actorId: auth.caller.userId,
+      inboxHash: hashInboxEmail(created.email),
+    });
+    await auth.caller.sb.from('activity_logs').insert({
+      user_id: auth.caller.userId,
+      email: auth.caller.email,
+      action: 'tempmail.inbox.create',
+      detail: `domain:${created.domain}`,
+    });
     return json({ ok: true, inbox });
   } catch (err) {
+    recordTempmailOp({
+      kind: 'inbox.create',
+      ok: false,
+      actorId: auth.caller.userId,
+    });
     return providerErrorResponse(err);
   }
 }

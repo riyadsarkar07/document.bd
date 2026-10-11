@@ -19,6 +19,7 @@ export interface TempmailCaller {
   userId: string;
   email: string;
   role: string;
+  sb: ReturnType<typeof authed>;
 }
 
 function authed(token: string) {
@@ -161,8 +162,28 @@ export async function authorizeTempmail(
       userId: user.id,
       email: (typeof profile?.email === 'string' && profile.email) || user.email || '',
       role: (profile?.role as string) || 'viewer',
+      sb,
     },
   };
+}
+
+export async function authorizeTempmailAdmin(
+  req: Request,
+): Promise<{ ok: true; caller: TempmailCaller } | { ok: false; response: NextResponse }> {
+  const auth = await authorizeTempmail(req);
+  if (!auth.ok) return auth;
+  if (auth.caller.role !== 'admin') {
+    return {
+      ok: false,
+      response: errorJson({
+        ok: false,
+        error: 'Admin access required.',
+        code: 'forbidden',
+        status: 403,
+      }),
+    };
+  }
+  return auth;
 }
 
 export function issueInbox(caller: TempmailCaller, email: string, domain: string): TempmailInbox {
@@ -242,4 +263,10 @@ export function requireInboxToken(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const token = value.trim();
   return token.length >= 16 && token.length <= 1024 ? token : null;
+}
+
+export function requireAttachmentId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const id = value.trim();
+  return isValidMailId(id) ? id : null;
 }

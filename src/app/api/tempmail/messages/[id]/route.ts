@@ -10,6 +10,8 @@ import {
   requireInboxToken,
   requireMailId,
 } from '@/lib/tempmail/auth';
+import { hashInboxEmail, recordTempmailOp } from '@/lib/tempmail/ops';
+import { assertMessageOwnership } from '@/lib/tempmail/ownership';
 import { requireTempmailClient } from '@/lib/tempmail/provider';
 
 export const runtime = 'nodejs';
@@ -41,8 +43,35 @@ export async function GET(req: Request, ctx: RouteContext): Promise<NextResponse
   try {
     const client = requireTempmailClient();
     const message = await client.readMessage(id);
+    if (!assertMessageOwnership(message, access.email)) {
+      recordTempmailOp({
+        kind: 'message.read',
+        ok: false,
+        code: 'forbidden',
+        status: 403,
+        actorId: auth.caller.userId,
+        inboxHash: hashInboxEmail(access.email),
+      });
+      return errorJson({
+        ok: false,
+        error: 'This message does not belong to your inbox.',
+        code: 'forbidden',
+        status: 403,
+      });
+    }
+    recordTempmailOp({
+      kind: 'message.read',
+      ok: true,
+      actorId: auth.caller.userId,
+      inboxHash: hashInboxEmail(access.email),
+    });
     return json({ ok: true, email: access.email, message });
   } catch (err) {
+    recordTempmailOp({
+      kind: 'message.read',
+      ok: false,
+      actorId: auth.caller.userId,
+    });
     return providerErrorResponse(err);
   }
 }
@@ -76,9 +105,37 @@ export async function DELETE(req: Request, ctx: RouteContext): Promise<NextRespo
 
   try {
     const client = requireTempmailClient();
+    const message = await client.readMessage(id);
+    if (!assertMessageOwnership(message, access.email)) {
+      recordTempmailOp({
+        kind: 'message.delete',
+        ok: false,
+        code: 'forbidden',
+        status: 403,
+        actorId: auth.caller.userId,
+        inboxHash: hashInboxEmail(access.email),
+      });
+      return errorJson({
+        ok: false,
+        error: 'This message does not belong to your inbox.',
+        code: 'forbidden',
+        status: 403,
+      });
+    }
     await client.deleteMessage(id);
+    recordTempmailOp({
+      kind: 'message.delete',
+      ok: true,
+      actorId: auth.caller.userId,
+      inboxHash: hashInboxEmail(access.email),
+    });
     return json({ ok: true, deleted: true });
   } catch (err) {
+    recordTempmailOp({
+      kind: 'message.delete',
+      ok: false,
+      actorId: auth.caller.userId,
+    });
     return providerErrorResponse(err);
   }
 }
