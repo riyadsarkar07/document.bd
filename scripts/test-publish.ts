@@ -226,6 +226,9 @@ function main() {
   assert(hasToolAccess({ role: 'viewer', allowed_tools: ['driving-license'] }, 'driving-license') === true, 'Driving License granted');
   assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tin'] }, 'driving-license') === false, 'TIN does not grant Driving License');
   assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'driving-license') === true, 'null allowlist grants Driving License');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tempmail'] }, 'tempmail') === true, 'CYBER TEMPMAIL granted');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: ['tm'] }, 'tempmail') === false, 'TM Certificate does not grant CYBER TEMPMAIL');
+  assert(hasToolAccess({ role: 'viewer', allowed_tools: null }, 'tempmail') === true, 'null allowlist grants CYBER TEMPMAIL');
 
   console.log('\n[7] user self-publish eligibility (mirrors profiles.can_self_publish)\n');
   assert(canSelfPublish({ role: 'viewer', can_self_publish: true }) === true, 'purchased viewer can self-publish');

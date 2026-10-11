@@ -30,6 +30,7 @@ const TOOL_ROUTES: { prefix: string; scope: ToolScope }[] = [
   { prefix: '/studio/history', scope: 'history' },
   { prefix: '/studio/assets', scope: 'assets' },
   { prefix: '/studio/settings', scope: 'settings' },
+  { prefix: '/studio/tempmail', scope: 'tempmail' },
 ];
 
 export default function StudioLayout({ children }: { children: React.ReactNode }) {

@@ -28,6 +28,7 @@ export const TOOL_SCOPES = [
   'history',
   'assets',
   'settings',
+  'tempmail',
 ] as const;
 
 export type ToolScope = (typeof TOOL_SCOPES)[number];
@@ -48,6 +49,7 @@ export const TOOL_SCOPE_LABEL: Record<ToolScope, string> = {
   history: 'History',
   assets: 'Assets',
   settings: 'Settings',
+  tempmail: 'CYBER TEMPMAIL',
 };
 
 export interface ToolAccessProfile {

@@ -9,6 +9,7 @@ import {
   FilePen,
   FileText,
   History,
+  Inbox,
   Landmark,
   LifeBuoy,
   Lock,
@@ -381,6 +382,15 @@ export default function DashboardPage() {
               tone: 'from-violet-500 to-purple-600 text-white',
               meta: `${stats.records} archived`,
               scope: 'history',
+            },
+            {
+              href: '/studio/tempmail',
+              title: 'CYBER TEMPMAIL',
+              desc: 'Generate a disposable inbox, copy the address, and read incoming mail.',
+              icon: Inbox,
+              tone: 'from-emerald-500 to-cyan-600 text-white',
+              meta: 'RapidAPI',
+              scope: 'tempmail',
             },
             {
               href: '/studio/support',
