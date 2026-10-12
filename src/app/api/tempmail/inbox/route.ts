@@ -12,6 +12,8 @@ import { requireTempmailClient } from '@/lib/tempmail/provider';
 
 export const runtime = 'nodejs';
 
+const creatingUsers = new Set<string>();
+
 export async function GET() {
   return json({ ok: false, error: 'Method not allowed.', code: 'validation' }, 405, { Allow: 'POST' });
 }
@@ -30,6 +32,16 @@ export async function POST(req: Request): Promise<NextResponse> {
     });
   }
 
+  if (creatingUsers.has(auth.caller.userId)) {
+    return errorJson({
+      ok: false,
+      error: 'Address generation is already in progress.',
+      code: 'rate_limited',
+      status: 429,
+    });
+  }
+
+  creatingUsers.add(auth.caller.userId);
   try {
     const client = requireTempmailClient();
     const created = await client.createInbox();
@@ -54,5 +66,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       actorId: auth.caller.userId,
     });
     return providerErrorResponse(err);
+  } finally {
+    creatingUsers.delete(auth.caller.userId);
   }
 }

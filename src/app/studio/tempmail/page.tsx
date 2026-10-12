@@ -37,6 +37,7 @@ import {
   type TempmailMessageDetail,
   type TempmailMessageSummary,
 } from '@/lib/tempmail/client';
+import { TEMPMAIL_NO_INBOX_COPY } from '@/lib/tempmail/lifecycle';
 
 const STORAGE_KEY = 'studio.tempmail.inbox';
 
@@ -103,6 +104,7 @@ export default function CyberTempmailPage() {
   const [attachments, setAttachments] = useState<TempmailAttachment[]>([]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const hydrated = useRef(false);
+  const generatingRef = useRef(false);
 
   const selected = useMemo(
     () => messages.find((m) => m.id === selectedId) ?? null,
@@ -128,38 +130,41 @@ export default function CyberTempmailPage() {
   );
 
   const generateInbox = useCallback(async () => {
+    if (generatingRef.current) return;
+    generatingRef.current = true;
     setCreateState('loading');
     setError(null);
     setSelectedId(null);
     setDetail(null);
     setSource(null);
     setAttachments([]);
-    const res = await apiCreateInbox();
-    if (isClientError(res)) {
-      setCreateState('error');
-      setError(res.error);
-      toast.error(res.error);
-      return;
+    try {
+      const res = await apiCreateInbox();
+      if (isClientError(res)) {
+        setCreateState('error');
+        setError(res.error);
+        toast.error(res.error);
+        return;
+      }
+      setInbox(res.inbox);
+      persistInbox(res.inbox);
+      setMessages([]);
+      setCreateState('ok');
+      await refreshInbox(res.inbox);
+    } finally {
+      generatingRef.current = false;
     }
-    setInbox(res.inbox);
-    persistInbox(res.inbox);
-    setMessages([]);
-    setCreateState('ok');
-    await refreshInbox(res.inbox);
   }, [refreshInbox, toast]);
 
   useEffect(() => {
     if (hydrated.current) return;
     hydrated.current = true;
     const stored = readStoredInbox();
-    if (stored) {
-      setInbox(stored);
-      setCreateState('ok');
-      void refreshInbox(stored);
-      return;
-    }
-    void generateInbox();
-  }, [generateInbox, refreshInbox]);
+    if (!stored) return;
+    setInbox(stored);
+    setCreateState('ok');
+    void refreshInbox(stored);
+  }, [refreshInbox]);
 
   const copyAddress = useCallback(async () => {
     if (!inbox?.email) return;
@@ -268,7 +273,7 @@ export default function CyberTempmailPage() {
               variant="secondary"
               icon={<RefreshCw className="h-4 w-4" />}
               loading={inboxState === 'loading'}
-              disabled={!inbox}
+              disabled={!inbox || inboxState === 'loading'}
               onClick={() => inbox && void refreshInbox(inbox)}
             >
               Refresh inbox
@@ -277,6 +282,7 @@ export default function CyberTempmailPage() {
               variant="cyber"
               icon={<RotateCcw className="h-4 w-4" />}
               loading={createState === 'loading'}
+              disabled={createState === 'loading'}
               onClick={() => void generateInbox()}
             >
               New address
@@ -299,7 +305,13 @@ export default function CyberTempmailPage() {
           <Button
             size="sm"
             variant="danger"
-            onClick={() => (inbox ? void refreshInbox(inbox) : void generateInbox())}
+            onClick={() => {
+              if (inbox) {
+                void refreshInbox(inbox);
+                return;
+              }
+              toast.info(TEMPMAIL_NO_INBOX_COPY);
+            }}
           >
             Retry
           </Button>
@@ -354,10 +366,10 @@ export default function CyberTempmailPage() {
               <EmptyState
                 icon={<Mail className="h-7 w-7" />}
                 title="No inbox yet"
-                description="Generate a temporary address to start receiving mail."
+                description={TEMPMAIL_NO_INBOX_COPY}
                 action={
                   <Button variant="primary" onClick={() => void generateInbox()}>
-                    Generate address
+                    New address
                   </Button>
                 }
               />
@@ -369,7 +381,14 @@ export default function CyberTempmailPage() {
             subtitle={inboxState === 'loading' ? 'Checking provider…' : `${messages.length} message${messages.length === 1 ? '' : 's'}`}
             flush
           >
-            {inboxState === 'loading' && messages.length === 0 ? (
+            {!inbox ? (
+              <EmptyState
+                className="m-5"
+                icon={<Inbox className="h-7 w-7" />}
+                title="No inbox yet"
+                description={TEMPMAIL_NO_INBOX_COPY}
+              />
+            ) : inboxState === 'loading' && messages.length === 0 ? (
               <div className="flex items-center justify-center gap-2 px-5 py-16 text-sm text-muted">
                 <Loader2 className="h-4 w-4 animate-spin text-accent" />
                 Refreshing inbox…
@@ -381,11 +400,9 @@ export default function CyberTempmailPage() {
                 title="Inbox is empty"
                 description="Waiting for incoming mail. Send a message to the address, then refresh."
                 action={
-                  inbox ? (
-                    <Button variant="secondary" onClick={() => void refreshInbox(inbox)}>
-                      Refresh
-                    </Button>
-                  ) : undefined
+                  <Button variant="secondary" onClick={() => void refreshInbox(inbox)}>
+                    Refresh
+                  </Button>
                 }
               />
             ) : (

@@ -25,6 +25,8 @@ import { messageBelongsToInbox } from '../src/lib/tempmail/ownership';
 import { evaluateAccountMutation } from '../src/lib/auth/roles';
 import type { FetchLike } from '../src/lib/tempmail/types';
 import { hasToolAccess } from '../src/lib/workspace/access';
+import { shouldGenerateTempmailAddress, TEMPMAIL_NO_INBOX_COPY } from '../src/lib/tempmail/lifecycle';
+import { getTempmailConfig } from '../src/lib/tempmail/config';
 
 const ROOT = process.cwd();
 let failures = 0;
@@ -353,12 +355,73 @@ async function run() {
   assert(accountsRoute.includes('authorizeTempmailAdmin'), 'account list is server-protected');
   assert(accountPatch.includes('evaluateAccountMutation'), 'account updates enforce last-admin protection');
 
+  console.log('\n[9] never auto-generate addresses on load / refresh\n');
+  assert(shouldGenerateTempmailAddress('page_load') === false, 'page load does not generate an address');
+  assert(shouldGenerateTempmailAddress('page_refresh') === false, 'page refresh does not generate an address');
+  assert(shouldGenerateTempmailAddress('sign_in') === false, 'sign-in does not generate an address');
+  assert(shouldGenerateTempmailAddress('navigation') === false, 'navigation does not generate an address');
+  assert(shouldGenerateTempmailAddress('tab_return') === false, 'tab return does not generate an address');
+  assert(shouldGenerateTempmailAddress('poll') === false, 'polling does not generate an address');
+  assert(shouldGenerateTempmailAddress('health_check') === false, 'health check does not generate an address');
+  assert(shouldGenerateTempmailAddress('domain_load') === false, 'domain loading does not generate an address');
+  assert(shouldGenerateTempmailAddress('admin_init') === false, 'admin dashboard init does not generate an address');
+  assert(shouldGenerateTempmailAddress('inbox_refresh') === false, 'inbox refresh does not generate an address');
+  assert(shouldGenerateTempmailAddress('new_address') === true, 'explicit New address action does generate');
+
+  const hydrateBlock = page.slice(page.indexOf('useEffect(() => {'), page.indexOf('}, [refreshInbox]);'));
+  assert(hydrateBlock.includes('readStoredInbox()'), 'page load restores stored inbox when present');
+  assert(hydrateBlock.includes('if (!stored) return;'), 'page load returns without creating when no address exists');
+  assert(!hydrateBlock.includes('generateInbox'), 'page load effect never calls generateInbox');
+  assert(page.includes('TEMPMAIL_NO_INBOX_COPY'), 'empty state uses TEMPMAIL_NO_INBOX_COPY');
+  assert(
+    TEMPMAIL_NO_INBOX_COPY === 'No inbox yet. Click New address to generate one.',
+    'empty state tells the user to click New address',
+  );
+  assert(page.includes('generatingRef.current'), 'client blocks duplicate New address clicks');
+  assert(page.includes("disabled={createState === 'loading'}"), 'New address button disables while generating');
+  const generateInvocations = page.match(/generateInbox\(\)/g) ?? [];
+  const clickGenerations = page.match(/onClick=\{\(\) => void generateInbox\(\)\}/g) ?? [];
+  assert(generateInvocations.length === clickGenerations.length, 'generateInbox() is only invoked from click handlers');
+  assert(clickGenerations.length >= 1, 'explicit New address click still generates');
+  assert(page.includes('disabled={!inbox || inboxState === \'loading\'}'), 'Refresh inbox is disabled without an address');
+  assert(!page.includes('inbox ? void refreshInbox(inbox) : void generateInbox()'), 'Retry no longer generates an address');
+  assert(inboxRoute.includes('creatingUsers'), 'inbox POST rejects overlapping generation requests');
+  assert(inboxRoute.includes("export async function GET()"), 'inbox GET exists');
+  assert(inboxRoute.includes("Allow: 'POST'"), 'inbox GET does not create; method is POST-only');
+  assert(!adminStatus.includes('createInbox'), 'admin status health check does not create inboxes');
+  assert(adminStatus.includes('listDomains'), 'admin status only loads domains for connectivity');
+  const schema = readFileSync(join(ROOT, 'supabase/schema.sql'), 'utf8');
+  const migration = readFileSync(join(ROOT, 'supabase/migrations/20261011_prevent_last_admin_loss.sql'), 'utf8');
+  assert(schema.includes('prevent_last_admin_loss'), 'schema includes last-admin trigger');
+  assert(migration.includes('profiles_prevent_last_admin_loss'), 'approved migration file includes last-admin trigger');
+
+  console.log('\n[10] live Privatix RapidAPI probe (domains / subscription only)\n');
+  const liveConfig = getTempmailConfig();
+  if (!liveConfig.configured) {
+    assert(true, 'RAPIDAPI_KEY is not configured in this environment — live endpoints cannot be marked verified');
+    console.log('  SKIP  live RapidAPI (not configured)');
+    console.log('  SKIP  inbox refresh / read / delete / source / attachments (require a user-generated mailbox)');
+  } else {
+    try {
+      const live = createTempmailClient(liveConfig);
+      const domains = await live.listDomains();
+      assert(domains.length > 0, `live GET /request/domains/ returned ${domains.length} domain(s)`);
+      console.log(`  INFO  live domains connected (${domains.length})`);
+      console.log('  SKIP  inbox refresh / read / delete / source / attachments (not auto-generated; need an existing mailbox)');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'live probe failed';
+      assert(false, `live GET /request/domains/ failed: ${message}`);
+    }
+  }
+
   if (failures) {
     console.error(`\n${failures} tempmail check(s) failed.`);
     process.exit(1);
   }
   console.log('\nAll tempmail checks passed.');
-  console.log('Real RapidAPI connection: NOT verified (mocked responses only).\n');
+  if (!liveConfig.configured) {
+    console.log('Real RapidAPI connection: NOT verified (RAPIDAPI_KEY missing in this environment).\n');
+  }
 }
 
 main();
