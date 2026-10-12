@@ -25,6 +25,8 @@ import { useToast } from '@/lib/toast/toast-provider';
 import { cn, timeAgo } from '@/lib/utils';
 import {
   apiCreateInbox,
+  apiPersistInbox,
+  apiRestoreInbox,
   apiDeleteMessage,
   apiGetAttachment,
   apiListAttachments,
@@ -37,9 +39,11 @@ import {
   type TempmailMessageDetail,
   type TempmailMessageSummary,
 } from '@/lib/tempmail/client';
-import { TEMPMAIL_NO_INBOX_COPY } from '@/lib/tempmail/lifecycle';
+import { decideTempmailRestore, TEMPMAIL_NO_INBOX_COPY } from '@/lib/tempmail/lifecycle';
 
-const STORAGE_KEY = 'studio.tempmail.inbox';
+function storageKey(userId: string): string {
+  return `studio.tempmail.inbox.${userId}`;
+}
 
 type LoadState = 'idle' | 'loading' | 'ok' | 'error';
 
@@ -47,19 +51,25 @@ function isClientError(value: { ok: boolean }): value is TempmailClientError {
   return value.ok === false;
 }
 
-function readStoredInbox(): TempmailInbox | null {
-  if (typeof window === 'undefined') return null;
+function readStoredInbox(userId: string): TempmailInbox | null {
+  if (typeof window === 'undefined' || !userId) return null;
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(storageKey(userId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<TempmailInbox>;
+    const parsed = JSON.parse(raw) as Partial<TempmailInbox> & { userId?: unknown };
+    if (parsed.userId !== userId) return null;
     if (
       typeof parsed.email === 'string' &&
       typeof parsed.domain === 'string' &&
       typeof parsed.inboxToken === 'string' &&
       typeof parsed.expiresAt === 'string'
     ) {
-      return parsed as TempmailInbox;
+      return {
+        email: parsed.email,
+        domain: parsed.domain,
+        inboxToken: parsed.inboxToken,
+        expiresAt: parsed.expiresAt,
+      };
     }
   } catch {
     return null;
@@ -67,11 +77,12 @@ function readStoredInbox(): TempmailInbox | null {
   return null;
 }
 
-function persistInbox(inbox: TempmailInbox | null) {
-  if (typeof window === 'undefined') return;
+function persistInbox(userId: string, inbox: TempmailInbox | null) {
+  if (typeof window === 'undefined' || !userId) return;
   try {
-    if (!inbox) window.sessionStorage.removeItem(STORAGE_KEY);
-    else window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(inbox));
+    const key = storageKey(userId);
+    if (!inbox) window.sessionStorage.removeItem(key);
+    else window.sessionStorage.setItem(key, JSON.stringify({ ...inbox, userId }));
   } catch {
     // ignore quota / private mode
   }
@@ -88,12 +99,13 @@ function messageBody(detail: TempmailMessageDetail | null): string {
 
 export default function CyberTempmailPage() {
   const toast = useToast();
-  const { role } = useAuth();
+  const { role, user, loading: authLoading } = useAuth();
   const [inbox, setInbox] = useState<TempmailInbox | null>(null);
   const [messages, setMessages] = useState<TempmailMessageSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TempmailMessageDetail | null>(null);
   const [createState, setCreateState] = useState<LoadState>('idle');
+  const [restoreState, setRestoreState] = useState<LoadState>('loading');
   const [inboxState, setInboxState] = useState<LoadState>('idle');
   const [detailState, setDetailState] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -103,8 +115,8 @@ export default function CyberTempmailPage() {
   const [sourceState, setSourceState] = useState<LoadState>('idle');
   const [attachments, setAttachments] = useState<TempmailAttachment[]>([]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const hydrated = useRef(false);
   const generatingRef = useRef(false);
+  const [restoreTick, setRestoreTick] = useState(0);
 
   const selected = useMemo(
     () => messages.find((m) => m.id === selectedId) ?? null,
@@ -147,24 +159,93 @@ export default function CyberTempmailPage() {
         return;
       }
       setInbox(res.inbox);
-      persistInbox(res.inbox);
+      persistInbox(user?.id ?? '', res.inbox);
       setMessages([]);
       setCreateState('ok');
+      setRestoreState('ok');
       await refreshInbox(res.inbox);
     } finally {
       generatingRef.current = false;
     }
-  }, [refreshInbox, toast]);
+  }, [refreshInbox, toast, user?.id]);
 
   useEffect(() => {
-    if (hydrated.current) return;
-    hydrated.current = true;
-    const stored = readStoredInbox();
-    if (!stored) return;
-    setInbox(stored);
-    setCreateState('ok');
-    void refreshInbox(stored);
-  }, [refreshInbox]);
+    if (authLoading) return;
+    const userId = user?.id ?? '';
+    if (!userId) {
+      setInbox(null);
+      setMessages([]);
+      setRestoreState('idle');
+      return;
+    }
+    let cancelled = false;
+
+    const restore = async () => {
+      setRestoreState('loading');
+      setError(null);
+      const stored = readStoredInbox(userId);
+      if (stored) {
+        setInbox(stored);
+        setCreateState('ok');
+        setRestoreState('ok');
+        void refreshInbox(stored, { silent: true });
+      }
+      const res = await apiRestoreInbox();
+      if (cancelled) return;
+      const restoreFailed = isClientError(res);
+      const serverInbox = restoreFailed ? null : res.inbox;
+      const action = decideTempmailRestore({
+        serverInbox,
+        localInbox: stored,
+        restoreFailed,
+      });
+      if (action === 'use_server' && serverInbox) {
+        setInbox(serverInbox);
+        persistInbox(userId, serverInbox);
+        setCreateState('ok');
+        setRestoreState('ok');
+        await refreshInbox(serverInbox);
+        return;
+      }
+      if (action === 'persist_local' && stored) {
+        const persisted = await apiPersistInbox(stored.email, stored.inboxToken);
+        if (cancelled) return;
+        if (!isClientError(persisted)) {
+          setInbox(persisted.inbox);
+          persistInbox(userId, persisted.inbox);
+          setCreateState('ok');
+          setRestoreState('ok');
+          await refreshInbox(persisted.inbox);
+          return;
+        }
+        setInbox(stored);
+        setCreateState('ok');
+        setRestoreState('ok');
+        return;
+      }
+      if (action === 'keep_local' && stored) {
+        setInbox(stored);
+        setCreateState('ok');
+        setRestoreState('ok');
+        return;
+      }
+      if (restoreFailed) {
+        setRestoreState('error');
+        setError(res.error);
+        return;
+      }
+      setInbox(null);
+      persistInbox(userId, null);
+      setMessages([]);
+      setCreateState('idle');
+      setRestoreState('ok');
+    };
+
+    void restore();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user?.id, refreshInbox, restoreTick]);
 
   const copyAddress = useCallback(async () => {
     if (!inbox?.email) return;
@@ -310,7 +391,7 @@ export default function CyberTempmailPage() {
                 void refreshInbox(inbox);
                 return;
               }
-              toast.info(TEMPMAIL_NO_INBOX_COPY);
+              setRestoreTick((n) => n + 1);
             }}
           >
             Retry
@@ -324,12 +405,20 @@ export default function CyberTempmailPage() {
             title="Temporary address"
             subtitle="Use this inbox for one-time verification mail only."
             action={
-              inbox ? (
+              inboxState === 'error' ? (
+                <Badge tone="red" dot>
+                  Provider offline
+                </Badge>
+              ) : restoreState === 'error' && !inbox ? (
+                <Badge tone="red">Restore failed</Badge>
+              ) : inbox ? (
                 <Badge tone="green" dot>
                   Live
                 </Badge>
+              ) : restoreState === 'loading' || (authLoading && !inbox) ? (
+                <Badge tone="muted">Restoring</Badge>
               ) : (
-                <Badge tone="muted">Offline</Badge>
+                <Badge tone="muted">No inbox</Badge>
               )
             }
           >
@@ -337,6 +426,11 @@ export default function CyberTempmailPage() {
               <div className="flex items-center gap-3 py-8 text-sm text-muted">
                 <Loader2 className="h-4 w-4 animate-spin text-accent" />
                 Generating a disposable address…
+              </div>
+            ) : restoreState === 'loading' && !inbox ? (
+              <div className="flex items-center gap-3 py-8 text-sm text-muted">
+                <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                Restoring your saved inbox…
               </div>
             ) : inbox ? (
               <div className="space-y-4">
@@ -381,12 +475,29 @@ export default function CyberTempmailPage() {
             subtitle={inboxState === 'loading' ? 'Checking provider…' : `${messages.length} message${messages.length === 1 ? '' : 's'}`}
             flush
           >
-            {!inbox ? (
+            {restoreState === 'loading' && !inbox ? (
+              <div className="flex items-center justify-center gap-2 px-5 py-16 text-sm text-muted">
+                <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                Restoring saved inbox…
+              </div>
+            ) : !inbox ? (
               <EmptyState
                 className="m-5"
                 icon={<Inbox className="h-7 w-7" />}
                 title="No inbox yet"
                 description={TEMPMAIL_NO_INBOX_COPY}
+              />
+            ) : inboxState === 'error' ? (
+              <EmptyState
+                className="m-5"
+                icon={<AlertCircle className="h-7 w-7" />}
+                title="Provider offline"
+                description={error || 'The temporary email provider could not be reached. Your saved address was not replaced.'}
+                action={
+                  <Button variant="secondary" onClick={() => void refreshInbox(inbox)}>
+                    Retry refresh
+                  </Button>
+                }
               />
             ) : inboxState === 'loading' && messages.length === 0 ? (
               <div className="flex items-center justify-center gap-2 px-5 py-16 text-sm text-muted">

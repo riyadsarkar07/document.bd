@@ -84,6 +84,11 @@ export interface TempmailCreateResult {
   inbox: TempmailInbox;
 }
 
+export interface TempmailRestoreResult {
+  ok: true;
+  inbox: TempmailInbox | null;
+}
+
 export interface TempmailReadResult {
   ok: true;
   email: string;

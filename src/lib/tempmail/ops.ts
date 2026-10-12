@@ -6,6 +6,8 @@ const MAX_EVENTS = 200;
 
 export type TempmailOpKind =
   | 'inbox.create'
+  | 'inbox.restore'
+  | 'inbox.persist'
   | 'inbox.list'
   | 'message.read'
   | 'message.source'

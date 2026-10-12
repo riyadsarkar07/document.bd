@@ -33,6 +33,7 @@ export function verifyInboxToken(
   secret: string,
   expectedUserId: string,
   now = Date.now(),
+  allowExpired = false,
 ): { ok: true; payload: InboxTokenPayload } | { ok: false; error: string } {
   const trimmed = token.trim();
   const dot = trimmed.lastIndexOf('.');
@@ -58,7 +59,7 @@ export function verifyInboxToken(
   if (parsed.u !== expectedUserId) {
     return { ok: false, error: 'This inbox belongs to another account.' };
   }
-  if (now - parsed.i > INBOX_TOKEN_TTL_MS) {
+  if (now - parsed.i > INBOX_TOKEN_TTL_MS && !allowExpired) {
     return { ok: false, error: 'Inbox session expired. Generate a new address.' };
   }
   return { ok: true, payload: { userId: parsed.u, email: parsed.e, issuedAt: parsed.i } };

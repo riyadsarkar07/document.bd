@@ -6,6 +6,7 @@ import type {
   TempmailAttachmentFileResult,
   TempmailAttachmentsResult,
   TempmailCreateResult,
+  TempmailRestoreResult,
   TempmailDeleteResult,
   TempmailErrorCode,
   TempmailInbox,
@@ -82,6 +83,22 @@ async function parseResult<T extends { ok: true }>(
 
 export async function apiCreateInbox(): Promise<TempmailCreateResult | TempmailClientError> {
   const res = await authedFetch('/api/tempmail/inbox', { method: 'POST' });
+  return parseResult<TempmailCreateResult>(res);
+}
+
+export async function apiRestoreInbox(): Promise<TempmailRestoreResult | TempmailClientError> {
+  const res = await authedFetch('/api/tempmail/inbox', { method: 'GET' });
+  return parseResult<TempmailRestoreResult>(res);
+}
+
+export async function apiPersistInbox(
+  email: string,
+  inboxToken: string,
+): Promise<TempmailCreateResult | TempmailClientError> {
+  const res = await authedFetch('/api/tempmail/inbox', {
+    method: 'PUT',
+    body: JSON.stringify({ email, inboxToken }),
+  });
   return parseResult<TempmailCreateResult>(res);
 }
 

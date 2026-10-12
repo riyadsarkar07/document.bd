@@ -25,7 +25,11 @@ import { messageBelongsToInbox } from '../src/lib/tempmail/ownership';
 import { evaluateAccountMutation } from '../src/lib/auth/roles';
 import type { FetchLike } from '../src/lib/tempmail/types';
 import { hasToolAccess } from '../src/lib/workspace/access';
-import { shouldGenerateTempmailAddress, TEMPMAIL_NO_INBOX_COPY } from '../src/lib/tempmail/lifecycle';
+import {
+  decideTempmailRestore,
+  shouldGenerateTempmailAddress,
+  TEMPMAIL_NO_INBOX_COPY,
+} from '../src/lib/tempmail/lifecycle';
 import { getTempmailConfig } from '../src/lib/tempmail/config';
 
 const ROOT = process.cwd();
@@ -102,6 +106,11 @@ async function run() {
   assert(!forged.ok, 'wrong HMAC secret is rejected');
   const expired = signInboxToken({ userId: 'user-a', email: 'a@temp.test', issuedAt: Date.now() - 48 * 60 * 60 * 1000 }, 'secret');
   assert(!verifyInboxToken(expired, 'secret', 'user-a').ok, 'expired inbox token is rejected');
+  assert(
+    verifyInboxToken(expired, 'secret', 'user-a', Date.now(), true).ok === true,
+    'expired token can still identify the owned address for persist',
+  );
+  assert(!verifyInboxToken(expired, 'secret', 'user-b', Date.now(), true).ok, 'expired token still rejects another account');
 
   console.log('\n[3] provider payload parsing\n');
   assert(
@@ -366,11 +375,13 @@ async function run() {
   assert(shouldGenerateTempmailAddress('domain_load') === false, 'domain loading does not generate an address');
   assert(shouldGenerateTempmailAddress('admin_init') === false, 'admin dashboard init does not generate an address');
   assert(shouldGenerateTempmailAddress('inbox_refresh') === false, 'inbox refresh does not generate an address');
+  assert(shouldGenerateTempmailAddress('inbox_restore') === false, 'inbox restore does not generate an address');
   assert(shouldGenerateTempmailAddress('new_address') === true, 'explicit New address action does generate');
 
-  const hydrateBlock = page.slice(page.indexOf('useEffect(() => {'), page.indexOf('}, [refreshInbox]);'));
-  assert(hydrateBlock.includes('readStoredInbox()'), 'page load restores stored inbox when present');
-  assert(hydrateBlock.includes('if (!stored) return;'), 'page load returns without creating when no address exists');
+  const hydrateBlock = page.slice(page.indexOf('useEffect(() => {'), page.indexOf('}, [authLoading, user?.id, refreshInbox, restoreTick]);'));
+  assert(hydrateBlock.includes('apiRestoreInbox()'), 'page load restores the saved inbox from the server');
+  assert(hydrateBlock.includes('readStoredInbox(userId)'), 'page load can use a device-local cache keyed by user id');
+  assert(hydrateBlock.includes('decideTempmailRestore'), 'page load uses restore decision helper');
   assert(!hydrateBlock.includes('generateInbox'), 'page load effect never calls generateInbox');
   assert(page.includes('TEMPMAIL_NO_INBOX_COPY'), 'empty state uses TEMPMAIL_NO_INBOX_COPY');
   assert(
@@ -385,15 +396,68 @@ async function run() {
   assert(clickGenerations.length >= 1, 'explicit New address click still generates');
   assert(page.includes('disabled={!inbox || inboxState === \'loading\'}'), 'Refresh inbox is disabled without an address');
   assert(!page.includes('inbox ? void refreshInbox(inbox) : void generateInbox()'), 'Retry no longer generates an address');
+  assert(page.includes('Provider offline'), 'provider errors are distinct from a missing inbox');
+  assert(page.includes('Inbox is empty'), 'empty inbox copy is distinct from no inbox');
+  assert(page.includes("studio.tempmail.inbox.${userId}"), 'device cache is isolated by account id');
+  assert(page.includes('parsed.userId !== userId'), 'cached inbox from another account is ignored');
   assert(inboxRoute.includes('creatingUsers'), 'inbox POST rejects overlapping generation requests');
-  assert(inboxRoute.includes("export async function GET()"), 'inbox GET exists');
-  assert(inboxRoute.includes("Allow: 'POST'"), 'inbox GET does not create; method is POST-only');
+  assert(inboxRoute.includes('export async function GET'), 'inbox GET exists');
+  assert(inboxRoute.includes('loadSavedInbox'), 'inbox GET restores the saved association');
+  const getFn = inboxRoute.slice(
+    inboxRoute.indexOf('export async function GET'),
+    inboxRoute.indexOf('export async function POST'),
+  );
+  const putFn = inboxRoute.slice(inboxRoute.indexOf('export async function PUT'));
+  assert(getFn.includes('loadSavedInbox') && !getFn.includes('createInbox'), 'inbox GET does not create a new address');
+  assert(getFn.includes('inbox: null'), 'inbox GET returns null when this account has no saved address');
+  assert(inboxRoute.includes('export async function POST'), 'inbox POST still creates on New address');
+  assert(inboxRoute.includes('export async function PUT'), 'inbox PUT persists an existing owned address');
+  assert(putFn.includes('saveInboxAssociation') && !putFn.includes('createInbox'), 'inbox PUT does not generate a new address');
+  assert(inboxRoute.includes('saveInboxAssociation'), 'create and persist write the per-user association');
+  const persistSrc = readFileSync(join(ROOT, 'src/lib/tempmail/persist.ts'), 'utf8');
+  assert(persistSrc.includes(".eq('user_id', caller.userId)"), 'restore query is locked to the caller user id');
+  assert(persistSrc.includes("onConflict: 'user_id'"), 'upsert is keyed to the account id');
   assert(!adminStatus.includes('createInbox'), 'admin status health check does not create inboxes');
   assert(adminStatus.includes('listDomains'), 'admin status only loads domains for connectivity');
   const schema = readFileSync(join(ROOT, 'supabase/schema.sql'), 'utf8');
   const migration = readFileSync(join(ROOT, 'supabase/migrations/20261011_prevent_last_admin_loss.sql'), 'utf8');
+  const inboxMigration = readFileSync(
+    join(ROOT, 'supabase/migrations/20261012_tempmail_user_inboxes.sql'),
+    'utf8',
+  );
   assert(schema.includes('prevent_last_admin_loss'), 'schema includes last-admin trigger');
   assert(migration.includes('profiles_prevent_last_admin_loss'), 'approved migration file includes last-admin trigger');
+  assert(schema.includes('create table if not exists public.tempmail_inboxes'), 'schema includes per-user inbox table');
+  assert(inboxMigration.includes('create table if not exists public.tempmail_inboxes'), 'approved inbox migration exists');
+  assert(schema.includes('user_id uuid primary key'), 'inbox table is one row per auth user');
+  assert(schema.includes('tempmail_inboxes_select_own'), 'inbox select is RLS-scoped to the owner');
+  assert(schema.includes("user_id = auth.uid()"), 'inbox RLS matches auth.uid()');
+  assert(schema.includes("has_tool_access(auth.uid(), 'tempmail')"), 'inbox RLS requires tempmail tool access');
+  assert(!schema.includes('tempmail_inboxes_admin'), 'other users including admins cannot read another inbox row');
+  assert(
+    decideTempmailRestore({ serverInbox: { email: 'a@temp.test' }, localInbox: null, restoreFailed: false }) ===
+      'use_server',
+    'server association wins restore',
+  );
+  assert(
+    decideTempmailRestore({ serverInbox: null, localInbox: { email: 'a@temp.test' }, restoreFailed: false }) ===
+      'persist_local',
+    'local owned inbox is persisted instead of generating',
+  );
+  assert(
+    decideTempmailRestore({ serverInbox: null, localInbox: { email: 'a@temp.test' }, restoreFailed: true }) ===
+      'keep_local',
+    'restore errors keep the local inbox instead of generating',
+  );
+  assert(
+    decideTempmailRestore({ serverInbox: null, localInbox: null, restoreFailed: false }) === 'empty',
+    'missing saved inbox is empty, not a new address',
+  );
+  const clientSrc = readFileSync(join(ROOT, 'src/lib/tempmail/client.ts'), 'utf8');
+  assert(clientSrc.includes('apiRestoreInbox'), 'client has restore helper');
+  assert(clientSrc.includes("method: 'GET'"), 'restore uses GET /api/tempmail/inbox');
+  assert(clientSrc.includes('apiPersistInbox'), 'client can persist an existing owned inbox');
+  assert(!page.includes('apiCreateInbox()') || (page.match(/apiCreateInbox\(\)/g) ?? []).length === 1, 'create API is only used by New address');
 
   console.log('\n[10] live Privatix RapidAPI probe (domains / subscription only)\n');
   const liveConfig = getTempmailConfig();

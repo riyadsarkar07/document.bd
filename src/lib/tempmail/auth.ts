@@ -202,6 +202,7 @@ export function authorizeInboxAccess(
   caller: TempmailCaller,
   inboxToken: string,
   email?: string,
+  allowExpired = false,
 ): { ok: true; email: string } | { ok: false; response: NextResponse } {
   const config = getTempmailConfig();
   const secret = config.configured ? config.inboxSecret : '';
@@ -216,7 +217,7 @@ export function authorizeInboxAccess(
       }),
     };
   }
-  const verified = verifyInboxToken(inboxToken, secret, caller.userId);
+  const verified = verifyInboxToken(inboxToken, secret, caller.userId, Date.now(), allowExpired);
   if (!verified.ok) {
     return {
       ok: false,

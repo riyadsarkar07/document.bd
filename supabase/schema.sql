@@ -104,6 +104,20 @@ create table if not exists public.activity_logs (
 
 alter table public.activity_logs enable row level security;
 
+-- ────────────────────────── tempmail_inboxes ──────────────────────────
+-- One active Privatix mailbox per authenticated user. Restored on sign-in
+-- across devices. Messages stay with the provider; HMAC inbox tokens are
+-- re-issued on restore and are never stored here.
+create table if not exists public.tempmail_inboxes (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  email text not null,
+  domain text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.tempmail_inboxes enable row level security;
+
 -- ────────────────────────── audit_logs ──────────────────────────
 -- Immutable admin audit trail for vault lifecycle + user management.
 -- Differs from activity_logs: it records an actor plus a target and metadata
@@ -228,6 +242,7 @@ create index if not exists profiles_role_idx on public.profiles (role);
 create index if not exists profiles_status_idx on public.profiles (status);
 create index if not exists activity_logs_created_idx on public.activity_logs (created_at desc);
 create index if not exists activity_logs_action_idx on public.activity_logs (action);
+create index if not exists tempmail_inboxes_email_idx on public.tempmail_inboxes (email);
 create index if not exists audit_logs_created_idx on public.audit_logs (created_at desc);
 create index if not exists audit_logs_actor_idx on public.audit_logs (actor_id);
 create index if not exists audit_logs_action_idx on public.audit_logs (action);
@@ -970,6 +985,40 @@ create policy "activity_logs_select_own" on public.activity_logs
 drop policy if exists "activity_logs_admin_read" on public.activity_logs;
 create policy "activity_logs_admin_read" on public.activity_logs
   for select using (public.is_admin());
+
+-- ────────────────────────── tempmail_inboxes ──────────────────────────
+-- Strict per-user isolation: a caller may only read/write the row whose
+-- user_id is auth.uid(). There is no admin read of another user's inbox.
+revoke all on table public.tempmail_inboxes from anon, public;
+grant select, insert, update on table public.tempmail_inboxes to authenticated;
+
+drop policy if exists "tempmail_inboxes_select_own" on public.tempmail_inboxes;
+create policy "tempmail_inboxes_select_own" on public.tempmail_inboxes
+  for select using (
+    user_id = auth.uid()
+    and public.is_active_user(auth.uid())
+    and public.has_tool_access(auth.uid(), 'tempmail')
+  );
+
+drop policy if exists "tempmail_inboxes_insert_own" on public.tempmail_inboxes;
+create policy "tempmail_inboxes_insert_own" on public.tempmail_inboxes
+  for insert with check (
+    user_id = auth.uid()
+    and public.is_active_user(auth.uid())
+    and public.has_tool_access(auth.uid(), 'tempmail')
+  );
+
+drop policy if exists "tempmail_inboxes_update_own" on public.tempmail_inboxes;
+create policy "tempmail_inboxes_update_own" on public.tempmail_inboxes
+  for update using (
+    user_id = auth.uid()
+    and public.is_active_user(auth.uid())
+    and public.has_tool_access(auth.uid(), 'tempmail')
+  ) with check (
+    user_id = auth.uid()
+    and public.is_active_user(auth.uid())
+    and public.has_tool_access(auth.uid(), 'tempmail')
+  );
 
 -- ────────────────────────── audit_logs ──────────────────────────
 -- Write-only to the app: any authenticated active user may insert an audit
