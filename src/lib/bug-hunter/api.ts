@@ -47,6 +47,8 @@ type BugRow = {
   stack: string | null;
   created_at: string;
   updated_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
 };
 
 function fail(message: string): string {
@@ -80,11 +82,13 @@ function mapBug(row: BugRow): BugReport {
     stack: row.stack,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    resolvedAt: row.resolved_at ?? null,
+    resolvedBy: row.resolved_by ?? null,
   };
 }
 
 const SELECT_COLS =
-  'id, bug_no, fingerprint, status, severity, kind, title, message, reason, route, component, endpoint, http_status, supabase_code, user_id, user_email, user_role, occurrence_count, first_seen_at, last_seen_at, browser, device, stack, created_at, updated_at';
+  'id, bug_no, fingerprint, status, severity, kind, title, message, reason, route, component, endpoint, http_status, supabase_code, user_id, user_email, user_role, occurrence_count, first_seen_at, last_seen_at, browser, device, stack, created_at, updated_at, resolved_at, resolved_by';
 
 export async function listBugReports(q: BugHunterQuery = {}): Promise<BugHunterList> {
   const page = Math.max(1, q.page ?? 1);
@@ -210,6 +214,22 @@ export async function clearResolvedBugs(): Promise<{ deleted: number; error: str
   return { deleted, error: null };
 }
 
+export async function resolveStaleBugs(
+  beforeIso: string,
+): Promise<{ resolved: number; error: string | null }> {
+  const { data, error } = await supabaseData.rpc('resolve_stale_bug_reports', {
+    p_before: beforeIso,
+  });
+  if (error) return { resolved: 0, error: fail(error.message) };
+  const resolved = typeof data === 'number' ? data : Number(data ?? 0);
+  void logAudit({
+    action: 'bug.stale_resolved',
+    targetType: 'bug_report',
+    metadata: { resolved, before: beforeIso },
+  });
+  return { resolved, error: null };
+}
+
 export function subscribeBugHunter(onChange: () => void): () => void {
   const channel = supabaseData
     .channel(`bug-hunter-${Date.now()}`)
@@ -238,6 +258,7 @@ export function formatBugDetails(bug: BugReport): string {
     `Occurrences: ${bug.occurrenceCount}`,
     `First seen: ${bug.firstSeenAt}`,
     `Last seen: ${bug.lastSeenAt}`,
+    `Resolved at: ${bug.resolvedAt ?? '—'}`,
     `Browser: ${bug.browser ?? '—'}`,
     `Device: ${bug.device ?? '—'}`,
     `Stack:`,

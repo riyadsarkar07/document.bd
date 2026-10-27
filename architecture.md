@@ -227,11 +227,11 @@ Admin-only error console at `/studio/bug-hunter`.
 - Clients report sanitized payloads to `POST /api/bug-hunter/ingest`.
 - Server re-validates, redacts secrets, and upserts via `ingest_bug_report` RPC.
 - Identical errors share a fingerprint and increment `occurrence_count`.
-- Resolved fingerprints stay historical until the same error recurs, then reopen as `new`. Ignored fingerprints stay ignored.
+- Resolved and ignored fingerprints keep their status on leftover ingest so a page refresh cannot reopen them. Admins reopen genuine recurrences with Reopen.
 - Dashboard open/severity counters and "Most frequent" only include `new` and `investigating` rows. Resolved/ignored rows remain for audit.
 - Ingest and Bug Hunter monitoring requests are not captured as application errors.
 - Abort/console duplicates of ingest (`NetworkError` / `Failed to fetch` with no endpoint) are dropped. Genuine fetch failures still include the URL and remain reported.
-- Historical PGRST303 JWT-expired rows from before token refresh stay resolved until the same fingerprint recurs.
+- Historical PGRST303 JWT-expired rows stay resolved. `resolve_stale_bug_reports` lets admins close Open rows that have not been seen since a cutoff without deleting history.
 - `bug_reports` is readable only by `is_admin()`; clients cannot insert fake rows.
 - Stack traces never render for non-admin users.
 

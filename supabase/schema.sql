@@ -1632,7 +1632,9 @@ create table if not exists public.bug_reports (
   device text,
   stack text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  resolved_at timestamptz,
+  resolved_by uuid references auth.users (id) on delete set null
 );
 
 alter table public.bug_reports enable row level security;
@@ -1643,6 +1645,9 @@ create index if not exists bug_reports_severity_idx on public.bug_reports (sever
 create index if not exists bug_reports_route_idx on public.bug_reports (route);
 create index if not exists bug_reports_last_seen_idx on public.bug_reports (last_seen_at desc);
 create index if not exists bug_reports_user_idx on public.bug_reports (user_id);
+
+alter table public.bug_reports add column if not exists resolved_at timestamptz;
+alter table public.bug_reports add column if not exists resolved_by uuid references auth.users (id) on delete set null;
 
 create or replace function public.next_bug_no()
 returns text
@@ -1673,9 +1678,10 @@ grant execute on function public.next_bug_no() to authenticated;
 
 -- Server-side ingest. Recomputes fingerprint, locks the actor to auth.uid(),
 -- and never trusts client-supplied user_id / status / bug_no.
--- Resolved fingerprints stay historical until the same error recurs, then
--- reopen as new. Ignored fingerprints stay ignored. Occurrence count and
--- first_seen_at are preserved for audit.
+-- Identical fingerprints upsert and increment occurrence_count. Resolved and
+-- ignored fingerprints keep their status so a page refresh or leftover client
+-- capture cannot reopen them. Admins reopen genuine recurrences explicitly.
+-- Occurrence count, last_seen_at, and first_seen_at are preserved for audit.
 create or replace function public.ingest_bug_report(
   p_fingerprint text,
   p_kind text,
@@ -1764,7 +1770,7 @@ begin
         updated_at = now(),
         status = case
           when public.bug_reports.status = 'ignored' then 'ignored'
-          when public.bug_reports.status = 'resolved' then 'new'
+          when public.bug_reports.status = 'resolved' then 'resolved'
           else public.bug_reports.status
         end,
         message = excluded.message,
@@ -1813,7 +1819,15 @@ begin
   end if;
   update public.bug_reports
      set status = p_status,
-         updated_at = now()
+         updated_at = now(),
+         resolved_at = case
+           when p_status = 'resolved' then now()
+           else null
+         end,
+         resolved_by = case
+           when p_status = 'resolved' then auth.uid()
+           else null
+         end
    where id = p_id
   returning * into row;
   if row.id is null then
@@ -1825,6 +1839,39 @@ $$;
 
 revoke all on function public.update_bug_report_status(uuid, text) from public;
 grant execute on function public.update_bug_report_status(uuid, text) to authenticated;
+
+-- Admin-only: close Open/Investigating rows that have not recurred since
+-- p_before. Does not touch ignored rows or later genuine recurrences.
+-- Occurrence counts, first_seen_at, last_seen_at, and messages are kept.
+create or replace function public.resolve_stale_bug_reports(p_before timestamptz)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  n int;
+begin
+  if not public.is_admin() then
+    raise exception 'admin required';
+  end if;
+  if p_before is null then
+    raise exception 'cutoff required';
+  end if;
+  update public.bug_reports
+     set status = 'resolved',
+         updated_at = now(),
+         resolved_at = coalesce(resolved_at, now()),
+         resolved_by = coalesce(resolved_by, auth.uid())
+   where status in ('new', 'investigating')
+     and last_seen_at < p_before;
+  get diagnostics n = row_count;
+  return coalesce(n, 0);
+end;
+$$;
+
+revoke all on function public.resolve_stale_bug_reports(timestamptz) from public;
+grant execute on function public.resolve_stale_bug_reports(timestamptz) to authenticated;
 
 create or replace function public.clear_resolved_bug_reports()
 returns int
@@ -1839,8 +1886,7 @@ begin
     raise exception 'admin required';
   end if;
   delete from public.bug_reports
-   where status in ('resolved', 'ignored')
-  returning 1 into n;
+   where status in ('resolved', 'ignored');
   get diagnostics n = row_count;
   return coalesce(n, 0);
 end;
@@ -1925,20 +1971,25 @@ create policy "bug_counters_deny" on public.bug_report_counters
 
 -- Historical rows from the pre-refresh JWT window and Bug Hunter ingest
 -- abort/console duplicates. Occurrence counts and timestamps are kept.
--- Recurrence of the same fingerprint still reopens as new via ingest_bug_report.
+-- Ingest no longer reopens resolved fingerprints. Unrelated Open rows are
+-- left for admin Reopen / Resolve stale, not closed wholesale.
 update public.bug_reports
    set status = 'resolved',
-       updated_at = now()
- where bug_no in (
-     'BUG-20260924-0001',
-     'BUG-20260924-0002',
-     'BUG-20260924-0003',
-     'BUG-20260924-0004',
-     'BUG-20260924-0005',
-     'BUG-20260924-0006'
-   )
-   and status in ('new', 'investigating')
-   and last_seen_at < timestamptz '2026-09-26 00:00:00+00';
+       updated_at = now(),
+       resolved_at = coalesce(resolved_at, now())
+ where status in ('new', 'investigating')
+   and last_seen_at < timestamptz '2026-10-27 00:00:00+00'
+   and (
+     bug_no in (
+       'BUG-20260924-0001',
+       'BUG-20260924-0002',
+       'BUG-20260924-0003',
+       'BUG-20260924-0004',
+       'BUG-20260924-0005',
+       'BUG-20260924-0006'
+     )
+     or supabase_code in ('PGRST301', 'PGRST303')
+   );
 
 alter table public.bug_reports replica identity full;
 

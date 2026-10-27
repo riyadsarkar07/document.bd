@@ -101,6 +101,26 @@ function main() {
     route: '/studio/editor/tm',
   });
   assert(bugFingerprint(a) !== bugFingerprint(c), 'different messages get different fingerprints');
+  const sameMsgDifferentTime = enrichDraft({
+    kind: 'javascript',
+    message: 'Intentional Bug Hunter test error at 12:34:56',
+    route: '/studio/editor/tm',
+  });
+  const sameMsgNormalized = enrichDraft({
+    kind: 'javascript',
+    message: 'Intentional Bug Hunter test error at 99:00:00',
+    route: '/studio/editor/tm',
+  });
+  assert(
+    bugFingerprint(sameMsgDifferentTime) === bugFingerprint(sameMsgNormalized),
+    'fingerprints ignore numeric timestamps in the message',
+  );
+  const otherRoute = enrichDraft({
+    kind: 'javascript',
+    message: 'Intentional Bug Hunter test error',
+    route: '/studio/editor/nid',
+  });
+  assert(bugFingerprint(a) !== bugFingerprint(otherRoute), 'different routes stay separate issues');
   assert(isBugKind('pdf') && isBugStatus('investigating') && isBugSeverity('critical'), 'enums recognized');
   assert(BUG_KINDS.length === 12 && BUG_STATUSES.length === 4 && BUG_SEVERITIES.length === 4, 'enum counts');
 
@@ -117,14 +137,19 @@ function main() {
   assert(schema.includes('occurrence_count int not null default 1'), 'occurrence count stored');
   assert(schema.includes('on conflict (fingerprint) do update'), 'identical errors upsert');
   assert(schema.includes('set occurrence_count = public.bug_reports.occurrence_count + occ'), 'occurrence increments');
-  assert(schema.includes("when public.bug_reports.status = 'resolved' then 'new'"), 'resolved fingerprints reopen on recurrence');
+  assert(schema.includes("when public.bug_reports.status = 'resolved' then 'resolved'"), 'resolved fingerprints stay resolved on leftover ingest');
+  assert(!schema.includes("when public.bug_reports.status = 'resolved' then 'new'"), 'ingest does not reopen resolved fingerprints');
   assert(schema.includes("when public.bug_reports.status = 'ignored' then 'ignored'"), 'ignored fingerprints stay ignored');
+  assert(schema.includes('create or replace function public.resolve_stale_bug_reports'), 'stale-resolve RPC exists');
+  assert(schema.includes('resolved_at timestamptz'), 'resolved_at column exists');
+  assert(schema.includes('resolved_by uuid'), 'resolved_by column exists');
   assert(schema.includes("and b.status in ('new', 'investigating')"), 'frequent list counts only open bugs');
   assert(/limit 5\s*\) ranked/.test(schema), 'frequent subquery aliases as ranked after limit 5');
   assert(!/limit 5\)/.test(schema), 'frequent subquery has no extra paren after limit 5');
   assert(schema.includes("'BUG-20260924-0001'") && schema.includes("set status = 'resolved'"), 'historical JWT/network rows marked resolved');
-  assert(schema.includes("and status in ('new', 'investigating')"), 'historical resolve does not rewrite already-closed rows');
-  assert(schema.includes("last_seen_at < timestamptz '2026-09-26 00:00:00+00'"), 'historical resolve does not close later recurrences');
+  assert(schema.includes("where status in ('new', 'investigating')"), 'historical resolve does not rewrite already-closed rows');
+  assert(schema.includes("last_seen_at < timestamptz '2026-10-27 00:00:00+00'"), 'historical resolve does not close later recurrences');
+  assert(schema.includes("supabase_code in ('PGRST301', 'PGRST303')"), 'stale JWT codes are eligible for historical resolve');
   assert(schema.includes('uid := auth.uid()'), 'ingest locks actor to auth.uid()');
   assert(!/ingest_bug_report[\s\S]{0,400}p_user_id/.test(schema), 'ingest RPC has no client user_id argument');
   assert(schema.includes("create policy \"bug_reports_admin_select\"") && schema.includes('for select using (public.is_admin())'), 'select is admin-only');
@@ -133,6 +158,7 @@ function main() {
   assert(schema.includes('for delete using (false)'), 'direct delete denied');
   assert(/create or replace function public.update_bug_report_status[\s\S]*if not public.is_admin\(\) then/.test(schema), 'status RPC is admin-only');
   assert(/create or replace function public.clear_resolved_bug_reports[\s\S]*if not public.is_admin\(\) then/.test(schema), 'clear RPC is admin-only');
+  assert(/create or replace function public.resolve_stale_bug_reports[\s\S]*if not public.is_admin\(\) then/.test(schema), 'stale-resolve RPC is admin-only');
   assert(/create or replace function public.bug_hunter_summary[\s\S]*where public.is_admin\(\)/.test(schema), 'summary RPC is admin-only');
   assert(schema.includes('grant select on table public.bug_reports to authenticated'), 'authenticated may select (RLS still admin)');
   assert(schema.includes('alter publication supabase_realtime add table public.bug_reports'), 'realtime on bug_reports');
@@ -158,7 +184,9 @@ function main() {
   assert(root.includes('BugHunterProvider'), 'root layout installs capture');
   assert(page.includes('AdminGuard'), 'page wrapped in AdminGuard');
   assert(page.includes('Mark Investigating') && page.includes('Mark Resolved') && page.includes('Ignore'), 'status actions exist');
+  assert(page.includes('Reopen'), 'admin can reopen a resolved fingerprint');
   assert(page.includes('Clear resolved') && page.includes('Copy details') && page.includes('Refresh'), 'admin actions exist');
+  assert(page.includes('Resolve stale') && page.includes('resolveStaleBugs'), 'stale-open resolve is admin-confirmed');
   assert(page.includes('Critical') && page.includes('Open bugs') && page.includes('Most frequent'), 'dashboard summary exists');
   assert(ingest.includes("rpc('ingest_bug_report'") && ingest.includes('sanitizeDraft'), 'ingest re-validates server-side');
   assert(ingest.includes('sb.auth.getUser') && ingest.includes('rateLimit'), 'ingest authenticates and rate-limits');
@@ -182,6 +210,8 @@ function main() {
   assert(classifyKind({ kind: 'api', httpStatus: 401, supabaseCode: 'PGRST303', endpoint: '/rest/v1/templates' }) === 'auth', 'PGRST303 JWT-expired still classified as auth');
   assert(classifySeverity({ kind: 'auth', httpStatus: 401, supabaseCode: 'PGRST303' }) === 'critical', 'genuine JWT-expired reports stay critical');
   assert(hunterApi.includes("rpc('update_bug_report_status'") && hunterApi.includes("rpc('clear_resolved_bug_reports'"), 'admin RPCs used');
+  assert(hunterApi.includes("rpc('resolve_stale_bug_reports'"), 'stale-resolve RPC is used by the admin client');
+  assert(hunterApi.includes('resolved_at') && hunterApi.includes('resolvedAt'), 'admin list maps resolved timestamps');
   assert(hunterApi.includes('bug_reports') && hunterApi.includes('subscribeBugHunter'), 'admin list + realtime');
   assert(!access.includes("'bug-hunter'") && !access.includes("'bug_hunter'"), 'not gated by allowed_tools');
   assert(vault.includes("kind: 'save'") && pdf.includes("kind: 'pdf'"), 'save and PDF failures reported');

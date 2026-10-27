@@ -108,6 +108,8 @@ export interface BugReport {
   stack: string | null;
   createdAt: string;
   updatedAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
 }
 
 export interface BugHunterQuery {

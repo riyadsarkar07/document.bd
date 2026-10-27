@@ -17,6 +17,7 @@ import {
   getBugHunterSummary,
   getBugReport,
   listBugReports,
+  resolveStaleBugs,
   setBugStatus,
   subscribeBugHunter,
 } from '@/lib/bug-hunter/api';
@@ -84,7 +85,13 @@ function BugHunterPanel() {
   const [summary, setSummary] = useState<BugHunterSummary>(EMPTY_SUMMARY);
   const [selected, setSelected] = useState<BugReport | null>(null);
   const [clearOpen, setClearOpen] = useState(false);
+  const [staleOpen, setStaleOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const staleCutoffIso = useMemo(() => {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return cutoff.toISOString();
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -178,6 +185,27 @@ function BugHunterPanel() {
     }
   }, [refresh, toast]);
 
+  const onResolveStale = useCallback(async () => {
+    setBusy(true);
+    try {
+      const { resolved, error: staleError } = await resolveStaleBugs(staleCutoffIso);
+      if (staleError) {
+        toast.error(staleError);
+        return;
+      }
+      toast.success(
+        resolved === 0
+          ? 'No stale open bugs were eligible.'
+          : `Resolved ${resolved} stale open bug${resolved === 1 ? '' : 's'}.`,
+      );
+      setStaleOpen(false);
+      setSelected(null);
+      void refresh();
+    } finally {
+      setBusy(false);
+    }
+  }, [refresh, staleCutoffIso, toast]);
+
   const routes = useMemo(
     () => Array.from(new Set(bugs.map((b) => b.route).filter((r): r is string => Boolean(r)))).sort(),
     [bugs],
@@ -195,6 +223,9 @@ function BugHunterPanel() {
             <Badge tone="red">{summary.openCount} open</Badge>
             <Button variant="secondary" size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void refresh()}>
               Refresh
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setStaleOpen(true)}>
+              Resolve stale
             </Button>
             <Button
               variant="danger"
@@ -396,6 +427,16 @@ function BugHunterPanel() {
                 >
                   Mark Resolved
                 </Button>
+                {(selected.status === 'resolved' || selected.status === 'ignored') && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => void changeStatus(selected.id, 'new')}
+                  >
+                    Reopen
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -444,6 +485,7 @@ function BugHunterPanel() {
             />
             <DetailRow label="First seen" value={selected.firstSeenAt} mono />
             <DetailRow label="Last seen" value={selected.lastSeenAt} mono />
+            <DetailRow label="Resolved at" value={selected.resolvedAt} mono />
             <DetailRow label="Occurrence count" value={selected.occurrenceCount} />
             <DetailRow label="Browser" value={selected.browser} />
             <DetailRow label="Device" value={selected.device} />
@@ -457,6 +499,15 @@ function BugHunterPanel() {
         )}
       </Modal>
 
+      <ConfirmDialog
+        open={staleOpen}
+        onClose={() => setStaleOpen(false)}
+        onConfirm={() => void onResolveStale()}
+        title="Resolve stale open bugs?"
+        body="This marks Open and Investigating bugs as Resolved if they have not been seen in the last 24 hours. Occurrence counts, messages, and timestamps are kept. Ignored bugs and later recurrences are not changed. This cannot be undone except by Reopen."
+        confirmLabel="Resolve stale opens"
+        danger
+      />
       <ConfirmDialog
         open={clearOpen}
         onClose={() => setClearOpen(false)}
