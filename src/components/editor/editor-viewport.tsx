@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type RefObject } from 'react';
-import { Frame, Maximize, Minimize, ScanLine, ZoomIn, ZoomOut } from 'lucide-react';
+import { Frame, Maximize, Minimize, RotateCcw, ScanLine, ZoomIn, ZoomOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface ViewportDims {
@@ -14,6 +14,9 @@ interface EditorViewportProps {
   containerRef?: RefObject<HTMLDivElement>;
   dims: ViewportDims | null;
   rendered: boolean;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   zoom: number;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
@@ -32,6 +35,9 @@ export function EditorViewport({
   containerRef,
   dims,
   rendered,
+  loading = false,
+  error = null,
+  onRetry,
   zoom,
   onZoomIn,
   onZoomOut,
@@ -64,35 +70,51 @@ export function EditorViewport({
     else onZoomPreset?.(pct);
   };
 
+  const showPlaceholder = !rendered || Boolean(error);
+
   return (
     <div
       ref={ref}
       onWheel={onWheel}
-      className="relative flex flex-1 overflow-auto bg-canvas-soft bg-grid p-8"
+      className="relative flex flex-1 overflow-auto bg-canvas-soft bg-grid p-3 sm:p-6 lg:p-8"
     >
       <div
         className="relative m-auto shrink-0 overflow-hidden rounded-[6px] border border-line-strong shadow-deep transition-shadow"
         style={{
-          width: dims ? Math.max(dims.w * zoom, 1) : undefined,
+          width: dims ? Math.max(dims.w * zoom, 1) : 'min(100%, 520px)',
           height: dims ? Math.max(dims.h * zoom, 1) : undefined,
+          minHeight: dims ? undefined : 240,
         }}
       >
         <canvas
           ref={canvasRef}
-          style={{ display: rendered ? 'block' : 'none', width: '100%', height: '100%' }}
+          className="block h-full w-full"
+          style={{ visibility: rendered && !error ? 'visible' : 'hidden' }}
         />
-        {!rendered && (
-          <div className="flex h-full min-h-[420px] min-w-[520px] flex-col items-center justify-center gap-4 rounded-[6px] border-2 border-dashed border-line-strong bg-surface p-12 text-center">
+        {showPlaceholder && (
+          <div className="absolute inset-0 flex min-h-[240px] flex-col items-center justify-center gap-4 bg-surface p-6 text-center sm:min-h-[320px] sm:p-12">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-line bg-surface-raised text-accent-bright">
-              <ScanLine className="h-7 w-7" />
+              <ScanLine className={cn('h-7 w-7', loading && !error && 'animate-pulse')} />
             </div>
             <div>
-              <div className="font-display text-sm font-semibold text-primary">{placeholderTitle}</div>
-              {placeholderSub && (
-                <div className="mt-1 font-mono text-[11px] text-dimm">{placeholderSub}</div>
-              )}
+              <div className="font-display text-sm font-semibold text-primary">
+                {error ? 'Preview failed to render' : loading ? 'Loading document preview…' : placeholderTitle}
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-dimm">
+                {error ?? placeholderSub ?? (loading ? 'Fetching template, fonts, and canvas…' : null)}
+              </div>
             </div>
-            {dims && (
+            {error && onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line-strong bg-surface-raised px-3 py-1.5 text-[11px] font-semibold text-accent-bright transition hover:bg-accent/10"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Retry render
+              </button>
+            )}
+            {dims && !error && (
               <div className="flex items-center gap-2 rounded-full border border-line bg-surface-raised px-3 py-1 font-mono text-[10.5px] text-muted">
                 <ScanLine className="h-3 w-3 text-accent-bright" />
                 {dims.w} × {dims.h} px · live render on every change
@@ -102,7 +124,6 @@ export function EditorViewport({
         )}
       </div>
 
-      {/* Floating zoom HUD */}
       <div className="absolute bottom-20 left-1/2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-2xl border border-line-strong bg-surface/90 p-1.5 shadow-pop backdrop-blur-xl lg:bottom-5">
         <button
           onClick={onFit}
@@ -179,7 +200,6 @@ export function EditorViewport({
         </button>
       </div>
 
-      {/* Dims chip */}
       {dims && (
         <div className="pointer-events-none absolute right-4 top-4 z-20 hidden items-center gap-2 rounded-full border border-line bg-surface/85 px-3 py-1.5 font-mono text-[10.5px] text-muted backdrop-blur-xl sm:flex">
           <span className="h-1.5 w-1.5 rounded-full bg-success" />
@@ -187,7 +207,6 @@ export function EditorViewport({
         </div>
       )}
 
-      {/* Ctrl+scroll hint */}
       <div
         className={cn(
           'pointer-events-none absolute bottom-5 right-4 z-20 hidden rounded-full border border-line bg-surface/85 px-3 py-1.5 font-mono text-[10px] text-dimm backdrop-blur-xl lg:block',

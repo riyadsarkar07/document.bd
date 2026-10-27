@@ -33,10 +33,10 @@ import {
   compressDataUrlImage,
   fileToOrientedDataUrl,
   loadDataUrlImage,
-  loadImage,
   loadImageToCanvas,
   preloadImage,
 } from '@/lib/images';
+import { useTemplateCanvas } from '@/lib/editor/use-template-image';
 import { englishNameToArabic } from '@/lib/dubaiArabicName';
 import { validateImageFile } from '@/lib/uploads';
 import { loadArialFonts } from '@/lib/fonts';
@@ -64,10 +64,9 @@ if (typeof document !== 'undefined') {
   markEditorPhase('dubai-license', 'module');
 }
 
-const dubaiTemplateCanvasPromise =
-  typeof document !== 'undefined'
-    ? loadImageToCanvas(DUBAI_TEMPLATE_SRC, DUBAI_DOC_WIDTH, DUBAI_DOC_HEIGHT)
-    : Promise.resolve(null);
+if (typeof document !== 'undefined') {
+  void loadImageToCanvas(DUBAI_TEMPLATE_SRC, DUBAI_DOC_WIDTH, DUBAI_DOC_HEIGHT);
+}
 
 function MoveButton({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
   return (
@@ -99,7 +98,11 @@ function DubaiLicenseEditorInner() {
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
-  const [bgImg, setBgImg] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
+  const { image: bgImg, error: bgError, retry: retryBg } = useTemplateCanvas(
+    DUBAI_TEMPLATE_SRC,
+    DUBAI_DOC_WIDTH,
+    DUBAI_DOC_HEIGHT,
+  );
   const [activeField, setActiveField] = useState<DubaiOverlayKey>('licenseNo');
   const [moveStep, setMoveStep] = useState(1);
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
@@ -234,23 +237,6 @@ function DubaiLicenseEditorInner() {
       if (ok) setStatus('Renderer fonts loaded');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    void dubaiTemplateCanvasPromise.then((canvas) => {
-      if (!alive) return;
-      if (canvas) {
-        setBgImg(canvas);
-        return;
-      }
-      void loadImage(DUBAI_TEMPLATE_SRC).then((img) => {
-        if (alive && img) setBgImg(img);
-      });
-    });
-    return () => {
-      alive = false;
-    };
   }, []);
 
   const rafRef = useRef(0);
@@ -795,6 +781,9 @@ function DubaiLicenseEditorInner() {
           containerRef={editor.containerRef}
           dims={dims}
           rendered={editor.rendered}
+          loading={!editor.rendered && !bgError}
+          error={bgError}
+          onRetry={retryBg}
           zoom={editor.zoom}
           onZoomIn={editor.zoomIn}
           onZoomOut={editor.zoomOut}

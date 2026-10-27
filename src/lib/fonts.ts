@@ -3,6 +3,7 @@
 import { FONT_FACES } from '@/lib/constants/nid';
 import { UNHCR_FONT_FACES } from '@/lib/constants/unhcr';
 import { UNHCR_FONT_FACES as UNHCR_S2_FONT_FACES } from '@/lib/constants/unhcr-s2';
+import { encodeAssetUrl } from '@/lib/asset-url';
 
 let loadPromise: Promise<boolean> | null = null;
 let s2FontPromise: Promise<boolean> | null = null;
@@ -37,16 +38,28 @@ const ARIAL_FONT_FACES = [
 ] as const;
 
 let arialPromise: Promise<boolean> | null = null;
+const registeredFaces = new Set<string>();
+
+function faceKey(family: string, descriptor: FontFaceDescriptors = {}): string {
+  return `${family}:${descriptor.weight ?? ''}:${descriptor.style ?? ''}`;
+}
+
+function encodeFontUrl(url: string): string {
+  return encodeAssetUrl(url);
+}
 
 async function registerTmCorsivaFaces(): Promise<void> {
   const src = FONT_FACES.find((face) => face.family === TM_CORSIVA_FAMILY);
   if (!src) return;
   await Promise.all(
     TM_CORSIVA_DESCRIPTORS.map(async (descriptor) => {
+      const key = faceKey(TM_CORSIVA_FAMILY, descriptor);
+      if (registeredFaces.has(key)) return;
       try {
         const ff = new FontFace(TM_CORSIVA_FAMILY, `url(${src.url})`, descriptor);
         await ff.load();
         document.fonts.add(ff);
+        registeredFaces.add(key);
       } catch (err) {
         console.warn(`[fonts] Failed to load "${TM_CORSIVA_FAMILY}" from ${src.url}`, err);
       }
@@ -64,7 +77,7 @@ function fontFaceLoaded(spec: string): boolean {
 
 function coreFontFacesAreLoaded(): boolean {
   if (typeof document === 'undefined') return false;
-  return fontFaceLoaded("16px 'Arial Regular'");
+  return fontFaceLoaded("16px 'Arial Regular'") || registeredFaces.has(faceKey('Arial Regular'));
 }
 
 function tmFontFacesAreLoaded(): boolean {
@@ -84,13 +97,19 @@ async function loadTmFontFaces(): Promise<void> {
   );
 }
 
-async function registerFace(family: string, url: string, descriptor: FontFaceDescriptors = {}): Promise<void> {
+async function registerFace(family: string, url: string, descriptor: FontFaceDescriptors = {}): Promise<boolean> {
+  const key = faceKey(family, descriptor);
+  if (registeredFaces.has(key)) return true;
   try {
-    const ff = new FontFace(family, `url(${url})`, descriptor);
+    const href = encodeFontUrl(url);
+    const ff = new FontFace(family, `url("${href}")`, descriptor);
     await ff.load();
     document.fonts.add(ff);
+    registeredFaces.add(key);
+    return true;
   } catch (err) {
     console.warn(`[fonts] Failed to load "${family}" from ${url}`, err);
+    return false;
   }
 }
 
@@ -107,7 +126,7 @@ export function loadArialFonts(): Promise<boolean> {
   }
 
   arialPromise = (async () => {
-    await Promise.all(ARIAL_FONT_FACES.map((face) => registerFace(face.family, face.url)));
+    const results = await Promise.all(ARIAL_FONT_FACES.map((face) => registerFace(face.family, face.url)));
     await Promise.all(
       ["16px 'Arial Regular'", "16px 'Arial Bold MT'"].map(async (spec) => {
         try {
@@ -117,7 +136,7 @@ export function loadArialFonts(): Promise<boolean> {
         }
       }),
     );
-    const ok = coreFontFacesAreLoaded();
+    const ok = coreFontFacesAreLoaded() || results.some(Boolean);
     if (!ok) arialPromise = null;
     return ok;
   })();
@@ -147,13 +166,13 @@ export function loadDocumentFonts(): Promise<boolean> {
       seen.add(key);
       return true;
     });
-    await Promise.all([
+    const results = await Promise.all([
       ...unique.map((face) => {
         const descriptor: FontFaceDescriptors =
           'weight' in face && face.weight ? { weight: face.weight } : {};
         return registerFace(face.family, face.url, descriptor);
       }),
-      registerTmCorsivaFaces(),
+      registerTmCorsivaFaces().then(() => true),
     ]);
     await Promise.all([
       (async () => {
@@ -165,7 +184,7 @@ export function loadDocumentFonts(): Promise<boolean> {
       })(),
       loadTmFontFaces(),
     ]);
-    const ok = coreFontFacesAreLoaded();
+    const ok = coreFontFacesAreLoaded() || results.some(Boolean);
     if (!ok) loadPromise = null;
     return ok;
   })();
@@ -182,7 +201,7 @@ export function loadUnhcrS2Fonts(): Promise<boolean> {
   if (s2FontPromise) return s2FontPromise;
 
   s2FontPromise = (async () => {
-    await Promise.all(UNHCR_S2_FONT_FACES.map((face) => registerFace(face.family, face.url)));
+    const results = await Promise.all(UNHCR_S2_FONT_FACES.map((face) => registerFace(face.family, face.url)));
     await Promise.all(
       ["16px 'Arial Regular'", "16px 'Arial Bold MT'"].map(async (spec) => {
         try {
@@ -192,7 +211,7 @@ export function loadUnhcrS2Fonts(): Promise<boolean> {
         }
       }),
     );
-    const ok = fontFaceLoaded("16px 'Arial Regular'");
+    const ok = fontFaceLoaded("16px 'Arial Regular'") || results.some(Boolean);
     if (!ok) s2FontPromise = null;
     return ok;
   })();
@@ -207,5 +226,5 @@ export async function ensureTmFontsReady(): Promise<boolean> {
   if (!ok) return false;
   if (tmFontFacesAreLoaded()) return true;
   await loadTmFontFaces();
-  return tmFontFacesAreLoaded();
+  return tmFontFacesAreLoaded() || coreFontFacesAreLoaded();
 }

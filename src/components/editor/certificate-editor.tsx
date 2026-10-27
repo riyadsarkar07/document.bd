@@ -16,7 +16,7 @@ import type { TMSnapshot } from '@/lib/editor/types';
 import { CERTIFICATE_VARIANTS } from '@/lib/editor/certificate-variant';
 import type { CertificateDocKind } from '@/lib/workspace/vault';
 import { renderTMCertificate } from '@/lib/renderers/tmRenderer';
-import { loadImage, loadDataUrlImage, preloadImage } from '@/lib/images';
+import { forgetImage, loadImage, loadDataUrlImage, preloadImage } from '@/lib/images';
 import { ensureTmFontsReady } from '@/lib/fonts';
 import { commitCertificate, getVaultRecord } from '@/lib/workspace/vault';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
@@ -63,6 +63,8 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canPublish = profile?.role === 'admin' || profile?.role === 'editor';
@@ -174,15 +176,21 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
   const draw = useCallback(
     async (canvas: HTMLCanvasElement, scale: number) => {
       const gen = (drawGenRef.current += 1);
-      const fontsOk = await ensureTmFontsReady();
-      if (!fontsOk || gen !== drawGenRef.current) return;
+      await ensureTmFontsReady();
+      if (gen !== drawGenRef.current) return;
       const [bg, sign] = await Promise.all([loadImage(TM_BACKGROUND), loadImage(TM_SIGNATURE)]);
-      if (!bg || gen !== drawGenRef.current) return;
+      if (gen !== drawGenRef.current) return;
+      if (!bg) {
+        setRenderError('Certificate background failed to load.');
+        setRendered(false);
+        return;
+      }
       renderTMCertificate(canvas, presentRef.current, bg, logoImageRef.current, sign, scale);
       const w = bg.naturalWidth || 1200;
       const h = bg.naturalHeight || 1650;
       setDims((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
       if (gen !== drawGenRef.current) return;
+      setRenderError(null);
       setRendered(true);
     },
     [setDims, setRendered],
@@ -199,7 +207,7 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
       if (canvas) void draw(canvas, liveScaleRef.current);
     });
     return () => cancelAnimationFrame(rafRef.current);
-  }, [present, fontsLoaded, logoImage, zoom, draw]);
+  }, [present, fontsLoaded, logoImage, zoom, draw, retryTick]);
 
   // Force refresh at full resolution (explicit "Render" action).
   const forceRender = useCallback(async () => {
@@ -480,6 +488,14 @@ function CertificateEditorInner({ variant }: { variant: CertificateDocKind }) {
           containerRef={editor.containerRef}
           dims={dims}
           rendered={editor.rendered}
+          loading={!editor.rendered && !renderError}
+          error={renderError}
+          onRetry={() => {
+            forgetImage(TM_BACKGROUND);
+            forgetImage(TM_SIGNATURE);
+            setRenderError(null);
+            setRetryTick((n) => n + 1);
+          }}
           zoom={editor.zoom}
           onZoomIn={editor.zoomIn}
           onZoomOut={editor.zoomOut}

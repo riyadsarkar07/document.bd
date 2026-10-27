@@ -108,6 +108,7 @@ import {
 } from '../src/lib/constants/dubai-license';
 import { englishNameToArabic } from '../src/lib/dubaiArabicName';
 import type { DrivingLicenseSnapshot, NIDSnapshot, TINSnapshot, TinFieldKey, TinLayout, TMSnapshot } from '../src/lib/editor/types';
+import { encodeAssetUrl } from '../src/lib/asset-url';
 
 const ROOT = process.cwd();
 const legacyHtml = readFileSync(join(ROOT, 'legacy/index.html'), 'utf-8');
@@ -1348,7 +1349,7 @@ async function main() {
   assert(dlEditorSrc.includes("docKind: 'driving-license'"), 'DL editor commits with driving-license kind');
   assert(dlEditorSrc.includes('getVaultRecord'), 'DL editor reopens History records');
   assert(dlEditorSrc.includes('onSaveHistory'), 'DL editor Save → History button is wired');
-  assert(dlEditorSrc.includes('loadImage(DL_TEMPLATE_SRC)'), 'DL editor loads the default template on open');
+  assert(dlEditorSrc.includes('useTemplateImage(DL_TEMPLATE_SRC)'), 'DL editor loads the default template on open');
   assert(dlEditorSrc.includes('restoreAutosave: false'), 'DL editor opens the default template on refresh instead of stale autosave');
   assert(dlEditorSrc.includes('purgeDrivingLicenseAutosave'), 'DL editor purges stale User-side autosave on fresh open');
   assert(dlEditorSrc.includes('drivingLicenseFreshOpenSnapshot'), 'DL editor replaces present state with the default template snapshot');
@@ -1470,7 +1471,7 @@ async function main() {
   const dubaiFreshId = dubaiLicenseHistoryRecordIdForSave(null, 'DXB-generated');
   assert(dubaiFreshId === 'DXB-generated', 'fresh Dubai saves use a generated unique History id');
   assert(dubaiFreshId !== `DXB-${DUBAI_DEFAULTS.licenseNo}`, 'fresh Dubai saves do not key off the shared fictional license number');
-  assert(dubaiEditorSrc.includes('loadImage(DUBAI_TEMPLATE_SRC)'), 'Dubai editor loads the default template on open');
+  assert(dubaiEditorSrc.includes('useTemplateCanvas'), 'Dubai editor loads the default template on open');
   assert(dubaiEditorSrc.includes('loadImageToCanvas'), 'Dubai editor decodes the template to the working canvas immediately');
   assert(dubaiEditorSrc.includes('englishNameToArabic'), 'Dubai English name auto-fills Arabic');
   assert(dubaiEditorSrc.includes('kindLabel="Dubai License DEMO"'), 'Dubai editor is labelled DEMO');
@@ -1574,6 +1575,23 @@ async function main() {
   const tmEditorSrc = readFileSync(join(ROOT, 'src/components/editor/certificate-editor.tsx'), 'utf8');
   assert(imagesSrc.includes('img.decode') && imagesSrc.includes('createImageBitmap'), 'shared image loader decodes before cache');
   assert(imagesSrc.includes('inflight') && imagesSrc.includes('canvasInflight'), 'image loads are single-flight');
+  assert(encodeAssetUrl('/assets/Driving License.png') === '/assets/Driving%20License.png', 'Driving License path is URI-encoded');
+  assert(encodeAssetUrl('/assets/E TIN.jpg') === '/assets/E%20TIN.jpg', 'TIN template path is URI-encoded');
+  assert(encodeAssetUrl('/assets/sign remove.png') === '/assets/sign%20remove.png', 'signature path is URI-encoded');
+  assert(encodeAssetUrl('/assets/nid-bg.png') === '/assets/nid-bg.png', 'unspaced asset paths stay unchanged');
+  assert(imagesSrc.includes('encodeAssetUrl'), 'shared loader encodes spaces in /assets paths');
+  assert(imagesSrc.includes('isSameOriginSrc'), 'CORS is only applied to cross-origin image URLs');
+  assert(!imagesSrc.includes("img.crossOrigin = 'Anonymous'"), 'same-origin templates are not forced through anonymous CORS');
+  assert(imagesSrc.includes('forgetImage'), 'failed image loads can be retried after cache clear');
+  assert(nidEditorSrc.includes('useTemplateImage(NID_BACKGROUND)'), 'NID editor loads the background through the shared template hook');
+  assert(tinEditorSrc.includes('useTemplateImage(TIN_TEMPLATE_SRC)'), 'TIN editor loads the template through the shared hook');
+  assert(unhcrEditorSrc.includes('useTemplateImage(UNHCR_BACKGROUND)'), 'UNHCR editor loads the template through the shared hook');
+  assert(unhcrS2EditorSrc.includes('useTemplateImage(UNHCR_BACKGROUND)'), 'UNHCR S2 editor loads the template through the shared hook');
+  const viewportSrc = readFileSync(join(ROOT, 'src/components/editor/editor-viewport.tsx'), 'utf8');
+  assert(!viewportSrc.includes("display: rendered ? 'block' : 'none'"), 'live canvas is not display:none while drawing');
+  assert(viewportSrc.includes("visibility: rendered && !error ? 'visible' : 'hidden'"), 'canvas stays in layout until first successful paint');
+  assert(viewportSrc.includes('onRetry'), 'viewport can retry after a failed template load');
+  assert(tmEditorSrc.includes('setRenderError'), 'TM editor reports a failed background instead of staying on the placeholder');
   assert(fontsSrcGate.includes('export function loadArialFonts'), 'Arial-only loader is exported for non-TM editors');
   assert(fontsSrcGate.includes('Promise.all') && fontsSrcGate.includes('registerTmCorsivaFaces'), 'document fonts load faces in parallel');
   assert(!fontsSrcGate.includes('await waitForDocumentFonts'), 'TM fonts no longer wait on extra document.fonts.ready');

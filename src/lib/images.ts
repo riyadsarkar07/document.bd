@@ -1,5 +1,9 @@
 'use client';
 
+import { encodeAssetUrl } from '@/lib/asset-url';
+
+export { encodeAssetUrl };
+
 const cache = new Map<string, HTMLImageElement>();
 const inflight = new Map<string, Promise<HTMLImageElement | null>>();
 const canvasCache = new Map<string, HTMLCanvasElement>();
@@ -12,22 +16,47 @@ function markHighPriority(img: HTMLImageElement): void {
   withPriority.fetchPriority = 'high';
 }
 
+function isSameOriginSrc(src: string): boolean {
+  if (typeof window === 'undefined') return true;
+  if (!src || src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('/')) return true;
+  try {
+    return new URL(src, window.location.href).origin === window.location.origin;
+  } catch {
+    return true;
+  }
+}
+
 export function preloadImage(src: string): void {
   if (typeof document === 'undefined') return;
-  const marker = `link[data-preload-src="${src}"]`;
+  const href = encodeAssetUrl(src);
+  const marker = `link[data-preload-src="${href}"]`;
   if (document.querySelector(marker)) return;
   const link = document.createElement('link');
   link.rel = 'preload';
   link.as = 'image';
-  link.href = src;
-  link.setAttribute('data-preload-src', src);
+  link.href = href;
+  link.setAttribute('data-preload-src', href);
+  if (!isSameOriginSrc(href)) link.crossOrigin = 'anonymous';
   const withPriority = link as HTMLLinkElement & { fetchPriority?: string };
   withPriority.fetchPriority = 'high';
   document.head.appendChild(link);
 }
 
 export function getCachedImage(src: string): HTMLImageElement | null {
-  return cache.get(src) ?? null;
+  return cache.get(src) ?? cache.get(encodeAssetUrl(src)) ?? null;
+}
+
+export function forgetImage(src: string): void {
+  const key = encodeAssetUrl(src);
+  cache.delete(src);
+  cache.delete(key);
+  inflight.delete(src);
+  inflight.delete(key);
+  Array.from(canvasCache.keys()).forEach((canvasKey) => {
+    if (canvasKey.startsWith(`${src}::`) || canvasKey.startsWith(`${key}::`)) {
+      canvasCache.delete(canvasKey);
+    }
+  });
 }
 
 async function finishImageLoad(src: string, img: HTMLImageElement): Promise<HTMLImageElement> {
@@ -37,31 +66,48 @@ async function finishImageLoad(src: string, img: HTMLImageElement): Promise<HTML
     // decode() is best-effort; onload already produced a drawable frame
   }
   cache.set(src, img);
+  cache.set(encodeAssetUrl(src), img);
   return img;
 }
 
-export function loadImage(src: string): Promise<HTMLImageElement | null> {
-  if (cache.has(src)) return Promise.resolve(cache.get(src)!);
-  const pending = inflight.get(src);
-  if (pending) return pending;
-
-  const promise = new Promise<HTMLImageElement | null>((resolve) => {
+function bindImage(src: string, url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
     const img = new Image();
-    img.crossOrigin = 'Anonymous';
+    if (!isSameOriginSrc(url)) img.crossOrigin = 'anonymous';
     markHighPriority(img);
     img.onload = () => {
-      void finishImageLoad(src, img).then((ready) => {
-        inflight.delete(src);
-        resolve(ready);
-      });
+      void finishImageLoad(src, img).then(resolve);
     };
-    img.onerror = () => {
-      inflight.delete(src);
-      resolve(null);
-    };
-    img.src = src;
+    img.onerror = () => resolve(null);
+    img.src = url;
   });
+}
+
+export function loadImage(src: string, retries = 2): Promise<HTMLImageElement | null> {
+  const cached = getCachedImage(src);
+  if (cached) return Promise.resolve(cached);
+  const pending = inflight.get(src) ?? inflight.get(encodeAssetUrl(src));
+  if (pending) return pending;
+
+  const url = encodeAssetUrl(src);
+  const promise = (async () => {
+    let last: HTMLImageElement | null = null;
+    const attempts = Math.max(1, retries + 1);
+    for (let i = 0; i < attempts; i += 1) {
+      last = await bindImage(src, url);
+      if (last) return last;
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 180 * (i + 1)));
+      }
+    }
+    return last;
+  })().finally(() => {
+    inflight.delete(src);
+    inflight.delete(url);
+  });
+
   inflight.set(src, promise);
+  inflight.set(url, promise);
   return promise;
 }
 
@@ -90,7 +136,7 @@ export function loadDataUrlImage(dataUrl: string): Promise<HTMLImageElement | nu
 }
 
 function canvasCacheKey(src: string, width: number, height: number): string {
-  return `${src}::${width}x${height}`;
+  return `${encodeAssetUrl(src)}::${width}x${height}`;
 }
 
 /** Decode an image already sized to the working canvas so first paint is instant. */
@@ -104,32 +150,43 @@ export function loadImageToCanvas(
   const pending = canvasInflight.get(key);
   if (pending) return pending;
 
+  const url = encodeAssetUrl(src);
   const promise = (async () => {
     try {
       if (typeof fetch === 'function' && typeof createImageBitmap === 'function') {
-        const res = await fetch(src, { cache: 'force-cache' });
-        if (res.ok) {
-          const blob = await res.blob();
-          const bitmap = await createImageBitmap(blob, {
-            resizeWidth: width,
-            resizeHeight: height,
-            resizeQuality: 'medium',
-            imageOrientation: 'from-image',
-          });
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(bitmap, 0, 0, width, height);
-            bitmap.close();
-            canvasCache.set(key, canvas);
-            return canvas;
+        let lastErr: unknown = null;
+        for (let i = 0; i < 3; i += 1) {
+          try {
+            const res = await fetch(url, { cache: 'force-cache' });
+            if (res.ok) {
+              const blob = await res.blob();
+              const bitmap = await createImageBitmap(blob, {
+                resizeWidth: width,
+                resizeHeight: height,
+                resizeQuality: 'medium',
+                imageOrientation: 'from-image',
+              });
+              const canvas = document.createElement('canvas');
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(bitmap, 0, 0, width, height);
+                bitmap.close();
+                canvasCache.set(key, canvas);
+                return canvas;
+              }
+              bitmap.close();
+            }
+            lastErr = new Error(`HTTP ${res.status}`);
+          } catch (err) {
+            lastErr = err;
           }
-          bitmap.close();
+          if (i < 2) await new Promise((r) => setTimeout(r, 200 * (i + 1)));
         }
+        void lastErr;
       }
     } catch {
       // fall through to HTMLImageElement

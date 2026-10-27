@@ -32,7 +32,8 @@ import { renderDrivingLicense } from '@/lib/renderers/drivingLicenseRenderer';
 import { buildDrivingLicenseQrPayload, encodeDrivingLicenseQr } from '@/lib/drivingLicenseQr';
 import { createJsPdf } from '@/lib/export/jspdf';
 import { markEditorPhase, measureEditorOpen } from '@/lib/editor/open-timing';
-import { loadDataUrlImage, loadImage, preloadImage } from '@/lib/images';
+import { loadDataUrlImage, preloadImage } from '@/lib/images';
+import { useTemplateImage } from '@/lib/editor/use-template-image';
 import { validateImageFile } from '@/lib/uploads';
 import { loadArialFonts } from '@/lib/fonts';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
@@ -87,7 +88,7 @@ function DrivingLicenseEditorInner() {
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
-  const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
+  const { image: bgImg, error: bgError, retry: retryBg } = useTemplateImage(DL_TEMPLATE_SRC);
   const [activeField, setActiveField] = useState<DlOverlayKey>('name');
   const [moveStep, setMoveStep] = useState(1);
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
@@ -217,16 +218,6 @@ function DrivingLicenseEditorInner() {
       if (ok) setStatus('Renderer fonts loaded');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    void loadImage(DL_TEMPLATE_SRC).then((img) => {
-      if (alive && img) setBgImg(img);
-    });
-    return () => {
-      alive = false;
-    };
   }, []);
 
   const qrPayload = useMemo(() => buildDrivingLicenseQrPayload(present), [present]);
@@ -817,6 +808,9 @@ function DrivingLicenseEditorInner() {
           containerRef={editor.containerRef}
           dims={dims}
           rendered={editor.rendered}
+          loading={!editor.rendered && !bgError}
+          error={bgError}
+          onRetry={retryBg}
           zoom={editor.zoom}
           onZoomIn={editor.zoomIn}
           onZoomOut={editor.zoomOut}

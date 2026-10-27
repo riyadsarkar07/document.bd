@@ -26,8 +26,9 @@ import {
 } from '@/lib/constants/tin';
 import type { TINSnapshot, TinAlign, TinFieldKey, TinLayout, TinWeight } from '@/lib/editor/types';
 import { renderTINDocument } from '@/lib/renderers/tinRenderer';
-import { loadDataUrlImage, loadImage, preloadImage } from '@/lib/images';
+import { loadDataUrlImage, preloadImage } from '@/lib/images';
 import { loadArialFonts } from '@/lib/fonts';
+import { useTemplateImage } from '@/lib/editor/use-template-image';
 import { encodeDemoQr, buildTinQrPayload } from '@/lib/tinQr';
 import { createJsPdf } from '@/lib/export/jspdf';
 import { markEditorPhase, measureEditorOpen } from '@/lib/editor/open-timing';
@@ -87,7 +88,7 @@ function TINEditorInner() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrImg, setQrImg] = useState<HTMLImageElement | null>(null);
-  const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
+  const { image: bgImg, error: bgError, retry: retryBg } = useTemplateImage(TIN_TEMPLATE_SRC);
   const [activeField, setActiveField] = useState<TinFieldKey | 'qr'>('taxpayerName');
   const [moveStep, setMoveStep] = useState(5);
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
@@ -188,17 +189,6 @@ function TINEditorInner() {
       if (ok) setStatus('Renderer fonts loaded');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Load the uploaded reference certificate as the editor template background.
-  useEffect(() => {
-    let alive = true;
-    void loadImage(TIN_TEMPLATE_SRC).then((img) => {
-      if (alive && img) setBgImg(img);
-    });
-    return () => {
-      alive = false;
-    };
   }, []);
 
   // DEMO QR payload — simple human-readable plain text built from the current
@@ -501,6 +491,9 @@ function TINEditorInner() {
           containerRef={editor.containerRef}
           dims={dims}
           rendered={editor.rendered}
+          loading={!editor.rendered && !bgError}
+          error={bgError}
+          onRetry={retryBg}
           zoom={editor.zoom}
           onZoomIn={editor.zoomIn}
           onZoomOut={editor.zoomOut}

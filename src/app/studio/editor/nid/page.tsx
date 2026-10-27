@@ -9,6 +9,7 @@ import type { NIDSnapshot } from '@/lib/editor/types';
 import { renderNIDCard } from '@/lib/renderers/nidRenderer';
 import { loadImage, loadDataUrlImage, preloadImage } from '@/lib/images';
 import { loadDocumentFonts } from '@/lib/fonts';
+import { useTemplateImage } from '@/lib/editor/use-template-image';
 import { listTemplates, listProjects, saveProject, logActivity } from '@/lib/workspace/store';
 import { commitDocument, getVaultRecord } from '@/lib/workspace/vault';
 import { newRecordId } from '@/lib/workspace/document-kinds';
@@ -45,7 +46,7 @@ function NIDEditorInner() {
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
-  const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null);
+  const { image: bgImg, error: bgError, retry: retryBg } = useTemplateImage(NID_BACKGROUND);
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -142,16 +143,6 @@ function NIDEditorInner() {
       if (ok) setStatus('Renderer fonts loaded');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    void loadImage(NID_BACKGROUND).then((img) => {
-      if (alive && img) setBgImg(img);
-    });
-    return () => {
-      alive = false;
-    };
   }, []);
 
   const rafRef = useRef(0);
@@ -360,6 +351,9 @@ function NIDEditorInner() {
           containerRef={editor.containerRef}
           dims={dims}
           rendered={editor.rendered}
+          loading={!editor.rendered && !bgError}
+          error={bgError}
+          onRetry={retryBg}
           zoom={editor.zoom}
           onZoomIn={editor.zoomIn}
           onZoomOut={editor.zoomOut}
