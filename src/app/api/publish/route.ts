@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   createAtomicCommit,
+  publicGitHubError,
   readRepoFile,
 } from '@/lib/publish/github';
 import {
@@ -169,13 +170,13 @@ export async function POST(req: Request): Promise<NextResponse> {
 
       return json({ ok: true, status: 'unpublished', sha: result.sha, verifyUrl: null });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown unpublish error';
+      const mapped = publicGitHubError(err);
       await caller.sb
         .from('certificates')
-        .update({ publish_status: 'failed', publish_error: message })
+        .update({ publish_status: 'failed', publish_error: mapped.error })
         .eq('trademark_no', regNo);
-      await recordAudit(caller, 'publish.failed', regNo, { action: 'unpublish', error: message });
-      return json({ ok: false, error: message }, 500);
+      await recordAudit(caller, 'publish.failed', regNo, { action: 'unpublish', error: mapped.error });
+      return json({ ok: false, error: mapped.error }, mapped.status);
     }
   }
 
@@ -228,12 +229,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     const verifyUrl = `${PUBLIC_VERIFY_BASE_URL}/verify?reg_no=${encodeURIComponent(fields.regNo)}`;
     return json({ ok: true, status, sha: result.sha, verifyUrl });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown publish error';
+    const mapped = publicGitHubError(err);
     await caller.sb
       .from('certificates')
-      .update({ publish_status: 'failed', publish_error: message })
+      .update({ publish_status: 'failed', publish_error: mapped.error })
       .eq('trademark_no', fields.regNo);
-    await recordAudit(caller, 'publish.failed', fields.regNo, { error: message });
-    return json({ ok: false, error: message }, 500);
+    await recordAudit(caller, 'publish.failed', fields.regNo, { error: mapped.error });
+    return json({ ok: false, error: mapped.error }, mapped.status);
   }
 }

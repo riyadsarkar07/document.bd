@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { githubEnv } from '@/lib/publish/github';
+import { githubAuthHeaders, githubEnv, publicGitHubMessage } from '@/lib/publish/github';
 import {
   authorize,
   json,
@@ -19,10 +19,18 @@ interface PreflightCheck {
   detail: string;
 }
 
-const GH_HEADERS = {
-  Accept: 'application/vnd.github+json',
-  'X-GitHub-Api-Version': '2022-11-28',
-};
+function githubCheckDetail(status: number, path: string, env: ReturnType<typeof githubEnv>): string {
+  if (status === 401) {
+    return publicGitHubMessage(401, path, env);
+  }
+  if (status === 403) {
+    return publicGitHubMessage(403, path, env);
+  }
+  if (status === 404) {
+    return publicGitHubMessage(404, path, env);
+  }
+  return `HTTP ${status} on ${path}.`;
+}
 
 /**
  * Non-destructive preflight check for the publish pipeline.
@@ -85,10 +93,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     return json({ ok: false, checks, error: 'Preflight failed — server configuration incomplete.' }, 500);
   }
 
+  const ghHeaders = githubAuthHeaders(env.token);
+
   // 2. Repository exists + token can read it.
   try {
     const res = await fetch(`https://api.github.com/repos/${env.owner}/${env.repo}`, {
-      headers: { ...GH_HEADERS, Authorization: `Bearer ${env.token}` },
+      headers: ghHeaders,
     });
     if (res.ok) {
       const repo = (await res.json()) as { default_branch?: string; permissions?: { push?: boolean } };
@@ -99,11 +109,11 @@ export async function POST(req: Request): Promise<NextResponse> {
         detail: `${env.owner}/${env.repo} reachable (default_branch=${repo.default_branch ?? '?'}; ${push}).`,
       });
     } else {
-      const body = await res.text().catch(() => '');
+      await res.text().catch(() => '');
       checks.push({
         name: 'GitHub repository',
         ok: false,
-        detail: `HTTP ${res.status} on repos/${env.owner}/${env.repo}: ${body.slice(0, 200)}`,
+        detail: githubCheckDetail(res.status, `repos/${env.owner}/${env.repo}`, env),
       });
     }
   } catch (err) {
@@ -118,14 +128,15 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (checks[1]?.ok) {
     try {
       const res = await fetch(`https://api.github.com/repos/${env.owner}/${env.repo}/branches/${encodeURIComponent(env.branch)}`, {
-        headers: { ...GH_HEADERS, Authorization: `Bearer ${env.token}` },
+        headers: ghHeaders,
       });
+      if (!res.ok) await res.text().catch(() => '');
       checks.push({
         name: 'GitHub branch',
         ok: res.ok,
         detail: res.ok
           ? `Branch "${env.branch}" exists.`
-          : `HTTP ${res.status} — branch "${env.branch}" not found.`,
+          : githubCheckDetail(res.status, `branches/${env.branch}`, env),
       });
     } catch (err) {
       checks.push({
@@ -143,16 +154,17 @@ export async function POST(req: Request): Promise<NextResponse> {
     try {
       const res = await fetch(
         `https://api.github.com/repos/${env.owner}/${env.repo}/contents/data.json?ref=${encodeURIComponent(env.branch)}`,
-        { headers: { ...GH_HEADERS, Authorization: `Bearer ${env.token}` } },
+        { headers: ghHeaders },
       );
+      if (!res.ok) await res.text().catch(() => '');
       checks.push({
         name: 'data.json readable',
-        ok: res.ok,
+        ok: res.ok || res.status === 404,
         detail: res.ok
           ? 'data.json found — existing records will be preserved on publish.'
           : res.status === 404
             ? 'data.json absent — first publish will create it (safe).'
-            : `HTTP ${res.status} — data.json could not be read.`,
+            : githubCheckDetail(res.status, `contents/data.json?ref=${env.branch}`, env),
       });
     } catch (err) {
       checks.push({

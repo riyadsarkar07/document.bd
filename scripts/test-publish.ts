@@ -20,7 +20,16 @@ import {
   MAX_IMAGE_BYTES,
 } from '../src/lib/publish/schema';
 import { withRecord, withoutRecord } from '../src/lib/publish/data';
-import { githubEnv } from '../src/lib/publish/github';
+import {
+  GitHubApiError,
+  githubEnv,
+  githubErrorCode,
+  publicGitHubError,
+  publicGitHubMessage,
+  readRepoFile,
+  sanitizeEnvValue,
+  sanitizeGitHubToken,
+} from '../src/lib/publish/github';
 import { hasToolAccess, canSelfPublish } from '../src/lib/workspace/access';
 import { isGenerationLimited, generationPeriodLabel } from '../src/lib/workspace/limits';
 import { sealedTextFromVault } from '../src/lib/publish/sealed-text';
@@ -107,7 +116,7 @@ function assert(cond: boolean, label: string) {
   }
 }
 
-function main() {
+async function main() {
   console.log('\n[1] sanitizeRegNo\n');
   assert(sanitizeRegNo('245788') === '245788', 'plain number passes');
   assert(sanitizeRegNo('  Trademark No. 261027 ') === '261027', 'strips "Trademark No." prefix');
@@ -188,18 +197,73 @@ function main() {
 
   console.log('\n[5] githubEnv credential guard\n');
   const savedToken = process.env.GITHUB_TOKEN;
+  const savedOwner = process.env.GITHUB_OWNER;
+  const savedRepo = process.env.GITHUB_REPO;
+  const savedBranch = process.env.GITHUB_BRANCH;
   delete process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_OWNER;
+  delete process.env.GITHUB_REPO;
+  delete process.env.GITHUB_BRANCH;
   try {
     githubEnv();
     assert(false, 'githubEnv throws when GITHUB_TOKEN is unset');
   } catch (err) {
     assert(err instanceof Error && /GITHUB_TOKEN is not configured/.test(err.message), 'githubEnv throws when GITHUB_TOKEN is unset');
   }
+  process.env.GITHUB_TOKEN = '   ';
+  try {
+    githubEnv();
+    assert(false, 'githubEnv throws when GITHUB_TOKEN is whitespace');
+  } catch (err) {
+    assert(err instanceof Error && /GITHUB_TOKEN is not configured/.test(err.message), 'githubEnv throws when GITHUB_TOKEN is whitespace');
+  }
   process.env.GITHUB_TOKEN = 'ghp_test_only';
   const env = githubEnv();
-  assert(env.token === 'ghp_test_only' && env.owner === 'riyadsarkar07' && env.repo === 'dpdt-govbd-main', 'env resolved from process.env + defaults');
+  assert(env.token === 'ghp_test_only' && env.owner === 'riyadsarkar07' && env.repo === 'dpdt-govbd-main' && env.branch === 'main', 'env resolved from process.env + defaults');
+  process.env.GITHUB_TOKEN = '  "ghp_quoted_token"  \n';
+  assert(githubEnv().token === 'ghp_quoted_token', 'quoted/whitespace GITHUB_TOKEN is sanitized');
+  process.env.GITHUB_TOKEN = "'ghp_single_quoted'";
+  assert(githubEnv().token === 'ghp_single_quoted', 'single-quoted GITHUB_TOKEN is sanitized');
+  process.env.GITHUB_TOKEN = 'Bearer ghp_prefixed';
+  assert(githubEnv().token === 'ghp_prefixed', 'accidental Bearer prefix is stripped from GITHUB_TOKEN');
+  process.env.GITHUB_TOKEN = 'token github_pat_prefixed';
+  assert(githubEnv().token === 'github_pat_prefixed', 'accidental token prefix is stripped from GITHUB_TOKEN');
+  assert(sanitizeGitHubToken('  "Bearer ghp_x"  ') === 'ghp_x', 'sanitizeGitHubToken strips quotes then Bearer');
+  assert(sanitizeEnvValue('  Bearer-not-this  ') === 'Bearer-not-this', 'sanitizeEnvValue trims whitespace');
+  assert(sanitizeEnvValue(undefined) === '' && sanitizeEnvValue(null) === '', 'sanitizeEnvValue treats missing values as empty');
+
+  console.log('\n[5b] GitHub API error mapping (no credential leakage)\n');
+  assert(githubErrorCode(401) === 'auth', '401 maps to auth');
+  assert(githubErrorCode(403) === 'permission', '403 maps to permission');
+  assert(githubErrorCode(404) === 'not_found', '404 maps to not_found');
+  assert(githubErrorCode(409) === 'conflict' && githubErrorCode(422) === 'conflict', '409/422 map to conflict');
+  const authMsg = publicGitHubMessage(401, 'contents/data.json?ref=main');
+  assert(/401/.test(authMsg) && /GITHUB_TOKEN/.test(authMsg), '401 message names GITHUB_TOKEN');
+  assert(!/Bad credentials/i.test(authMsg), '401 message does not leak GitHub "Bad credentials" body');
+  assert(!/ghp_|github_pat_|Bearer /i.test(authMsg), '401 message does not include token material');
+  assert(/Contents: Read and write/.test(authMsg), '401 message states required Contents permission');
+  const permMsg = publicGitHubMessage(403, 'git/blobs');
+  assert(/403/.test(permMsg) && /Contents: Read and write/.test(permMsg), '403 message is a permission failure');
+  const missingMsg = publicGitHubMessage(404, 'contents/data.json?ref=main');
+  assert(/404/.test(missingMsg) && /GITHUB_OWNER/.test(missingMsg), '404 message names repo env vars');
+  const conflictMsg = publicGitHubMessage(409, 'git/refs/heads/main');
+  assert(/Retry/.test(conflictMsg), '409 message asks the caller to retry');
+  const mapped401 = publicGitHubError(new GitHubApiError(401, 'contents/data.json?ref=main', 'auth', authMsg));
+  assert(mapped401.status === 502 && mapped401.error === authMsg, '401 GitHub auth is returned as 502 (server config)');
+  const mapped403 = publicGitHubError(new GitHubApiError(403, 'git/blobs', 'permission', permMsg));
+  assert(mapped403.status === 403, '403 GitHub permission is returned as 403');
+  const mapped404 = publicGitHubError(new GitHubApiError(404, 'contents/missing', 'not_found', missingMsg));
+  assert(mapped404.status === 404, '404 GitHub missing resource is returned as 404');
+  const mapped409 = publicGitHubError(new GitHubApiError(409, 'git/refs/heads/main', 'conflict', conflictMsg));
+  assert(mapped409.status === 409, '409 GitHub conflict is returned as 409');
   if (savedToken === undefined) delete process.env.GITHUB_TOKEN;
   else process.env.GITHUB_TOKEN = savedToken;
+  if (savedOwner === undefined) delete process.env.GITHUB_OWNER;
+  else process.env.GITHUB_OWNER = savedOwner;
+  if (savedRepo === undefined) delete process.env.GITHUB_REPO;
+  else process.env.GITHUB_REPO = savedRepo;
+  if (savedBranch === undefined) delete process.env.GITHUB_BRANCH;
+  else process.env.GITHUB_BRANCH = savedBranch;
 
   console.log('\n[6] per-user tool access (mirrors schema.sql has_tool_access)\n');
   assert(hasToolAccess(null, 'tm') === false, 'no profile -> no access');
@@ -983,7 +1047,35 @@ function main() {
   assert(pdfDataUrlToBytes('data:image/png;base64,AAAA') === null, 'non-PDF data URLs are rejected');
   assert(pdfDataUrlToBytes('not-a-data-url') === null, 'malformed data URLs are rejected');
 
-  console.log(`\n${failures === 0 ? '✓ ALL PUBLISH CHECKS PASSED' : `✗ ${failures} CHECK(S) FAILED`}\n`);
+  console.log('\n[17] live GitHub Contents API (invalid credentials + optional real token)\n');
+  const liveSaved = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = 'ghp_invalid_credentials_for_test';
+  try {
+    await readRepoFile('data.json');
+    assert(false, 'invalid GITHUB_TOKEN is rejected by GitHub Contents API');
+  } catch (err) {
+    const mapped = publicGitHubError(err);
+    assert(err instanceof GitHubApiError && err.status === 401 && err.code === 'auth', 'invalid token produces GitHubApiError 401 auth');
+    assert(mapped.status === 502 && /GITHUB_TOKEN/.test(mapped.error), 'invalid token maps to a safe 502 that names GITHUB_TOKEN');
+    assert(!/Bad credentials/i.test(mapped.error) && !/ghp_invalid/.test(mapped.error), 'invalid-token error does not leak GitHub body or the token');
+  }
+  if (liveSaved === undefined) {
+    delete process.env.GITHUB_TOKEN;
+    console.log('  SKIP  live publish against riyadsarkar07/dpdt-govbd-main — GITHUB_TOKEN is not set in this environment');
+  } else {
+    process.env.GITHUB_TOKEN = liveSaved;
+    try {
+      const contents = await readRepoFile('data.json');
+      assert(contents !== null && contents.includes('{'), 'valid GITHUB_TOKEN can read data.json from the target branch');
+      const parsed = JSON.parse(contents as string) as Record<string, unknown>;
+      assert(typeof parsed === 'object' && parsed !== null, 'data.json is a JSON object keyed by TM number');
+    } catch (err) {
+      const mapped = publicGitHubError(err);
+      assert(false, `valid GITHUB_TOKEN could not read data.json: ${mapped.error}`);
+    }
+  }
+
+  console.log(`\n${failures === 0 ? 'ALL PUBLISH CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`);
   process.exit(failures === 0 ? 0 : 1);
 }
 

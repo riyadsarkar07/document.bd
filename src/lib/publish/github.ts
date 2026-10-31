@@ -9,7 +9,8 @@
  *
  * IMPORTANT: This module reads GITHUB_TOKEN from the server environment and
  * must NEVER be imported from any client component. Only the `/api/publish`
- * route handler uses it.
+ * route handler uses it. Token values must never appear in errors, logs, or
+ * API responses.
  */
 
 export interface GitHubEnv {
@@ -19,16 +20,133 @@ export interface GitHubEnv {
   branch: string;
 }
 
+export type GitHubErrorCode =
+  | 'auth'
+  | 'permission'
+  | 'not_found'
+  | 'conflict'
+  | 'rate_limit'
+  | 'unknown';
+
+const DEFAULT_OWNER = 'riyadsarkar07';
+const DEFAULT_REPO = 'dpdt-govbd-main';
+const DEFAULT_BRANCH = 'main';
+
+/** Strip BOM, wrapping quotes, and surrounding whitespace from env values. */
+export function sanitizeEnvValue(raw: string | undefined | null): string {
+  if (typeof raw !== 'string') return '';
+  let value = raw.replace(/^\uFEFF/, '').trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+    (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+  ) {
+    value = value.slice(1, -1).replace(/^\uFEFF/, '').trim();
+  }
+  return value;
+}
+
+/** Normalize a PAT pasted into GITHUB_TOKEN (quotes, whitespace, accidental Bearer prefix). */
+export function sanitizeGitHubToken(raw: string | undefined | null): string {
+  let token = sanitizeEnvValue(raw);
+  token = token.replace(/^(Bearer|token)\s+/i, '').trim();
+  return token;
+}
+
+function envName(raw: string | undefined | null, fallback: string): string {
+  return sanitizeEnvValue(raw) || fallback;
+}
+
 export function githubEnv(): GitHubEnv {
-  const token = process.env.GITHUB_TOKEN;
+  const token = sanitizeGitHubToken(process.env.GITHUB_TOKEN);
   if (!token) {
-    throw new Error('GITHUB_TOKEN is not configured on the server.');
+    throw new Error(
+      'GITHUB_TOKEN is not configured on the server. Set it in Vercel → Project → Settings → Environment Variables (Production) for riyadsarkar07/dpdt-govbd-main with Contents: Read and write.',
+    );
   }
   return {
     token,
-    owner: process.env.GITHUB_OWNER || 'riyadsarkar07',
-    repo: process.env.GITHUB_REPO || 'dpdt-govbd-main',
-    branch: process.env.GITHUB_BRANCH || 'main',
+    owner: envName(process.env.GITHUB_OWNER, DEFAULT_OWNER),
+    repo: envName(process.env.GITHUB_REPO, DEFAULT_REPO),
+    branch: envName(process.env.GITHUB_BRANCH, DEFAULT_BRANCH),
+  };
+}
+
+export function githubAuthHeaders(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+}
+
+export class GitHubApiError extends Error {
+  status: number;
+  code: GitHubErrorCode;
+  path: string;
+
+  constructor(status: number, path: string, code: GitHubErrorCode, message: string) {
+    super(message);
+    this.name = 'GitHubApiError';
+    this.status = status;
+    this.code = code;
+    this.path = path;
+  }
+}
+
+export function githubErrorCode(status: number): GitHubErrorCode {
+  if (status === 401) return 'auth';
+  if (status === 403) return 'permission';
+  if (status === 404) return 'not_found';
+  if (status === 409 || status === 422) return 'conflict';
+  if (status === 429) return 'rate_limit';
+  return 'unknown';
+}
+
+/**
+ * User-safe GitHub error copy. Never includes tokens, Authorization headers,
+ * or the raw GitHub JSON body (which can echo "Bad credentials").
+ */
+export function publicGitHubMessage(status: number, path: string, env?: Pick<GitHubEnv, 'owner' | 'repo' | 'branch'>): string {
+  const target = env ? `${env.owner}/${env.repo}@${env.branch}` : `${DEFAULT_OWNER}/${DEFAULT_REPO}@${DEFAULT_BRANCH}`;
+  switch (status) {
+    case 401:
+      return `GitHub rejected the server credentials (401) while accessing ${path} on ${target}. Update GITHUB_TOKEN in Vercel Production with a valid fine-grained PAT that has Contents: Read and write on ${DEFAULT_OWNER}/${DEFAULT_REPO}.`;
+    case 403:
+      return `GitHub denied access (403) to ${path} on ${target}. Grant the token Contents: Read and write on ${DEFAULT_OWNER}/${DEFAULT_REPO}, or check rate limits.`;
+    case 404:
+      return `GitHub could not find ${path} on ${target} (404). Confirm GITHUB_OWNER, GITHUB_REPO, and GITHUB_BRANCH.`;
+    case 409:
+    case 422:
+      return `The ${env?.branch ?? DEFAULT_BRANCH} branch moved during publish (HTTP ${status}). Retry the publish.`;
+    case 429:
+      return 'GitHub rate-limited the publish request. Wait a moment and retry.';
+    default:
+      return `GitHub API ${status} on ${path}. Publishing could not complete.`;
+  }
+}
+
+export function publicGitHubError(
+  err: unknown,
+): { status: number; error: string } {
+  if (err instanceof GitHubApiError) {
+    // 401 is a server token misconfiguration, not the caller's session.
+    const status =
+      err.code === 'auth' || err.code === 'unknown'
+        ? 502
+        : err.code === 'conflict'
+          ? 409
+          : err.status;
+    return { status, error: err.message };
+  }
+  if (err instanceof Error && /GITHUB_TOKEN is not configured/.test(err.message)) {
+    return { status: 502, error: err.message };
+  }
+  if (err instanceof Error && /Could not update the branch ref/.test(err.message)) {
+    return { status: 409, error: err.message };
+  }
+  return {
+    status: 502,
+    error: 'Publish could not reach GitHub.',
   };
 }
 
@@ -45,16 +163,6 @@ export interface AtomicCommitResult {
   url: string;
 }
 
-class GitHubApiError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = 'GitHubApiError';
-    this.status = status;
-  }
-}
-
 async function ghJson<T>(
   env: GitHubEnv,
   path: string,
@@ -64,19 +172,16 @@ async function ghJson<T>(
   const res = await fetch(url, {
     ...init,
     headers: {
-      Authorization: `Bearer ${env.token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
+      ...githubAuthHeaders(env.token),
       'Content-Type': 'application/json',
       ...(init.headers ?? {}),
     },
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new GitHubApiError(
-      res.status,
-      `GitHub API ${res.status} on ${path}: ${body.slice(0, 300)}`,
-    );
+    // Consume the body so the socket can close, but never surface it.
+    await res.text().catch(() => '');
+    const code = githubErrorCode(res.status);
+    throw new GitHubApiError(res.status, path, code, publicGitHubMessage(res.status, path, env));
   }
   return (await res.json()) as T;
 }
@@ -158,7 +263,9 @@ async function updateRef(env: GitHubEnv, sha: string): Promise<void> {
 
 /**
  * Read the current UTF-8 content of a file on the target branch.
- * Returns `null` when the file does not exist.
+ * Returns `null` when the file does not exist (404).
+ * Uses the Contents API SHA-bearing payload so callers can merge against
+ * the latest `data.json` before the atomic tree update.
  */
 export async function readRepoFile(path: string): Promise<string | null> {
   const env = githubEnv();
@@ -179,7 +286,7 @@ export async function readRepoFile(path: string): Promise<string | null> {
  * Update one or more files in the repository as a single atomic commit.
  *
  * Strategy:
- *  1. resolve the current branch HEAD (latest commit + tree)
+ *  1. resolve the current branch HEAD (latest commit + tree SHA)
  *  2. create blobs for all changed files
  *  3. build a new tree on top of the current base tree
  *  4. create a commit whose parent is the current HEAD
@@ -218,8 +325,6 @@ export async function createAtomicCommit(
       };
     } catch (err) {
       const status = err instanceof GitHubApiError ? err.status : null;
-      // Non-fast-forward (409) / invalid object (422) means the branch moved
-      // since we resolved it — re-resolve and retry with fresh data.
       if ((status === 409 || status === 422) && attempt < MAX_ATTEMPTS) {
         continue;
       }
