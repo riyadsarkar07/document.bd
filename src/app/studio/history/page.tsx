@@ -166,7 +166,6 @@ export default function HistoryPage() {
   };
 
   const hydrateRecord = async (record: VaultRecord): Promise<VaultRecord | null> => {
-    if (record.doc != null || record.logoDataUrl) return record;
     if (!record.trademarkNo) return record;
     const res = await getVaultRecord(record.trademarkNo);
     if (res.error || !res.record) {
@@ -274,16 +273,21 @@ export default function HistoryPage() {
     }
     setPublishBusy(true);
     toast.info(`Publishing TM ${record.trademarkNo}…`);
-    const imageDataUrl = await renderRecordJpg(record);
+    const full = await hydrateRecord(record);
+    if (!full) {
+      setPublishBusy(false);
+      return;
+    }
+    const imageDataUrl = await renderRecordJpg(full);
     if (!imageDataUrl) {
       setPublishBusy(false);
       toast.error('Could not render the certificate for publishing.');
       return;
     }
     const result = await apiPublish({
-      regNo: record.trademarkNo,
-      name: record.companyName,
-      applicationDate: record.appDate,
+      regNo: full.trademarkNo,
+      name: full.companyName,
+      applicationDate: full.appDate,
       imageDataUrl,
     });
     setPublishBusy(false);

@@ -426,6 +426,22 @@ async function main() {
   const fromString = layoutFromVault(JSON.stringify({ signX: '1480', signY: '2488', signSize: '280' }));
   assert(fromString.signX === 1480 && fromString.signY === 2488 && fromString.signSize === 280, 'numeric strings from JSON restore as numbers');
 
+  console.log('\n[11b] History listing stubs fall back to TM_DEFAULTS until the full vault row is loaded\n');
+  const listingStub = layoutFromVaultSources(undefined, undefined);
+  assert(
+    listingStub.signX === TM_DEFAULTS.signX && listingStub.signY === TM_DEFAULTS.signY && listingStub.signSize === TM_DEFAULTS.signSize,
+    'slim History list rows (no layout_json/details) fall back to default overlay coords',
+  );
+  assert(
+    listingStub.signX !== stored.signX || listingStub.signY !== stored.signY,
+    'repro: publishing the listing stub would draw the overlay at TM_DEFAULTS instead of the saved registrar position',
+  );
+  const hydratedFromVault = layoutFromVaultSources(stored, packed);
+  assert(
+    hydratedFromVault.signX === 1480 && hydratedFromVault.signY === 2488 && hydratedFromVault.signSize === 280,
+    'fix: getVaultRecord layout restores the saved overlay before History Publish re-renders',
+  );
+
   console.log('\n[12] History restore keeps TM body text when extra columns are dropped\n');
   const CUSTOM_OPENING = 'Custom opening for History restore.';
   const CUSTOM_MIDDLE = 'Custom middle Arial for History restore.';
@@ -1024,6 +1040,14 @@ async function main() {
   assert(historySrc.includes('} finally {') && historySrc.includes('setLoading(false)'), 'History always clears vault loading');
   assert(historySrc.includes('Retry') && historySrc.includes('refreshGenRef'), 'History has retry and request generation so loading cannot stick');
   assert(historySrc.includes('title={view === \'trashed\' ? \'Trash is empty\' : \'No download records yet\'}'), 'History shows an empty state when no records exist');
+  assert(
+    /const publishRecord[\s\S]*const full = await hydrateRecord\(record\)[\s\S]*renderRecordJpg\(full\)/.test(historySrc),
+    'History Publish hydrates layout/logo/details before rendering the portal JPEG',
+  );
+  assert(
+    !historySrc.includes('if (record.doc != null || record.logoDataUrl) return record;'),
+    'History hydrate always reloads the vault row instead of skipping on listing stubs',
+  );
   assert(vault.includes('VAULT_LIST_COLUMNS') && vault.includes("select(columns, { count: 'exact' })"), 'History list selects slim columns, not packed details');
   assert(!vault.includes('opening_text,middle_text_arial,logo_text'), 'History list does not select TM text columns missing from the live schema');
   assert(vault.includes('parseMissingColumn') && vault.includes("code === 'PGRST204'"), 'History list retries after PostgREST missing-column 400');
