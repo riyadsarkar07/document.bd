@@ -22,11 +22,17 @@ import {
 import { withRecord, withoutRecord } from '../src/lib/publish/data';
 import {
   GitHubApiError,
+  GITHUB_TOKEN_ENV_KEYS,
+  createAtomicCommit,
   githubEnv,
   githubErrorCode,
+  githubTokenKind,
+  isUserGitHubPat,
   publicGitHubError,
   publicGitHubMessage,
   readRepoFile,
+  readRepoFileWithSha,
+  resolveGitHubToken,
   sanitizeEnvValue,
   sanitizeGitHubToken,
 } from '../src/lib/publish/github';
@@ -200,10 +206,16 @@ async function main() {
   const savedOwner = process.env.GITHUB_OWNER;
   const savedRepo = process.env.GITHUB_REPO;
   const savedBranch = process.env.GITHUB_BRANCH;
+  const savedPat = process.env.DPDT_GITHUB_PAT;
+  const savedPublish = process.env.PUBLISH_GITHUB_TOKEN;
+  const savedGithubPat = process.env.GITHUB_PAT;
   delete process.env.GITHUB_TOKEN;
   delete process.env.GITHUB_OWNER;
   delete process.env.GITHUB_REPO;
   delete process.env.GITHUB_BRANCH;
+  delete process.env.DPDT_GITHUB_PAT;
+  delete process.env.PUBLISH_GITHUB_TOKEN;
+  delete process.env.GITHUB_PAT;
   try {
     githubEnv();
     assert(false, 'githubEnv throws when GITHUB_TOKEN is unset');
@@ -220,6 +232,7 @@ async function main() {
   process.env.GITHUB_TOKEN = 'ghp_test_only';
   const env = githubEnv();
   assert(env.token === 'ghp_test_only' && env.owner === 'riyadsarkar07' && env.repo === 'dpdt-govbd-main' && env.branch === 'main', 'env resolved from process.env + defaults');
+  assert(env.tokenSource === 'GITHUB_TOKEN', 'tokenSource is GITHUB_TOKEN when that is the only value');
   process.env.GITHUB_TOKEN = '  "ghp_quoted_token"  \n';
   assert(githubEnv().token === 'ghp_quoted_token', 'quoted/whitespace GITHUB_TOKEN is sanitized');
   process.env.GITHUB_TOKEN = "'ghp_single_quoted'";
@@ -228,9 +241,45 @@ async function main() {
   assert(githubEnv().token === 'ghp_prefixed', 'accidental Bearer prefix is stripped from GITHUB_TOKEN');
   process.env.GITHUB_TOKEN = 'token github_pat_prefixed';
   assert(githubEnv().token === 'github_pat_prefixed', 'accidental token prefix is stripped from GITHUB_TOKEN');
+  process.env.GITHUB_TOKEN = 'github_pat_\u200Babc def\n';
+  assert(githubEnv().token === 'github_pat_abcdef', 'zero-width, spaces, and newlines are stripped from the PAT');
   assert(sanitizeGitHubToken('  "Bearer ghp_x"  ') === 'ghp_x', 'sanitizeGitHubToken strips quotes then Bearer');
   assert(sanitizeEnvValue('  Bearer-not-this  ') === 'Bearer-not-this', 'sanitizeEnvValue trims whitespace');
   assert(sanitizeEnvValue(undefined) === '' && sanitizeEnvValue(null) === '', 'sanitizeEnvValue treats missing values as empty');
+  assert(GITHUB_TOKEN_ENV_KEYS[0] === 'DPDT_GITHUB_PAT', 'DPDT_GITHUB_PAT is the preferred runtime token key');
+  assert(githubTokenKind('github_pat_abc') === 'fine_grained_pat', 'fine-grained PAT kind');
+  assert(githubTokenKind('ghp_abc') === 'classic_pat', 'classic PAT kind');
+  assert(githubTokenKind('ghs_abc') === 'app', 'GitHub App token kind');
+  assert(isUserGitHubPat('github_pat_abcdefghijklmnopqrstuvwxyz') === true, 'fine-grained PAT shape accepted');
+  assert(isUserGitHubPat('ghs_abcdefghijklmnopqrstuvwxyz') === false, 'App tokens are not user PATs');
+  process.env.GITHUB_TOKEN = 'ghs_installation_token_value';
+  try {
+    githubEnv();
+    assert(false, 'githubEnv refuses GitHub App installation tokens');
+  } catch (err) {
+    assert(err instanceof Error && /DPDT_GITHUB_PAT/.test(err.message), 'App token error names DPDT_GITHUB_PAT');
+    const mappedApp = publicGitHubError(err);
+    assert(mappedApp.status === 502 && /DPDT_GITHUB_PAT/.test(mappedApp.error), 'App token maps to 502');
+  }
+  process.env.GITHUB_TOKEN = 'ghp_fallback_token_value';
+  process.env.DPDT_GITHUB_PAT = 'github_pat_preferred_tokenxx';
+  const preferred = githubEnv();
+  assert(preferred.token === 'github_pat_preferred_tokenxx' && preferred.tokenSource === 'DPDT_GITHUB_PAT', 'DPDT_GITHUB_PAT wins over GITHUB_TOKEN');
+  assert(resolveGitHubToken()?.source === 'DPDT_GITHUB_PAT', 'resolveGitHubToken reports DPDT_GITHUB_PAT');
+  delete process.env.DPDT_GITHUB_PAT;
+  delete process.env.GITHUB_TOKEN;
+
+  console.log('\n[5a] runtime token lookup contract (no Next.js env inlining)\n');
+  const githubSrc = readFileSync(join(__dirname, '../src/lib/publish/github.ts'), 'utf8');
+  const publishRouteSrc = readFileSync(join(__dirname, '../src/app/api/publish/route.ts'), 'utf8');
+  const preflightSrc = readFileSync(join(__dirname, '../src/app/api/publish/preflight/route.ts'), 'utf8');
+  assert(githubSrc.includes('return process.env[name]'), 'github.ts reads env by runtime name, not a build-time GITHUB_TOKEN identifier');
+  assert(!githubSrc.includes('process.env.GITHUB_TOKEN'), 'github.ts never uses process.env.GITHUB_TOKEN (Next.js would inline it at build)');
+  assert(!githubSrc.includes('process.env.DPDT_GITHUB_PAT'), 'github.ts never uses process.env.DPDT_GITHUB_PAT (Next.js would inline it at build)');
+  assert(githubSrc.includes("cache: 'no-store'"), 'GitHub fetches disable Next.js Data Cache');
+  assert(publishRouteSrc.includes("fetchCache = 'force-no-store'"), 'publish route disables fetch cache');
+  assert(publishRouteSrc.includes('readRepoFileWithSha'), 'publish reads data.json SHA before writing');
+  assert(preflightSrc.includes("fetchCache = 'force-no-store'"), 'preflight route disables fetch cache');
 
   console.log('\n[5b] GitHub API error mapping (no credential leakage)\n');
   assert(githubErrorCode(401) === 'auth', '401 maps to auth');
@@ -238,7 +287,7 @@ async function main() {
   assert(githubErrorCode(404) === 'not_found', '404 maps to not_found');
   assert(githubErrorCode(409) === 'conflict' && githubErrorCode(422) === 'conflict', '409/422 map to conflict');
   const authMsg = publicGitHubMessage(401, 'contents/data.json?ref=main');
-  assert(/401/.test(authMsg) && /GITHUB_TOKEN/.test(authMsg), '401 message names GITHUB_TOKEN');
+  assert(/401/.test(authMsg) && /DPDT_GITHUB_PAT/.test(authMsg) && /GITHUB_TOKEN/.test(authMsg), '401 message names DPDT_GITHUB_PAT and GITHUB_TOKEN');
   assert(!/Bad credentials/i.test(authMsg), '401 message does not leak GitHub "Bad credentials" body');
   assert(!/ghp_|github_pat_|Bearer /i.test(authMsg), '401 message does not include token material');
   assert(/Contents: Read and write/.test(authMsg), '401 message states required Contents permission');
@@ -264,6 +313,12 @@ async function main() {
   else process.env.GITHUB_REPO = savedRepo;
   if (savedBranch === undefined) delete process.env.GITHUB_BRANCH;
   else process.env.GITHUB_BRANCH = savedBranch;
+  if (savedPat === undefined) delete process.env.DPDT_GITHUB_PAT;
+  else process.env.DPDT_GITHUB_PAT = savedPat;
+  if (savedPublish === undefined) delete process.env.PUBLISH_GITHUB_TOKEN;
+  else process.env.PUBLISH_GITHUB_TOKEN = savedPublish;
+  if (savedGithubPat === undefined) delete process.env.GITHUB_PAT;
+  else process.env.GITHUB_PAT = savedGithubPat;
 
   console.log('\n[6] per-user tool access (mirrors schema.sql has_tool_access)\n');
   assert(hasToolAccess(null, 'tm') === false, 'no profile -> no access');
@@ -1049,29 +1104,54 @@ async function main() {
 
   console.log('\n[17] live GitHub Contents API (invalid credentials + optional real token)\n');
   const liveSaved = process.env.GITHUB_TOKEN;
+  const livePat = process.env.DPDT_GITHUB_PAT;
+  const livePublish = process.env.PUBLISH_GITHUB_TOKEN;
+  const liveGithubPat = process.env.GITHUB_PAT;
+  delete process.env.DPDT_GITHUB_PAT;
+  delete process.env.PUBLISH_GITHUB_TOKEN;
+  delete process.env.GITHUB_PAT;
   process.env.GITHUB_TOKEN = 'ghp_invalid_credentials_for_test';
   try {
-    await readRepoFile('data.json');
-    assert(false, 'invalid GITHUB_TOKEN is rejected by GitHub Contents API');
+    const publicFallback = await readRepoFile('data.json');
+    assert(
+      publicFallback !== null && publicFallback.includes('{'),
+      'invalid GITHUB_TOKEN falls back to public contents of data.json on the public verification repo',
+    );
   } catch (err) {
     const mapped = publicGitHubError(err);
-    assert(err instanceof GitHubApiError && err.status === 401 && err.code === 'auth', 'invalid token produces GitHubApiError 401 auth');
-    assert(mapped.status === 502 && /GITHUB_TOKEN/.test(mapped.error), 'invalid token maps to a safe 502 that names GITHUB_TOKEN');
+    assert(err instanceof GitHubApiError && err.status === 401 && err.code === 'auth', 'invalid token produces GitHubApiError 401 auth when public fallback is unavailable');
+    assert(mapped.status === 502 && /GITHUB_TOKEN|DPDT_GITHUB_PAT/.test(mapped.error), 'invalid token maps to a safe 502');
     assert(!/Bad credentials/i.test(mapped.error) && !/ghp_invalid/.test(mapped.error), 'invalid-token error does not leak GitHub body or the token');
   }
-  if (liveSaved === undefined) {
+  try {
+    await createAtomicCommit('test: must not write', [{ path: 'data.json', content: Buffer.from('{}\n', 'utf8') }]);
+    assert(false, 'invalid GITHUB_TOKEN cannot write via createAtomicCommit');
+  } catch (err) {
+    const mapped = publicGitHubError(err);
+    assert(err instanceof GitHubApiError && err.status === 401 && err.code === 'auth', 'write with invalid token is 401 auth');
+    assert(mapped.status === 502 && /DPDT_GITHUB_PAT/.test(mapped.error), 'write 401 maps to 502 naming DPDT_GITHUB_PAT');
+    assert(!/Bad credentials/i.test(mapped.error) && !/ghp_invalid/.test(mapped.error), 'write 401 does not leak GitHub body or the token');
+  }
+  if (livePat) process.env.DPDT_GITHUB_PAT = livePat;
+  else delete process.env.DPDT_GITHUB_PAT;
+  if (livePublish) process.env.PUBLISH_GITHUB_TOKEN = livePublish;
+  else delete process.env.PUBLISH_GITHUB_TOKEN;
+  if (liveGithubPat) process.env.GITHUB_PAT = liveGithubPat;
+  else delete process.env.GITHUB_PAT;
+  if (liveSaved === undefined && livePat === undefined && livePublish === undefined && liveGithubPat === undefined) {
     delete process.env.GITHUB_TOKEN;
-    console.log('  SKIP  live publish against riyadsarkar07/dpdt-govbd-main — GITHUB_TOKEN is not set in this environment');
+    console.log('  SKIP  live publish against riyadsarkar07/dpdt-govbd-main — no publish PAT is set in this environment');
   } else {
-    process.env.GITHUB_TOKEN = liveSaved;
+    if (liveSaved !== undefined) process.env.GITHUB_TOKEN = liveSaved;
+    else delete process.env.GITHUB_TOKEN;
     try {
-      const contents = await readRepoFile('data.json');
-      assert(contents !== null && contents.includes('{'), 'valid GITHUB_TOKEN can read data.json from the target branch');
-      const parsed = JSON.parse(contents as string) as Record<string, unknown>;
+      const file = await readRepoFileWithSha('data.json');
+      assert(file !== null && file.content.includes('{') && typeof file.sha === 'string' && file.sha.length > 0, 'valid publish PAT can read data.json SHA from the target branch');
+      const parsed = JSON.parse(file!.content) as Record<string, unknown>;
       assert(typeof parsed === 'object' && parsed !== null, 'data.json is a JSON object keyed by TM number');
     } catch (err) {
       const mapped = publicGitHubError(err);
-      assert(false, `valid GITHUB_TOKEN could not read data.json: ${mapped.error}`);
+      assert(false, `valid publish PAT could not read data.json: ${mapped.error}`);
     }
   }
 

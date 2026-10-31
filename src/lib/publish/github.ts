@@ -7,10 +7,10 @@
  * concurrent writers never clobber each other (optimistic concurrency +
  * retry on non-fast-forward conflicts).
  *
- * IMPORTANT: This module reads GITHUB_TOKEN from the server environment and
- * must NEVER be imported from any client component. Only the `/api/publish`
- * route handler uses it. Token values must never appear in errors, logs, or
- * API responses.
+ * IMPORTANT: This module reads the publish PAT from the server environment at
+ * request time (never a Next.js build-time inline) and must NEVER be imported
+ * from any client component. Token values must never appear in errors, logs,
+ * or API responses.
  */
 
 export interface GitHubEnv {
@@ -18,6 +18,7 @@ export interface GitHubEnv {
   owner: string;
   repo: string;
   branch: string;
+  tokenSource: string;
 }
 
 export type GitHubErrorCode =
@@ -32,51 +33,118 @@ const DEFAULT_OWNER = 'riyadsarkar07';
 const DEFAULT_REPO = 'dpdt-govbd-main';
 const DEFAULT_BRANCH = 'main';
 
+/**
+ * Dedicated names first. `GITHUB_TOKEN` is last because Vercel/GitHub Actions
+ * and some GitHub Apps inject a short-lived installation token under that
+ * name, which GitHub then rejects with 401 Bad credentials.
+ */
+export const GITHUB_TOKEN_ENV_KEYS = [
+  'DPDT_GITHUB_PAT',
+  'PUBLISH_GITHUB_TOKEN',
+  'GITHUB_PAT',
+  'GITHUB_TOKEN',
+] as const;
+
+const ZERO_WIDTH_RE = /[\u200B-\u200D\uFEFF\u00A0\u2028\u2029]/g;
+
+function runtimeEnv(name: string): string | undefined {
+  // Bracket access — Next.js webpack must not replace this at build time.
+  return process.env[name];
+}
+
 /** Strip BOM, wrapping quotes, and surrounding whitespace from env values. */
 export function sanitizeEnvValue(raw: string | undefined | null): string {
   if (typeof raw !== 'string') return '';
-  let value = raw.replace(/^\uFEFF/, '').trim();
+  let value = raw.replace(/^\uFEFF/, '').replace(ZERO_WIDTH_RE, '').trim();
   if (
     (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
     (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
   ) {
-    value = value.slice(1, -1).replace(/^\uFEFF/, '').trim();
+    value = value.slice(1, -1).replace(/^\uFEFF/, '').replace(ZERO_WIDTH_RE, '').trim();
   }
   return value;
 }
 
-/** Normalize a PAT pasted into GITHUB_TOKEN (quotes, whitespace, accidental Bearer prefix). */
+/** Normalize a PAT pasted into an env var (quotes, whitespace, accidental Bearer prefix). */
 export function sanitizeGitHubToken(raw: string | undefined | null): string {
-  let token = sanitizeEnvValue(raw);
-  token = token.replace(/^(Bearer|token)\s+/i, '').trim();
+  if (typeof raw !== 'string') return '';
+  let token = raw.replace(/^\uFEFF/, '').replace(ZERO_WIDTH_RE, '');
+  token = token.trim();
+  if (
+    (token.startsWith('"') && token.endsWith('"') && token.length >= 2) ||
+    (token.startsWith("'") && token.endsWith("'") && token.length >= 2)
+  ) {
+    token = token.slice(1, -1).replace(/^\uFEFF/, '').replace(ZERO_WIDTH_RE, '').trim();
+  }
+  token = token.replace(/^(Bearer|token)\s+/i, '');
+  token = token.replace(/\s+/g, '');
+  token = token.replace(/^(Bearer|token)/i, '');
   return token;
+}
+
+/** Classic (`ghp_`) or fine-grained (`github_pat_`) user PATs. */
+export function isUserGitHubPat(token: string): boolean {
+  return /^(ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})$/.test(token);
+}
+
+export function githubTokenKind(token: string): 'classic_pat' | 'fine_grained_pat' | 'app' | 'oauth' | 'unknown' {
+  if (token.startsWith('github_pat_')) return 'fine_grained_pat';
+  if (token.startsWith('ghp_')) return 'classic_pat';
+  if (token.startsWith('ghs_')) return 'app';
+  if (token.startsWith('gho_') || token.startsWith('ghu_')) return 'oauth';
+  return 'unknown';
 }
 
 function envName(raw: string | undefined | null, fallback: string): string {
   return sanitizeEnvValue(raw) || fallback;
 }
 
-export function githubEnv(): GitHubEnv {
-  const token = sanitizeGitHubToken(process.env.GITHUB_TOKEN);
-  if (!token) {
+export function resolveGitHubToken(): { token: string; source: string } | null {
+  let skippedAppToken = false;
+  for (const key of GITHUB_TOKEN_ENV_KEYS) {
+    const candidate = sanitizeGitHubToken(runtimeEnv(key));
+    if (!candidate) continue;
+    const kind = githubTokenKind(candidate);
+    if (kind === 'app' || kind === 'oauth') {
+      skippedAppToken = true;
+      continue;
+    }
+    return { token: candidate, source: key };
+  }
+  if (skippedAppToken) {
     throw new Error(
-      'GITHUB_TOKEN is not configured on the server. Set it in Vercel → Project → Settings → Environment Variables (Production) for riyadsarkar07/dpdt-govbd-main with Contents: Read and write.',
+      'Publish refused a short-lived GitHub App/OAuth token from GITHUB_TOKEN. Set DPDT_GITHUB_PAT (Vercel → Production) to a fine-grained PAT with Contents: Read and write on riyadsarkar07/dpdt-govbd-main.',
+    );
+  }
+  return null;
+}
+
+export function githubEnv(): GitHubEnv {
+  const resolved = resolveGitHubToken();
+  if (!resolved) {
+    throw new Error(
+      'GITHUB_TOKEN is not configured on the server. Set DPDT_GITHUB_PAT or GITHUB_TOKEN in Vercel → Project → Settings → Environment Variables (Production) for riyadsarkar07/dpdt-govbd-main with Contents: Read and write.',
     );
   }
   return {
-    token,
-    owner: envName(process.env.GITHUB_OWNER, DEFAULT_OWNER),
-    repo: envName(process.env.GITHUB_REPO, DEFAULT_REPO),
-    branch: envName(process.env.GITHUB_BRANCH, DEFAULT_BRANCH),
+    token: resolved.token,
+    tokenSource: resolved.source,
+    owner: envName(runtimeEnv('GITHUB_OWNER'), DEFAULT_OWNER),
+    repo: envName(runtimeEnv('GITHUB_REPO'), DEFAULT_REPO),
+    branch: envName(runtimeEnv('GITHUB_BRANCH'), DEFAULT_BRANCH),
   };
 }
 
 export function githubAuthHeaders(token: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${token}`,
+  const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': 'document.bd-publish',
   };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 export class GitHubApiError extends Error {
@@ -110,7 +178,7 @@ export function publicGitHubMessage(status: number, path: string, env?: Pick<Git
   const target = env ? `${env.owner}/${env.repo}@${env.branch}` : `${DEFAULT_OWNER}/${DEFAULT_REPO}@${DEFAULT_BRANCH}`;
   switch (status) {
     case 401:
-      return `GitHub rejected the server credentials (401) while accessing ${path} on ${target}. Update GITHUB_TOKEN in Vercel Production with a valid fine-grained PAT that has Contents: Read and write on ${DEFAULT_OWNER}/${DEFAULT_REPO}.`;
+      return `GitHub rejected the server credentials (401) while accessing ${path} on ${target}. Update DPDT_GITHUB_PAT (preferred) or GITHUB_TOKEN in Vercel Production with a valid fine-grained PAT that has Contents: Read and write on ${DEFAULT_OWNER}/${DEFAULT_REPO}, then Redeploy. Do not use a GitHub Actions/App token.`;
     case 403:
       return `GitHub denied access (403) to ${path} on ${target}. Grant the token Contents: Read and write on ${DEFAULT_OWNER}/${DEFAULT_REPO}, or check rate limits.`;
     case 404:
@@ -129,7 +197,6 @@ export function publicGitHubError(
   err: unknown,
 ): { status: number; error: string } {
   if (err instanceof GitHubApiError) {
-    // 401 is a server token misconfiguration, not the caller's session.
     const status =
       err.code === 'auth' || err.code === 'unknown'
         ? 502
@@ -138,7 +205,10 @@ export function publicGitHubError(
           : err.status;
     return { status, error: err.message };
   }
-  if (err instanceof Error && /GITHUB_TOKEN is not configured/.test(err.message)) {
+  if (
+    err instanceof Error &&
+    (/GITHUB_TOKEN is not configured/.test(err.message) || /DPDT_GITHUB_PAT/.test(err.message))
+  ) {
     return { status: 502, error: err.message };
   }
   if (err instanceof Error && /Could not update the branch ref/.test(err.message)) {
@@ -163,22 +233,34 @@ export interface AtomicCommitResult {
   url: string;
 }
 
+export interface RepoFile {
+  content: string;
+  sha: string;
+}
+
+const GH_FETCH_INIT: Pick<RequestInit, 'cache' | 'redirect'> = {
+  cache: 'no-store',
+  redirect: 'follow',
+};
+
 async function ghJson<T>(
-  env: GitHubEnv,
+  env: Pick<GitHubEnv, 'token' | 'owner' | 'repo' | 'branch'>,
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
   const url = `https://api.github.com/repos/${env.owner}/${env.repo}/${path}`;
+  const method = (init.method ?? 'GET').toUpperCase();
+  const headers: Record<string, string> = { ...githubAuthHeaders(env.token) };
+  if (method !== 'GET' && method !== 'HEAD') {
+    headers['Content-Type'] = 'application/json';
+  }
   const res = await fetch(url, {
     ...init,
-    headers: {
-      ...githubAuthHeaders(env.token),
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
+    ...GH_FETCH_INIT,
+    method,
+    headers,
   });
   if (!res.ok) {
-    // Consume the body so the socket can close, but never surface it.
     await res.text().catch(() => '');
     const code = githubErrorCode(res.status);
     throw new GitHubApiError(res.status, path, code, publicGitHubMessage(res.status, path, env));
@@ -261,23 +343,50 @@ async function updateRef(env: GitHubEnv, sha: string): Promise<void> {
   });
 }
 
-/**
- * Read the current UTF-8 content of a file on the target branch.
- * Returns `null` when the file does not exist (404).
- * Uses the Contents API SHA-bearing payload so callers can merge against
- * the latest `data.json` before the atomic tree update.
- */
-export async function readRepoFile(path: string): Promise<string | null> {
-  const env = githubEnv();
+async function readContents(env: Pick<GitHubEnv, 'token' | 'owner' | 'repo' | 'branch'>, path: string): Promise<RepoFile | null> {
   const encoded = path.split('/').map(encodeURIComponent).join('/');
   try {
     const obj = await ghJson<ContentsObject>(env, `contents/${encoded}?ref=${encodeURIComponent(env.branch)}`);
     if (obj.encoding !== 'base64') {
       throw new Error(`Unexpected file encoding for ${path}: ${obj.encoding}`);
     }
-    return Buffer.from(obj.content, 'base64').toString('utf8');
+    return {
+      content: Buffer.from(obj.content, 'base64').toString('utf8'),
+      sha: obj.sha,
+    };
   } catch (err) {
     if (err instanceof GitHubApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * Read the current UTF-8 content of a file on the target branch.
+ * Returns `null` when the file does not exist (404).
+ * Uses the Contents API SHA-bearing payload so callers can merge against
+ * the latest `data.json` before the atomic tree update.
+ *
+ * Authenticated read first; if GitHub rejects the server token (401) the
+ * public contents of `dpdt-govbd-main` are retried without Authorization so
+ * a colliding GITHUB_TOKEN cannot block the merge. Writes still require a PAT.
+ */
+export async function readRepoFile(path: string): Promise<string | null> {
+  const file = await readRepoFileWithSha(path);
+  return file ? file.content : null;
+}
+
+export async function readRepoFileWithSha(path: string): Promise<RepoFile | null> {
+  const env = githubEnv();
+  try {
+    return await readContents(env, path);
+  } catch (err) {
+    if (err instanceof GitHubApiError && err.status === 401) {
+      try {
+        return await readContents({ ...env, token: '' }, path);
+      } catch {
+        throw err;
+      }
+    }
     throw err;
   }
 }

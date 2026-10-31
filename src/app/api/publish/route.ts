@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   createAtomicCommit,
   publicGitHubError,
-  readRepoFile,
+  readRepoFileWithSha,
 } from '@/lib/publish/github';
 import {
   withRecord,
@@ -23,6 +23,9 @@ import {
 import { clientIp, rateLimit } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export async function GET() {
   return json({ ok: false, error: 'Method not allowed.' }, 405, { Allow: 'POST' });
@@ -150,8 +153,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (!ownership.ok) return json({ ok: false, error: ownership.error }, 403);
 
     try {
-      const dataJson = await readRepoFile('data.json');
-      const nextDataJson = withoutRecord(dataJson, regNo);
+      const latest = await readRepoFileWithSha('data.json');
+      const nextDataJson = withoutRecord(latest?.content ?? null, regNo);
       const result = await createAtomicCommit(`unpublish: TM ${regNo}`, [
         { path: 'data.json', content: Buffer.from(nextDataJson, 'utf8') },
         { path: `${regNo}.jpg`, delete: true },
@@ -197,8 +200,8 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   try {
     const base64 = fields.imageDataUrl!.slice('data:image/jpeg;base64,'.length);
-    const dataJson = await readRepoFile('data.json');
-    const nextDataJson = withRecord(dataJson, fields.regNo, {
+    const latest = await readRepoFileWithSha('data.json');
+    const nextDataJson = withRecord(latest?.content ?? null, fields.regNo, {
       name: fields.name,
       authority: fields.authority,
       application_date: fields.applicationDate,

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { githubAuthHeaders, githubEnv, publicGitHubMessage } from '@/lib/publish/github';
+import { githubAuthHeaders, githubEnv, githubTokenKind, publicGitHubMessage } from '@/lib/publish/github';
 import {
   authorize,
   json,
@@ -8,6 +8,9 @@ import {
 import { clientIp, rateLimit } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export async function GET() {
   return json({ ok: false, error: 'Method not allowed.' }, 405, { Allow: 'POST' });
@@ -82,7 +85,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     checks.push({
       name: 'GitHub token',
       ok: true,
-      detail: `GITHUB_TOKEN is configured on the server (target ${env.owner}/${env.repo}@${env.branch}).`,
+      detail: `Publish PAT is configured on the server (source ${env.tokenSource}, kind ${githubTokenKind(env.token)}, target ${env.owner}/${env.repo}@${env.branch}).`,
     });
   } catch (err) {
     checks.push({
@@ -99,6 +102,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   try {
     const res = await fetch(`https://api.github.com/repos/${env.owner}/${env.repo}`, {
       headers: ghHeaders,
+      cache: 'no-store',
     });
     if (res.ok) {
       const repo = (await res.json()) as { default_branch?: string; permissions?: { push?: boolean } };
@@ -129,6 +133,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     try {
       const res = await fetch(`https://api.github.com/repos/${env.owner}/${env.repo}/branches/${encodeURIComponent(env.branch)}`, {
         headers: ghHeaders,
+        cache: 'no-store',
       });
       if (!res.ok) await res.text().catch(() => '');
       checks.push({
@@ -154,7 +159,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     try {
       const res = await fetch(
         `https://api.github.com/repos/${env.owner}/${env.repo}/contents/data.json?ref=${encodeURIComponent(env.branch)}`,
-        { headers: ghHeaders },
+        { headers: ghHeaders, cache: 'no-store' },
       );
       if (!res.ok) await res.text().catch(() => '');
       checks.push({
